@@ -25,6 +25,19 @@ python -m subagent_pipeline.demo_601985
 python -m subagent_pipeline.batch_process
 ```
 
+## Automated Pipeline via Commands
+
+When the user sends a command matching one of the patterns below, read `tribunal.md` and execute the corresponding flow automatically:
+
+| Command | Action |
+|---------|--------|
+| `论衡十七司，升堂！{ticker} {name} {date?}` | Full L0-L7 pipeline |
+| `复盘司，点卯！{date}` | L0 daily recap only |
+| `太史令、户部司、舆图司，会同议事！{date}` | L1 market agents only |
+| `观星度支通政察言，四司齐奏！{ticker} {name}` | L2 four analysts only |
+
+See `tribunal.md` for the full orchestration spec with step-by-step execution order, parallel/sequential rules, and status output format.
+
 ## File Overview
 
 ```
