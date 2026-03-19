@@ -322,8 +322,32 @@ generate_backtest_report(report, output_dir=str(REPORTS))
 
 ---
 
+### L8 — 观点追踪（跨日漂移分析）
+
+每天跑完后自动生成观点漂移报告，追踪同一股票前后几天的观点演变：
+
+```python
+from subagent_pipeline.opinion_tracker import build_watchlist_report
+
+# all_tickers = ["601985.SS", "000710.SZ", ...]  已跑的所有 ticker
+tracker_report = build_watchlist_report(
+    tickers=all_tickers,
+    date_from="",           # 全量历史
+    date_to=trade_date,
+    storage_dir=str(REPLAYS),
+)
+print(tracker_report.to_markdown())
+tracker_report.save_json(output_dir=str(REPORTS))
+```
+
+打印：`[L8] 观点追踪完毕 — {len(tracker_report.action_flips)} 次翻转, {len(tracker_report.biggest_confidence_moves)} 次大幅波动`
+
+如有信号翻转（如 HOLD→BUY），打印详情。
+
+---
+
 ### 散堂
 
 打印：`[完毕] 十七司散堂，棋局已定。报告输出: data/reports/`
 
-列出所有生成的 HTML 文件路径。
+列出所有生成的 HTML / JSON 文件路径。

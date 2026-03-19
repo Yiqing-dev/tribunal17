@@ -62,6 +62,7 @@ subagent_pipeline/
 ├── heatmap.py             HeatmapNode / HeatmapData: pure data aggregation for treemap
 ├── backtest.py            Signal accuracy verification: forward bar eval, win rate, direction accuracy
 ├── signal_ledger.py       Append-only JSONL signal log for daily accumulation + backfill
+├── opinion_tracker.py     Cross-ticker opinion drift: DailySnapshot, OpinionDrift, WatchlistReport
 │
 │  ── Orchestration ──
 ├── batch_process.py       Batch: read raw outputs → bridge → write HTML
@@ -90,7 +91,8 @@ subagent_pipeline/
 │   ├── test_daily_recap.py    96 tests — daily recap collector + renderer
 │   ├── test_debate.py         84 tests — debate + committee report
 │   ├── test_trade_plan.py     31 tests — trade plan parsing + views
-│   └── test_dashboard.py     125 tests — dashboard views + routes
+│   ├── test_dashboard.py     125 tests — dashboard views + routes
+│   └── test_opinion_tracker.py 61 tests — opinion drift analysis
 │
 ├── requirements.txt       akshare>=1.10
 ```
@@ -422,6 +424,37 @@ report = run_backtest_from_ledger(config=config, ticker="601985.SS")
 
 **SignalRecord fields:** run_id, trade_date, ticker, ticker_name, action, confidence, entry_price, stop_loss, take_profit, market/fundamental/news/sentiment_score, risk_score, risk_flags, market_regime.
 
+#### Opinion Tracker (cross-day drift analysis)
+
+```python
+from subagent_pipeline.opinion_tracker import (
+    build_watchlist_report, track_ticker, latest_drift,
+)
+
+# Multi-ticker watchlist report
+report = build_watchlist_report(
+    tickers=["601985.SS", "000710.SZ"],
+    date_from="2026-03-14", date_to="2026-03-19",
+    storage_dir="data/replays",
+)
+print(report.to_markdown())    # Markdown summary with drift highlights
+report.save_json("data/reports")  # JSON persistence
+
+# Single-ticker quick view
+snapshots, drifts = track_ticker("601985.SS", limit=30)
+
+# Most recent day-over-day change
+drift = latest_drift("601985.SS")
+if drift and drift.action_changed:
+    print(f"{drift.action_prev} -> {drift.action_curr}")
+```
+
+**DailySnapshot fields:** action, confidence, pillar scores (market/fundamental/news/sentiment), risk_score, risk_flags, bull/bear thesis + claims + overall_confidence, scenario probabilities, pm_conclusion, trade plan prices, market_regime.
+
+**OpinionDrift fields:** action_changed, confidence_delta, pillar score deltas, risk_flags_added/removed, bull/bear claims_added/dropped, scenario prob deltas, drift_magnitude (major/minor/stable), drift_direction (bullish_shift/bearish_shift/unchanged).
+
+**WatchlistReport highlights:** action_flips, biggest_confidence_moves, new_risk_flags — auto-collected from all drifts across tickers.
+
 ## Key bridge.py Rules
 
 ### Output Key Mapping
@@ -533,7 +566,7 @@ Fallbacks degrade gracefully — some fields (e.g., limit counts from THS) may b
 
 ## Tests
 
-Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 414 tests total, no API keys needed:
+Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 475 tests total, no API keys needed:
 
 ```bash
 # All tests
@@ -545,6 +578,7 @@ pytest subagent_pipeline/tests/test_daily_recap.py -v    # 96 tests
 pytest subagent_pipeline/tests/test_debate.py -v         # 84 tests
 pytest subagent_pipeline/tests/test_trade_plan.py -v     # 31 tests
 pytest subagent_pipeline/tests/test_dashboard.py -v      # 125 tests
+pytest subagent_pipeline/tests/test_opinion_tracker.py -v # 61 tests
 
 # Single test
 pytest subagent_pipeline/tests/test_trade_plan.py::TestViewIntegration::test_no_trade_plan_no_card -v
