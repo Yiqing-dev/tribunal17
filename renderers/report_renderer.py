@@ -3715,8 +3715,9 @@ _TREEMAP_ENGINE_JS = r"""
   c.style.position = 'relative';
   c.style.overflow = 'hidden';
   c.style.cursor = 'default';
+  c.style.borderRadius = '12px';
 
-  /* Build tree from flat arrays */
+  /* Build tree */
   var nodes = {}, rootId = null;
   for (var i = 0; i < D.ids.length; i++) {
     var id = D.ids[i];
@@ -3730,14 +3731,14 @@ _TREEMAP_ENGINE_JS = r"""
     if (p && nodes[p]) nodes[p].ch.push(nodes[id]);
   }
 
-  /* Tooltip */
+  /* Tooltip — frosted glass */
   var tip = document.createElement('div');
-  tip.style.cssText = 'position:fixed;display:none;background:rgba(10,22,34,0.95);color:#dce9ef;padding:8px 12px;border-radius:6px;font-size:13px;pointer-events:none;z-index:9999;border:1px solid rgba(105,200,255,0.3);max-width:320px;line-height:1.5';
+  tip.style.cssText = 'position:fixed;display:none;padding:10px 14px;border-radius:8px;font:13px/1.6 "PingFang SC","Microsoft YaHei",sans-serif;pointer-events:none;z-index:9999;max-width:320px;background:rgba(255,255,255,0.92);color:#1a1a1a;box-shadow:0 8px 32px rgba(0,0,0,0.12),0 1px 3px rgba(0,0,0,0.08);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(0,0,0,0.06)';
   document.body.appendChild(tip);
 
   var curParent = rootId;
 
-  /* Squarify layout */
+  /* Squarify */
   function sq(items, x, y, w, h) {
     if (!items.length || w < 1 || h < 1) return;
     var total = 0;
@@ -3771,7 +3772,17 @@ _TREEMAP_ENGINE_JS = r"""
     else _lay(a, end+1, x+sl, y, w-sl, h, sc);
   }
 
-  /* Render tiles */
+  /* Adaptive font size based on tile area */
+  function fontSize(w, h) {
+    var area = w * h;
+    if (area > 30000) return 15;
+    if (area > 15000) return 13;
+    if (area > 6000) return 12;
+    if (area > 2000) return 11;
+    return 10;
+  }
+
+  /* Render */
   function render(pid) {
     curParent = pid;
     c.innerHTML = '';
@@ -3786,20 +3797,47 @@ _TREEMAP_ENGINE_JS = r"""
       var it = items[i];
       if (!it._r) continue;
       var r = it._r, n = it.node;
+      var rw = Math.round(r[2]), rh = Math.round(r[3]);
       var t = document.createElement('div');
-      t.style.cssText = 'position:absolute;box-sizing:border-box;border:1px solid rgba(120,120,120,0.3);display:flex;align-items:center;justify-content:center;text-align:center;overflow:hidden;transition:filter 0.12s;color:#333;padding:2px;font:11px/1.3 "JetBrains Mono","Fira Code",monospace';
+      var fs = fontSize(rw, rh);
+      var hasCh = n.ch && n.ch.length && maxD > 1;
+      t.style.cssText = 'position:absolute;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;padding:3px;font-family:"PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;letter-spacing:0.3px;border:1px solid rgba(255,255,255,0.45);transition:all 0.2s ease';
       t.style.left = Math.round(r[0])+'px';
       t.style.top = Math.round(r[1])+'px';
-      t.style.width = Math.round(r[2])+'px';
-      t.style.height = Math.round(r[3])+'px';
+      t.style.width = rw+'px';
+      t.style.height = rh+'px';
+      t.style.fontSize = fs+'px';
+      t.style.lineHeight = '1.35';
+      t.style.color = '#2a2a2a';
       t.style.background = n.color;
-      if (r[2] > 36 && r[3] > 18) t.innerHTML = '<span style="pointer-events:none">' + (n.text || n.label) + '</span>';
-      if (n.ch && n.ch.length && maxD > 1) t.style.cursor = 'pointer';
+      t.style.boxShadow = 'inset 0 1px 0 rgba(255,255,255,0.25), inset 0 -1px 0 rgba(0,0,0,0.04)';
+      if (hasCh) t.style.cursor = 'pointer';
+
+      /* Content: name bold, pct below */
+      if (rw > 32 && rh > 16) {
+        var txt = n.text || n.label;
+        var parts = txt.split('<br>');
+        var nameStr = parts[0] || '';
+        var pctStr = parts[1] || '';
+        var html = '';
+        if (rw > 50 && rh > 28) {
+          html = '<div style="font-weight:600;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:'+(rw-8)+'px">' + nameStr + '</div>';
+          if (pctStr && rh > 38) {
+            html += '<div style="pointer-events:none;opacity:0.7;font-size:'+(fs-1)+'px;margin-top:1px">' + pctStr + '</div>';
+          }
+        } else {
+          html = '<div style="pointer-events:none;font-weight:500;font-size:'+(fs-1)+'px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:'+(rw-6)+'px">' + nameStr + '</div>';
+        }
+        t.innerHTML = html;
+      }
+
       (function(n, t) {
         t.addEventListener('mouseenter', function() {
           tip.innerHTML = n.hover || n.label;
           tip.style.display = 'block';
-          t.style.filter = 'brightness(1.3)';
+          t.style.boxShadow = '0 4px 16px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.35)';
+          t.style.zIndex = '5';
+          t.style.transform = 'scale(1.02)';
         });
         t.addEventListener('mousemove', function(e) {
           var tx = e.clientX + 14, ty = e.clientY + 14;
@@ -3810,7 +3848,9 @@ _TREEMAP_ENGINE_JS = r"""
         });
         t.addEventListener('mouseleave', function() {
           tip.style.display = 'none';
-          t.style.filter = '';
+          t.style.boxShadow = 'inset 0 1px 0 rgba(255,255,255,0.25), inset 0 -1px 0 rgba(0,0,0,0.04)';
+          t.style.zIndex = '';
+          t.style.transform = '';
         });
         if (n.ch && n.ch.length && maxD > 1) {
           t.addEventListener('click', function(){ render(n.id); });
@@ -3819,10 +3859,19 @@ _TREEMAP_ENGINE_JS = r"""
       frag.appendChild(t);
     }
     c.appendChild(frag);
+
+    /* Fade-in animation */
+    c.style.opacity = '0';
+    requestAnimationFrame(function(){ c.style.transition = 'opacity 0.3s ease'; c.style.opacity = '1'; });
+
+    /* Back button — pill style */
     if (pid !== rootId) {
+      var parName = nodes[pid] ? nodes[pid].label : '';
       var b = document.createElement('div');
-      b.style.cssText = 'position:absolute;top:6px;left:6px;background:rgba(0,0,0,0.75);color:#69c8ff;padding:4px 12px;border-radius:4px;cursor:pointer;font:13px/1.4 "PingFang SC","Microsoft YaHei",sans-serif;z-index:10;backdrop-filter:blur(4px)';
-      b.textContent = '\u2190 \u8fd4\u56de';
+      b.style.cssText = 'position:absolute;top:10px;left:10px;background:rgba(255,255,255,0.88);color:#1a1a1a;padding:5px 14px;border-radius:20px;cursor:pointer;font:500 13px/1.4 "PingFang SC","Microsoft YaHei",sans-serif;z-index:10;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 2px 8px rgba(0,0,0,0.1);border:1px solid rgba(0,0,0,0.06);transition:all 0.15s ease';
+      b.innerHTML = '\u2190 ' + parName;
+      b.addEventListener('mouseenter', function(){ b.style.background = 'rgba(255,255,255,0.98)'; b.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'; });
+      b.addEventListener('mouseleave', function(){ b.style.background = 'rgba(255,255,255,0.88)'; b.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'; });
       b.addEventListener('click', function(){ render(rootId); });
       c.appendChild(b);
     }
@@ -3841,7 +3890,7 @@ def _render_inline_treemap(div_id: str, data: dict, max_depth: int = 2,
     data_json = _json.dumps(data, ensure_ascii=False)
     return (
         f'<div id="{div_id}" style="width:100%;height:{height}px;'
-        f'border-radius:10px;overflow:hidden;background:#E0E0DC"></div>\n'
+        f'border-radius:12px;overflow:hidden;background:linear-gradient(135deg,#f0eded,#e8e6e4)"></div>\n'
         f'<script>\n{_TREEMAP_ENGINE_JS}(\'{div_id}\', {data_json}, {max_depth});\n</script>'
     )
 

@@ -95,12 +95,114 @@ def _build_market_context(agent_outputs: dict, trade_date: str) -> dict:
     return assemble_market_context(macro, breadth, sector, trade_date)
 
 
+def _build_ths_to_sw_map() -> dict:
+    """Build THS sector name → SW second-level industry code mapping.
+
+    Returns ``{ths_name: sw_code}`` e.g. ``{"半导体": "801081"}``.
+    Uses exact match first, then fuzzy match (strip trailing ``Ⅱ``).
+    """
+    try:
+        import akshare as ak
+        sw2 = ak.sw_index_second_info()
+    except Exception:
+        return {}
+
+    sw_by_name: dict[str, str] = {}
+    sw_stripped: dict[str, str] = {}
+    for _, row in sw2.iterrows():
+        code = str(row["行业代码"]).replace(".SI", "")
+        name = str(row["行业名称"])
+        sw_by_name[name] = code
+        stripped = name.rstrip("Ⅱ").rstrip()
+        if stripped != name:
+            sw_stripped[stripped] = code
+
+    try:
+        ths = ak.stock_board_industry_name_ths()
+    except Exception:
+        return {}
+
+    mapping: dict[str, str] = {}
+    for _, row in ths.iterrows():
+        ths_name = str(row["name"])
+        if ths_name in sw_by_name:
+            mapping[ths_name] = sw_by_name[ths_name]
+        elif ths_name in sw_stripped:
+            mapping[ths_name] = sw_stripped[ths_name]
+    return mapping
+
+
+def _collect_sector_stocks_sw(sectors: list, ths_sw_map: dict,
+                              max_sectors: int = 20, top_n: int = 10) -> dict:
+    """Fallback: fetch constituent stocks via SW index + XQ spot data.
+
+    Uses ``index_component_sw`` for constituent list (sorted by weight)
+    and ``stock_individual_spot_xq`` for realtime price/pct_change.
+    """
+    import time
+    result: dict[str, list] = {}
+    if not sectors or not ths_sw_map:
+        return result
+
+    try:
+        import akshare as ak
+    except ImportError:
+        return result
+
+    sorted_sectors = sorted(sectors,
+                            key=lambda s: float(s.get("total_turnover_yi", 0) or 0),
+                            reverse=True)
+
+    for s in sorted_sectors[:max_sectors]:
+        sector_name = str(s.get("sector", ""))
+        sw_code = ths_sw_map.get(sector_name)
+        if not sw_code:
+            continue
+        try:
+            cons = ak.index_component_sw(symbol=sw_code)
+            if cons is None or cons.empty:
+                continue
+            # Sort by weight descending, take top_n
+            cons = cons.sort_values("最新权重", ascending=False).head(top_n)
+
+            stocks = []
+            for _, row in cons.iterrows():
+                ticker = str(row.get("证券代码", ""))
+                name = str(row.get("证券名称", ""))
+                weight = float(row.get("最新权重", 0) or 0)
+                pct_change = 0.0
+                # Fetch realtime pct_change from XQ
+                try:
+                    prefix = "SH" if ticker.startswith("6") else "SZ"
+                    spot = ak.stock_individual_spot_xq(symbol=f"{prefix}{ticker}")
+                    pct_row = spot[spot["item"] == "涨幅"]
+                    if not pct_row.empty:
+                        pct_change = float(pct_row["value"].values[0] or 0)
+                except Exception:
+                    pass
+                stocks.append({
+                    "ticker": ticker,
+                    "name": name,
+                    "pct_change": pct_change,
+                    "market_cap_yi": 0,  # SW doesn't provide mcap
+                    "amount_yi": 0,
+                    "weight": weight,
+                })
+            if stocks:
+                result[sector_name] = stocks
+            time.sleep(0.3)
+        except Exception:
+            continue
+
+    return result
+
+
 def _collect_sector_stocks(sectors: list, max_sectors: int = 20,
                            top_n: int = 10) -> dict:
     """Fetch top constituent stocks per sector for treemap drill-down.
 
-    Tries stock_board_industry_cons_em first.  Falls back gracefully
-    if the EM API is unreachable (returns partial or empty dict).
+    Tries EM (stock_board_industry_cons_em) first.  After 3 consecutive
+    failures, falls back to SW (index_component_sw) + XQ (stock_individual_spot_xq).
     """
     import time
     result: dict[str, list] = {}
@@ -147,7 +249,20 @@ def _collect_sector_stocks(sectors: list, max_sectors: int = 20,
         except Exception:
             consecutive_failures += 1
             if consecutive_failures >= 3:
-                print(f"  [BOARD] Sector stocks: 3 consecutive failures, stopping")
+                print(f"  [BOARD] EM failed 3x, switching to SW+XQ fallback")
+                ths_sw_map = _build_ths_to_sw_map()
+                if ths_sw_map:
+                    print(f"  [BOARD] THS→SW mapping: {len(ths_sw_map)} sectors matched")
+                    remaining = [s2 for s2 in sorted_sectors[:max_sectors]
+                                 if str(s2.get("sector", "")) not in result]
+                    sw_result = _collect_sector_stocks_sw(
+                        remaining, ths_sw_map, max_sectors=max_sectors, top_n=top_n,
+                    )
+                    result.update(sw_result)
+                    if sw_result:
+                        print(f"  [BOARD] SW fallback: {len(sw_result)} sectors fetched")
+                else:
+                    print(f"  [BOARD] SW fallback: mapping build failed")
                 break
             time.sleep(1)
 
