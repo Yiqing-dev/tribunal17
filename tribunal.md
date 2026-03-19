@@ -348,6 +348,6 @@ tracker_report.save_json(output_dir=str(REPORTS))
 
 ### 散堂
 
-打印：`[完毕] 十七司散堂，棋局已定。报告输出: data/reports/`
+打印：`[完毕] 十七司散堂，论衡已定。报告输出: data/reports/`
 
 列出所有生成的 HTML / JSON 文件路径。
