@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Environment / secrets
+.env
+*.api_key
+
+# Runtime data (generated, not source)
+data/replays/
+data/reports/
+data/signals/
+data/ledgers/
+data/pilot/
+
+# Archives
+*.zip
+*.tar.gz
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
