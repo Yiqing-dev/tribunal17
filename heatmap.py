@@ -164,6 +164,153 @@ class HeatmapData:
             market_context=market_context,
         )
 
+    @classmethod
+    def build_from_sectors(
+        cls,
+        board_data: Dict,
+        market_context: Dict = None,
+        spot_data: Dict = None,
+    ) -> "HeatmapData":
+        """Build market-level heatmap from board_data sector stocks.
+
+        Fallback chain:
+        1. sector_stocks (per-stock tiles)
+        2. sectors (per-sector tiles, degraded)
+        """
+        market_context = market_context or {}
+        spot_data = spot_data or {}
+        leaders = market_context.get("sector_leaders", [])
+        avoid = market_context.get("avoid_sectors", [])
+
+        nodes = []
+        all_caps = []
+
+        sector_stocks = board_data.get("sector_stocks", {})
+        if sector_stocks:
+            for sector_name, stocks in sector_stocks.items():
+                for stock in stocks:
+                    ticker = stock.get("ticker", "")
+                    cap = stock.get("market_cap_yi", 0) or stock.get("market_cap", 0) or 10
+                    pct = stock.get("pct_change", 0) or 0
+                    all_caps.append(cap)
+
+                    sector_status = "中性"
+                    for l in leaders:
+                        if l in sector_name or sector_name in l:
+                            sector_status = "主线板块"
+                            break
+                    for a in avoid:
+                        if a in sector_name or sector_name in a:
+                            sector_status = "退潮板块"
+                            break
+
+                    nodes.append(HeatmapNode(
+                        id=ticker,
+                        ticker=ticker,
+                        name=stock.get("name", ticker),
+                        sector=sector_name,
+                        market_cap=cap,
+                        pct_change=pct,
+                        color_score=pct_to_color_score(pct),
+                        sector_status=sector_status,
+                    ))
+        else:
+            # Degraded: one node per sector
+            for s in board_data.get("sectors", []):
+                name = s.get("sector", s.get("name", ""))
+                if not name:
+                    continue
+                cap = s.get("market_cap", 100)
+                pct = s.get("pct_change", 0) or 0
+                all_caps.append(cap)
+                nodes.append(HeatmapNode(
+                    id=name,
+                    ticker="",
+                    name=name,
+                    sector=name,
+                    market_cap=cap,
+                    pct_change=pct,
+                    color_score=pct_to_color_score(pct),
+                ))
+
+        for node in nodes:
+            node.size_score = compute_size_score(node.market_cap, all_caps)
+
+        sectors = build_sector_aggregates(nodes)
+        return cls(
+            view_mode="market",
+            trade_date=market_context.get("trade_date", ""),
+            nodes=nodes,
+            sectors=sectors,
+            market_context=market_context,
+        )
+
+    @classmethod
+    def build_from_momentum(
+        cls,
+        market_context: Dict,
+    ) -> Optional["HeatmapData"]:
+        """Build heatmap from sector_momentum in market_context.
+
+        Last-resort fallback when both snapshot and board_data APIs failed.
+        Each sector becomes one tile, sized by flow magnitude, colored by direction.
+        """
+        momentum = market_context.get("sector_momentum", [])
+        if not momentum:
+            return None
+
+        nodes = []
+        all_caps = []
+        leaders = market_context.get("sector_leaders", [])
+        avoid = market_context.get("avoid_sectors", [])
+
+        for item in momentum:
+            name = item.get("name", "")
+            if not name:
+                continue
+            try:
+                flow = abs(float(item.get("flow", 1)))
+            except (ValueError, TypeError):
+                flow = 1.0
+            direction = item.get("direction", "")
+            pct = flow if direction == "in" else -flow
+            cap = max(flow * 10, 5)  # size proportional to flow
+            all_caps.append(cap)
+
+            sector_status = "中性"
+            for l in leaders:
+                if l in name or name in l:
+                    sector_status = "主线板块"
+                    break
+            for a in avoid:
+                if a in name or name in a:
+                    sector_status = "退潮板块"
+                    break
+
+            nodes.append(HeatmapNode(
+                id=name,
+                name=name,
+                sector=name,
+                market_cap=cap,
+                pct_change=pct,
+                color_score=pct_to_color_score(pct),
+                sector_status=sector_status,
+            ))
+
+        if not nodes:
+            return None
+
+        for node in nodes:
+            node.size_score = compute_size_score(node.market_cap, all_caps)
+
+        return cls(
+            view_mode="momentum",
+            trade_date=market_context.get("trade_date", ""),
+            nodes=nodes,
+            sectors=[],
+            market_context=market_context,
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize for JavaScript consumption."""
         return {
@@ -236,6 +383,13 @@ def compute_color_score(action: str, confidence: float, risk_state: str) -> floa
     elif action == "BUY":
         return 0.4 + 0.6 * conf
     return 0.0
+
+
+def pct_to_color_score(pct: float) -> float:
+    """Map daily pct_change to -1..+1 color score for market-level heatmaps."""
+    # Clamp to ±10% range then scale to -1..+1
+    clamped = max(-10.0, min(10.0, pct))
+    return clamped / 10.0
 
 
 def color_score_to_hex(score: float) -> str:

@@ -4485,6 +4485,24 @@ def _render_sector_engine(view: MarketView) -> str:
         treemap_html = _render_plotly_sector_treemap(
             sectors, limit_ups=view.limit_up_stocks,
             sector_stocks=view.sector_stocks)
+    elif view.sector_momentum:
+        # Adaptive fallback: synthesize sector tiles from LLM momentum data
+        synth_sectors = []
+        for m in view.sector_momentum:
+            if isinstance(m, dict):
+                flow = 0.0
+                try:
+                    flow = float(m.get("flow", 0))
+                except (ValueError, TypeError):
+                    pass
+                # flow already carries sign (-4.1 for outflow)
+                synth_sectors.append({
+                    "sector": m.get("name", ""),
+                    "pct_change": flow,
+                    "total_turnover_yi": abs(flow) * 10,
+                })
+        if synth_sectors:
+            treemap_html = _render_plotly_sector_treemap(synth_sectors)
 
     # Right sidebar: leaders + avoid + rotation phase + attribution
     leaders_html = ""
@@ -4946,12 +4964,15 @@ def render_market_page(view: MarketView) -> str:
     # Screen 6: Battle brief
     battle_brief = _render_battle_brief(view)
 
-    # Stock-level heatmap (if available, from pool data)
+    # Stock-level heatmap — only when real per-stock data exists
+    # (skip when heatmap was synthesized from sector_momentum — same as sector engine)
     heatmap_section = ""
     if view.heatmap_data:
-        plotly_stock = _render_plotly_stock_treemap(view.heatmap_data)
-        if plotly_stock:
-            heatmap_section = f"""
+        hm_mode = view.heatmap_data.get("view_mode", "") if isinstance(view.heatmap_data, dict) else ""
+        if hm_mode != "momentum":
+            plotly_stock = _render_plotly_stock_treemap(view.heatmap_data)
+            if plotly_stock:
+                heatmap_section = f"""
     <div class="mkt-glass mkt-anim mkt-d6">
       <div class="mkt-sec-head">
         <div class="mkt-sec-title">\u4e2a\u80a1\u70ed\u529b\u56fe</div>
@@ -5010,6 +5031,19 @@ def generate_market_report(
     """
     if not market_context:
         return None
+
+    # Adaptive heatmap: board_data → sector_momentum → None
+    if heatmap_data is None:
+        from ..heatmap import HeatmapData
+        if board_data and (board_data.get("sector_stocks") or board_data.get("sectors")):
+            spot_data = getattr(market_snapshot, "stock_spots", {}) if market_snapshot else {}
+            heatmap_data = HeatmapData.build_from_sectors(
+                board_data=board_data,
+                market_context=market_context or {},
+                spot_data=spot_data,
+            )
+        elif market_context.get("sector_momentum"):
+            heatmap_data = HeatmapData.build_from_momentum(market_context)
 
     view = MarketView.build(
         market_context=market_context,

@@ -1562,6 +1562,40 @@ def _normalize_consecutive_boards(raw) -> Dict:
     return {}
 
 
+def _extract_breadth_counts(
+    ctx: Dict, total_hint: int = 0,
+) -> Tuple[int, int]:
+    """Extract advance/decline counts from market_context when snapshot is missing.
+
+    Fallback chain:
+    1. Parse raw counts from breadth_risk_note (e.g. "505涨/4955跌")
+    2. Estimate from advance_decline_ratio + total
+    """
+    import re
+
+    # Try parsing from risk_note text
+    note = str(ctx.get("breadth_risk_note", ""))
+    m = re.search(r"(\d+)\s*涨\s*[/／]\s*(\d+)\s*跌", note)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+
+    # Fallback: ratio-based estimation
+    ratio = ctx.get("advance_decline_ratio")
+    if ratio is not None:
+        try:
+            ratio = float(ratio)
+        except (ValueError, TypeError):
+            return 0, 0
+        if ratio <= 0:
+            return 0, 0
+        total = total_hint or 5460  # A-share market default
+        adv = int(ratio / (1 + ratio) * total)
+        dec = total - adv
+        return adv, dec
+
+    return 0, 0
+
+
 @dataclass
 class MarketView:
     """Market-level view for /market page."""
@@ -1629,6 +1663,12 @@ class MarketView:
             limit_up = getattr(market_snapshot, "limit_up_count", 0)
             limit_down = getattr(market_snapshot, "limit_down_count", 0)
             index_data = getattr(market_snapshot, "index_data", {})
+
+        # Adaptive fallback: when snapshot breadth APIs failed, derive from
+        # market_context (LLM agents always extract real numbers)
+        if advance == 0 and decline == 0 and ctx:
+            total_hint = getattr(market_snapshot, "total_stocks", 0) if market_snapshot else 0
+            advance, decline = _extract_breadth_counts(ctx, total_hint)
 
         pcm = ctx.get("position_cap_multiplier", 1.0)
         if isinstance(pcm, str):

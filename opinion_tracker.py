@@ -420,9 +420,9 @@ def extract_snapshot(trace: RunTrace) -> DailySnapshot:
 
         # Scenario agent
         elif nt.node_name == "Scenario Agent":
-            snap.base_prob = float(sd.get("base_prob", 0.0))
-            snap.bull_prob = float(sd.get("bull_prob", 0.0))
-            snap.bear_prob = float(sd.get("bear_prob", 0.0))
+            snap.base_prob = _safe_float(sd.get("base_prob", 0.0))
+            snap.bull_prob = _safe_float(sd.get("bull_prob", 0.0))
+            snap.bear_prob = _safe_float(sd.get("bear_prob", 0.0))
 
         # Research Manager (PM)
         elif nt.node_name == "Research Manager":
@@ -576,11 +576,16 @@ def build_watchlist_report(
         # Normalize for manifest lookup
         bare = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
 
-        # Load all runs for this ticker (manifest stores bare ticker)
-        manifest_entries = store.list_runs(ticker=bare, limit=500)
-        # Also try with suffix
-        if not manifest_entries:
-            manifest_entries = store.list_runs(ticker=ticker, limit=500)
+        # Load all runs for this ticker — search bare AND suffixed forms
+        # then merge by run_id (manifest may have mixed formats)
+        seen_ids: set = set()
+        manifest_entries: list = []
+        for variant in {bare, ticker}:
+            for e in store.list_runs(ticker=variant, limit=500):
+                rid = e.get("run_id", "")
+                if rid and rid not in seen_ids:
+                    seen_ids.add(rid)
+                    manifest_entries.append(e)
 
         # Filter by date range and dedup (keep latest per date)
         by_date: Dict[str, str] = {}  # trade_date -> run_id (latest wins)
@@ -700,6 +705,21 @@ def _normalize_ticker(ticker: str) -> str:
             return f"{bare}.BJ"
         return f"{bare}.SZ"
     return ticker
+
+
+def _safe_float(val, default: float = 0.0) -> float:
+    """Convert to float, stripping '%' suffix if present."""
+    if isinstance(val, (int, float)):
+        return float(val)
+    try:
+        s = str(val).strip().rstrip("%")
+        v = float(s)
+        # If original had '%', treat as fraction
+        if str(val).strip().endswith("%"):
+            v /= 100.0
+        return v
+    except (ValueError, TypeError):
+        return default
 
 
 def _safe_int(val, default: int = -1) -> int:
