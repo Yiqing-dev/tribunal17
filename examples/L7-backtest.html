@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>回测验证报告</title>
+<style>
+:root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3;
+        --muted: #8b949e; --green: #3fb950; --red: #da3633; --yellow: #d29922; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif;
+       font-size: 14px; line-height: 1.6; }
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+h1 { font-size: 22px; margin-bottom: 8px; }
+h2 { font-size: 17px; margin: 24px 0 12px; color: var(--muted); }
+.summary-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+        padding: 16px; min-width: 140px; flex: 1; text-align: center; }
+.card-title { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.card-value { font-size: 24px; font-weight: 600; }
+.bt-table { width: 100%; border-collapse: collapse; background: var(--card);
+            border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.bt-table th { background: #1c2128; padding: 10px 12px; text-align: left;
+               font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
+.bt-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.bt-table tr:last-child td { border-bottom: none; }
+.bt-table tr:hover { background: #1c2128; }
+.buy { color: var(--green); }
+.sell { color: var(--red); }
+.hold { color: var(--yellow); }
+.footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border);
+          color: var(--muted); font-size: 12px; text-align: center; }
+</style></head>
+<body><div class="container">
+<h1>回测验证报告</h1>
+<div class="summary-row">
+<div class="card"><div class="card-title">总信号数</div><div class="card-value">48</div></div>
+<div class="card"><div class="card-title">已评估</div><div class="card-value">0</div></div>
+<div class="card"><div class="card-title">方向准确率</div><div class="card-value">—</div></div>
+<div class="card"><div class="card-title">胜率</div><div class="card-value">—</div></div>
+<div class="card"><div class="card-title">平均收益</div><div class="card-value">—</div></div>
+</div>
+<h2>个股统计</h2>
+<table class="bt-table"><thead><tr>
+<th>股票</th><th>信号数</th><th>方向准确率</th><th>胜率</th><th>平均收益</th></tr></thead><tbody>
+<tr><td>贝瑞基因</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>利欧股份</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>华测导航</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>华大基因</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>300750.SZ</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>600519.SS</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>山东药玻</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>601318.SS</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>中国核电</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>宿迁联盛</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>华大智造</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>东方生物</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>688981.SS</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>830799.SZ</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>三元生物</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+<tr><td>三态股份</td><td>0</td><td>0.0%</td><td>0.0%</td><td>+0.00%</td></tr>
+</tbody></table>
+<div class="footer">评估窗口: 10 交易日 | 中性区间: ±2.0% | 生成时间: 2026-03-19T09:46:01<br><em>AI 多智能体系统回测验证，仅供研究参考</em></div>
+</div></body></html>

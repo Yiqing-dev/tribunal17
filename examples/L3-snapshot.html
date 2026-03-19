@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>601985.SS 中国核电 研究快照 — 2026-03-19</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   Unified Theme v2 — Institutional Research Command Center
+   Tokens aligned with pool/market/debate reports
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  --bg: #06101a;
+  --fg: #dce9ef;
+  --card: rgba(10, 22, 34, 0.82);
+  --border: rgba(110, 148, 171, 0.22);
+  --green: #52d6a7;
+  --red: #ff7e6b;
+  --yellow: #f6c66d;
+  --blue: #69c8ff;
+  --muted: #91a8b8;
+  --white: #f5fbff;
+  --surface: rgba(18, 34, 49, 0.92);
+  --accent: #ffb16d;
+  --mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", -apple-system,
+               BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(246, 198, 109, 0.12), transparent 28%),
+    radial-gradient(circle at 85% 18%, rgba(105, 200, 255, 0.10), transparent 26%),
+    radial-gradient(circle at 50% 110%, rgba(82, 214, 167, 0.10), transparent 36%),
+    linear-gradient(180deg, #08131f 0%, #06101a 55%, #050d16 100%);
+  color: var(--fg); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+.container { max-width: 1060px; margin: 0 auto; padding: 2.2rem 1.5rem 4rem; }
+
+/* ── Typography ── */
+h1 {
+  color: var(--white); margin-bottom: .3rem;
+  font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 800; letter-spacing: -0.03em;
+}
+h2 {
+  color: var(--accent); margin: 2rem 0 1rem;
+  font-size: 1rem; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  border-bottom: none; padding-bottom: 0;
+}
+h3 {
+  color: var(--white); margin: .8rem 0 .5rem;
+  font-size: .92rem; font-weight: 700; letter-spacing: 0.02em;
+}
+.subtitle { color: var(--muted); margin-bottom: 1.2rem; font-size: .88rem; letter-spacing: 0.04em; }
+
+/* ── Banner ── */
+.banner {
+  background: rgba(246, 198, 109, 0.08);
+  border: 1px solid rgba(246, 198, 109, 0.25);
+  border-radius: 14px;
+  padding: .65rem 1rem; margin-bottom: 1.2rem;
+  color: var(--yellow); font-size: .82rem;
+}
+
+/* ── Glass Card ── */
+.card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(12, 23, 35, 0.94), rgba(8, 16, 25, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  padding: 1.25rem 1.3rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255,255,255,0.04);
+  backdrop-filter: blur(12px);
+  transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
+}
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255,255,255,0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Hero (Decision Cockpit) ── */
+.hero {
+  position: relative; overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(135deg, rgba(12, 29, 45, 0.96) 0%, rgba(12, 21, 31, 0.88) 45%, rgba(24, 34, 28, 0.9) 100%);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.26);
+  padding: 2rem;
+  margin-bottom: 1.2rem;
+}
+.hero::after {
+  content: ""; position: absolute;
+  inset: -20% auto auto 56%;
+  width: 340px; height: 340px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 177, 109, 0.14), transparent 64%);
+  pointer-events: none;
+}
+.hero-grid {
+  position: relative; z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.9fr);
+  gap: 1.2rem; align-items: start;
+}
+.hero-left {}
+.hero-right { display: grid; gap: .7rem; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: .5rem;
+  text-transform: uppercase; letter-spacing: .18em;
+  font-size: .72rem; color: var(--yellow); margin-bottom: .6rem;
+}
+.hero-action {
+  font-size: clamp(2.2rem, 4vw, 3.2rem);
+  font-weight: 800; line-height: 1; letter-spacing: -0.04em;
+  margin-bottom: .5rem;
+}
+.hero-summary {
+  color: #c9d8df; font-size: .95rem; line-height: 1.6;
+  max-width: 36rem; margin-bottom: .75rem;
+}
+
+/* ── KPI Panels ── */
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.kpi {
+  position: relative; overflow: hidden;
+  background: linear-gradient(180deg, rgba(10, 22, 34, 0.94), rgba(10, 18, 28, 0.88));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  padding: .9rem 1rem; text-align: center;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255,255,255,0.03);
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+.kpi:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.kpi::before {
+  content: ""; position: absolute; inset: 0 auto auto 0;
+  width: 100%; height: 3px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04));
+}
+.kpi-val {
+  display: block; font-size: 1.8rem; font-weight: 800;
+  font-family: var(--mono); color: var(--white); line-height: 1;
+}
+.kpi-label { display: block; font-size: .72rem; color: var(--muted); margin-top: .35rem; letter-spacing: .04em; }
+.kpi.buy .kpi-val { color: var(--green); }
+.kpi.buy::before { background: linear-gradient(90deg, transparent, rgba(82, 214, 167, 0.8), transparent); }
+.kpi.sell .kpi-val, .kpi.veto .kpi-val { color: var(--red); }
+.kpi.sell::before, .kpi.veto::before { background: linear-gradient(90deg, transparent, rgba(255, 126, 107, 0.8), transparent); }
+.kpi.hold .kpi-val { color: var(--yellow); }
+.kpi.hold::before { background: linear-gradient(90deg, transparent, rgba(246, 198, 109, 0.8), transparent); }
+
+/* ── Badges (pill) ── */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 3px 12px; border-radius: 999px;
+  font-size: .74rem; font-weight: 600;
+  backdrop-filter: blur(8px);
+}
+.badge-buy { background: rgba(82, 214, 167, 0.14); color: var(--green); }
+.badge-hold { background: rgba(246, 198, 109, 0.14); color: var(--yellow); }
+.badge-sell, .badge-veto { background: rgba(255, 126, 107, 0.14); color: var(--red); }
+.badge-high { background: rgba(255, 126, 107, 0.14); color: var(--red); }
+.badge-medium { background: rgba(246, 198, 109, 0.14); color: var(--yellow); }
+.badge-low { background: rgba(105, 200, 255, 0.12); color: var(--muted); }
+.badge-muted { background: rgba(255, 255, 255, 0.06); color: var(--muted); }
+.badge-ok, .badge-good { background: rgba(82, 214, 167, 0.14); color: var(--green); }
+.badge-warn, .badge-bad { background: rgba(255, 126, 107, 0.14); color: var(--red); }
+
+/* ── Status lights ── */
+.light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 6px currentColor; }
+.light-green { background: var(--green); color: var(--green); }
+.light-red { background: var(--red); color: var(--red); }
+.light-yellow { background: var(--yellow); color: var(--yellow); }
+.light-gray { background: var(--muted); color: var(--muted); }
+
+/* ── Bull/Bear bar ── */
+.bb-bar { display: flex; height: 24px; border-radius: 999px; overflow: hidden; margin: .5rem 0; background: rgba(255,255,255,0.04); }
+.bb-bull { background: linear-gradient(90deg, rgba(82, 214, 167, 0.85), rgba(82, 214, 167, 0.55)); }
+.bb-bear { background: linear-gradient(90deg, rgba(255, 126, 107, 0.55), rgba(255, 126, 107, 0.85)); }
+.bb-label { font-size: .75rem; color: var(--muted); display: flex; justify-content: space-between; }
+
+/* ── Probability bar ── */
+.prob-bar { display: flex; height: 32px; border-radius: 999px; overflow: hidden; margin: .5rem 0; background: rgba(255,255,255,0.04); }
+.prob-bar > div { display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 600; }
+
+/* ── Claim card grid ── */
+.claim-grid { display: grid; gap: .75rem; margin: .75rem 0; }
+.claim-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: .85rem 1rem; font-size: .85rem;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.claim-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.2); }
+.claim-card .dim { font-size: .7rem; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-bottom: .25rem; }
+.claim-card .conf-bar { height: 4px; background: rgba(255,255,255,0.06); border-radius: 999px; margin-top: .5rem; }
+.claim-card .conf-fill { height: 100%; border-radius: 999px; }
+.claim-card .ev-tags { margin-top: .3rem; font-size: .7rem; color: var(--muted); }
+
+/* ── Trade plan card ── */
+.tp-table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-bottom: .5rem; }
+.tp-table th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.08); padding: .45rem .4rem; font-size: .76rem; letter-spacing: .06em; text-transform: uppercase; }
+.tp-table td { padding: .45rem .4rem; border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 150ms ease; }
+.tp-table tr:hover td { background: rgba(255,255,255,0.02); }
+.tp-table .mono { font-family: var(--mono); }
+.tp-row { display: flex; align-items: center; gap: .6rem; padding: .35rem 0; font-size: .85rem; }
+.tp-label { font-weight: 600; min-width: 5em; }
+.tp-detail { color: var(--muted); font-size: .8rem; }
+.tp-section-title { font-size: .76rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; margin-bottom: .4rem; }
+.tp-inval-list { margin: .25rem 0 0 1.2rem; font-size: .82rem; color: var(--fg); }
+.tp-inval-list li { margin-bottom: .2rem; }
+.tp-stop { border-top: 1px solid rgba(255,255,255,0.06); margin-top: .35rem; padding-top: .5rem; }
+.tp-target { padding: .2rem 0; }
+.mono { font-family: var(--mono); }
+
+/* ── Trust signal cards ── */
+.trust-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: .8rem; margin: .75rem 0; }
+.trust-card {
+  position: relative; overflow: hidden;
+  background: linear-gradient(180deg, rgba(10, 22, 34, 0.94), rgba(10, 18, 28, 0.88));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  padding: 1rem; text-align: center;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.14);
+}
+.trust-card::before {
+  content: ""; position: absolute; inset: 0 auto auto 0;
+  width: 100%; height: 3px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04));
+}
+.trust-card .tv { font-size: 1.8rem; font-weight: 800; font-family: var(--mono); }
+.trust-card .tl { font-size: .75rem; color: var(--muted); margin-top: .3rem; }
+.trust-card .te { font-size: .7rem; color: var(--muted); margin-top: .2rem; }
+.trust-card.good .tv { color: var(--green); }
+.trust-card.good::before { background: linear-gradient(90deg, transparent, rgba(82, 214, 167, 0.8), transparent); }
+.trust-card.warn .tv { color: var(--yellow); }
+.trust-card.warn::before { background: linear-gradient(90deg, transparent, rgba(246, 198, 109, 0.8), transparent); }
+.trust-card.bad .tv { color: var(--red); }
+.trust-card.bad::before { background: linear-gradient(90deg, transparent, rgba(255, 126, 107, 0.8), transparent); }
+
+/* ── Tables ── */
+table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+th, td { padding: .55rem .75rem; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); }
+th { color: var(--muted); font-weight: 600; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; }
+tbody tr { transition: background 120ms ease; }
+tbody tr:hover { background: rgba(255,255,255,0.03); }
+
+/* Lists */
+ul, ol { padding-left: 1.5rem; margin-bottom: .75rem; }
+li { margin-bottom: .3rem; font-size: .9rem; }
+
+/* ── Excerpt box ── */
+.excerpt {
+  background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px;
+  padding: 1rem; font-size: .85rem; white-space: pre-wrap; word-wrap: break-word;
+  max-height: 300px; overflow-y: auto; margin: .5rem 0;
+}
+.excerpt-short { max-height: 150px; }
+
+/* ── Two-column layout ── */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+/* ── Callout ── */
+.callout {
+  background: rgba(246, 198, 109, 0.08); border-left: 4px solid var(--yellow); border-radius: 14px;
+  padding: .75rem 1rem; margin: 1rem 0; font-size: .88rem; color: var(--yellow);
+}
+
+/* ── Checklist ── */
+.checklist { display: grid; gap: .5rem; margin: .75rem 0; }
+.ck-item {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .55rem .8rem; border-radius: 14px;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  transition: transform 160ms ease;
+}
+.ck-item:hover { transform: translateX(4px); }
+.ck-emoji { font-size: 1.2rem; flex-shrink: 0; }
+.ck-pillar { font-weight: 600; min-width: 3em; }
+.ck-score { color: var(--muted); font-size: .82rem; font-family: var(--mono); margin-left: auto; white-space: nowrap; }
+.ck-label { font-size: .82rem; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Risk Debate Summary ── */
+.risk-debate-row { display: flex; gap: .75rem; flex-wrap: wrap; }
+.rd-col {
+  flex: 1; min-width: 140px;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 18px;
+  padding: .85rem; text-align: center;
+  transition: transform 160ms ease;
+}
+.rd-col:hover { transform: translateY(-2px); }
+.rd-stance { font-weight: 700; margin-bottom: .35rem; color: var(--white); }
+.rd-rec { font-size: 1rem; margin-bottom: .25rem; }
+.rd-pos { font-size: .85rem; color: var(--muted); font-family: var(--mono); }
+.rd-risk { font-size: .78rem; color: var(--muted); margin-top: .35rem; word-break: break-all; }
+
+/* ── Battle Plan ── */
+.battle-plan { border-left: none; }
+.battle-plan::before {
+  content: ""; position: absolute; inset: 0 auto auto 0;
+  width: 4px; height: 100%; border-radius: 20px 0 0 20px;
+  background: var(--green);
+}
+.battle-plan.sell-plan::before { background: var(--red); }
+.battle-plan.hold-plan::before { background: var(--yellow); }
+.bp-header { display: flex; align-items: center; gap: .6rem; margin-bottom: .75rem; flex-wrap: wrap; }
+.bp-side { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; }
+.bp-rationale { font-size: .88rem; color: var(--muted); margin-bottom: .75rem; line-height: 1.5; }
+.bp-gauge { height: 8px; background: rgba(255,255,255,0.06); border-radius: 999px; overflow: hidden; margin: .3rem 0; }
+.bp-gauge-fill { height: 100%; border-radius: 999px; }
+
+/* ── Signal History ── */
+.sig-hist-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.sig-hist-table td { padding: .45rem .5rem; border-bottom: 1px solid rgba(255,255,255,0.06); }
+
+/* ── Decision chain timeline ── */
+.timeline { border-left: 2px solid rgba(105, 200, 255, 0.3); margin-left: 10px; padding-left: 22px; }
+.timeline-item { position: relative; padding: .7rem 0; border-bottom: 1px dashed rgba(255,255,255,0.06); }
+.timeline-item:last-child { border-bottom: none; }
+.timeline-item::before {
+  content: ''; position: absolute; left: -27px; top: 1.1rem;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--blue); box-shadow: 0 0 8px rgba(105, 200, 255, 0.5);
+}
+.timeline-node { font-weight: 700; color: var(--white); min-width: 120px; display: inline-block; }
+.timeline-detail { font-size: .85rem; color: var(--muted); }
+
+/* ── Status Lights Bar ── */
+.status-bar {
+  display: flex; gap: 1.2rem; flex-wrap: wrap;
+  padding: .8rem 1rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 18px;
+  margin-bottom: 1rem;
+}
+
+/* ── Reveal Animations ── */
+.reveal { animation: card-rise 520ms ease both; }
+.reveal-d1 { animation-delay: 60ms; }
+.reveal-d2 { animation-delay: 120ms; }
+.reveal-d3 { animation-delay: 180ms; }
+.reveal-d4 { animation-delay: 240ms; }
+.reveal-d5 { animation-delay: 300ms; }
+.reveal-d6 { animation-delay: 360ms; }
+@keyframes card-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Footer ── */
+.footer {
+  margin-top: 2.5rem; color: var(--muted); font-size: .78rem;
+  border-top: 1px solid rgba(255,255,255,0.06); padding-top: 1rem;
+  letter-spacing: .04em; text-align: center;
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,0.01));
+  border-radius: 0 0 20px 20px; padding-bottom: 1rem;
+}
+
+/* ── Mobile ── */
+@media (max-width: 760px) {
+  .cols { grid-template-columns: 1fr; }
+  .container { padding: 1.25rem .75rem 2.5rem; }
+  .hero { border-radius: 18px; padding: 1.25rem; }
+  .hero-grid { grid-template-columns: 1fr; }
+  .hero-action { font-size: 2rem; }
+  h1 { font-size: 1.3rem; }
+  h2 { font-size: .95rem; margin: 1.2rem 0 .6rem; }
+  .kpi-row { grid-template-columns: repeat(2, 1fr); gap: .5rem; }
+  .kpi { padding: .7rem .5rem; }
+  .kpi-val { font-size: 1.4rem; }
+  .card { padding: 1rem; border-radius: 14px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .badge { min-height: 28px; }
+  .claim-grid { gap: .5rem; }
+  .claim-card { padding: .6rem .8rem; font-size: .82rem; border-radius: 10px; }
+  .trust-grid { grid-template-columns: repeat(2, 1fr); gap: .6rem; }
+  .trust-card { padding: .75rem; border-radius: 14px; }
+  .trust-card .tv { font-size: 1.5rem; }
+  th, td { padding: .4rem .5rem; font-size: .82rem; }
+  .excerpt { font-size: .82rem; max-height: 220px; border-radius: 10px; }
+  .timeline { padding-left: 16px; margin-left: 6px; }
+  .footer { font-size: .75rem; }
+  .rd-col { border-radius: 14px; }
+  .status-bar { gap: .8rem; }
+  .reveal { animation: none !important; }
+}
+@supports (padding: env(safe-area-inset-left)) {
+  @media (max-width: 760px) {
+    .container {
+      padding-left: max(.75rem, env(safe-area-inset-left));
+      padding-right: max(.75rem, env(safe-area-inset-right));
+      padding-bottom: max(2.5rem, env(safe-area-inset-bottom));
+    }
+  }
+}
+</style>
+
+</head>
+<body>
+<div class="container">
+
+    <h1>601985.SS 中国核电</h1>
+    <p class="subtitle">2026-03-19 &middot; 研究快照</p>
+    <div class="banner">本报告由 AI 多智能体系统自动生成，仅供研究参考，不构成投资建议。使用前请结合人工判断。</div>
+    
+    <div class="hero reveal">
+      <div class="hero-grid">
+        <div class="hero-left">
+          <div class="eyebrow">AI 研究快照 &middot; 2026-03-19</div>
+          <div class="hero-action" style="color:var(--yellow);">
+            🟡 维持观察
+          </div>
+          <div class="hero-summary">中国核电修正后归母P/CFO约7-10x处于行业合理偏低位置（综合判断Bull CLAIM1 vs </div>
+          <div style="font-size:.88rem;color:var(--muted);">当前信号不明确，建议持续跟踪关键变量变化</div>
+        </div>
+        <div class="hero-right">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;"><div class="kpi hold"><span class="kpi-val">62%</span><span class="kpi-label">置信度</span></div><div class="kpi"><span class="kpi-val">29</span><span class="kpi-label">证据条数</span></div><div class="kpi"><span class="kpi-val">100%</span><span class="kpi-label">绑定率</span></div><div class="kpi"><span class="kpi-val" style="font-size:1.2rem">强</span><span class="kpi-label">证据强度</span></div></div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="status-bar reveal reveal-d1">
+      <span><span class="light light-green"></span>风控: 通过</span><span><span class="light light-green"></span>合规: 通过</span><span><span class="light light-green"></span>数据: 新鲜</span><span><span class="light light-green"></span>否决: 无</span>
+    </div>
+    
+    <div class="card battle-plan ">
+      <h3>AI 作战计划</h3>
+      <div class="bp-header"><span class="bp-side">🟢 做多</span><span class="badge badge-hold">置信度 52%</span></div>
+      
+      
+      
+      
+      
+      
+        <div style="margin-top:.5rem;">
+          <div style="font-size:.8rem;color:var(--muted)">风险评分 2.0/10</div>
+          <div class="bp-gauge"><div class="bp-gauge-fill" style="width:20%;background:var(--green)"></div></div>
+        </div>
+    </div>
+    <div class="card reveal reveal-d2"><h3>基本面速览</h3><div class="kpi-row"><div class="kpi"><span class="kpi-val">23.20</span><span class="kpi-label">PE(TTM)</span></div><div class="kpi"><span class="kpi-val">1.58</span><span class="kpi-label">PB</span></div><div class="kpi"><span class="kpi-val">7.11</span><span class="kpi-label">ROE(%)</span></div><div class="kpi"><span class="kpi-val">43.98</span><span class="kpi-label">毛利率(%)</span></div><div class="kpi"><span class="kpi-val">0.39</span><span class="kpi-label">EPS</span></div></div></div>
+    <div class="cols">
+      <div><div class="card reveal reveal-d3"><h3>核心驱动</h3><ul><li>3月11日主力净流入3.08亿元/净占比13.70%属于机构级集中建仓信号，5日累计净流入5.66亿元确认资金面空翻多转变，不对称比率8.3:1方向明确</li><li>P/CFO是核电重资产高折旧企业的最优估值框架。中国核电年化P/CFO约4.8倍，远低于公用事业行业8-15倍历史区间，最悲观情景（P/CFO=6x）隐含股价11.67元（较当前+26.3%），基准情</li><li>主力资金&quot;脉冲建仓+缓步加仓&quot;模式（3.08亿→1.32亿→0.67亿递减）正是机构有计划分批建仓的标准节奏，不是资金退潮的信号。5日累计净流入5.66亿元，仅1日微幅净流出（-3,702万），流入不</li></ul></div></div>
+      <div><div class="card reveal reveal-d3"><h3>主要风险</h3><ul><li><span class="badge badge-sell">高</span> 年报业绩不确定性 — FY2025年报2-4周内披露，Q1-Q3归母净利同比-10.42%，Q4需25-32亿方达基准区间下限，方向不明</li><li><span class="badge badge-hold">中</span> 电价市场化结构性压力 — 营收+8.16%但净利润-10.42%剪刀差暴露成本压力，看多方两轮辩论未能实质性反驳</li></ul></div></div>
+    </div>
+    
+    <div class="card reveal reveal-d4">
+      <h3>证据强度</h3>
+      <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;margin-bottom:.5rem;">
+        <span class="badge badge-high">强</span>
+        <span style="font-size:.85rem;color:var(--muted);">29 条证据 &middot; 100% 论据-证据绑定率</span>
+      </div>
+      
+    <div class="bb-label"><span>看多 (13)</span><span>看空 (16)</span></div>
+    <div class="bb-bar">
+      <div class="bb-bull" style="width:44%"></div>
+      <div class="bb-bear" style="width:56%"></div>
+    </div>
+    </div>
+    
+    <div class="card">
+      <h3>分析维度核查</h3>
+      <div class="checklist"><div class="ck-item"><span class="ck-emoji">⚠️</span><span class="ck-pillar">技术面</span><span class="ck-label">分析日期：2026-03-19</span><span class="ck-score">1/2</span></div><div class="ck-item"><span class="ck-emoji">⚠️</span><span class="ck-pillar">基本面</span><span class="ck-label">分析师: 度支司（基本面分析官）</span><span class="ck-score">1/2</span></div><div class="ck-item"><span class="ck-emoji">⚠️</span><span class="ck-pillar">消息面</span><span class="ck-label">分析日期：2026-03-19 分析窗口：过去30天 投</span><span class="ck-score">1/2</span></div><div class="ck-item"><span class="ck-emoji">⚠️</span><span class="ck-pillar">情绪面</span><span class="ck-label">分析日期：2026-03-19 | 分析窗口：近30个交易日 |</span><span class="ck-score">1/2</span></div></div>
+    </div>
+    
+    <div class="card">
+      <h3>风控委员会</h3>
+      <div class="risk-debate-row"><div class="rd-col"><div class="rd-stance">激进派</div><div class="rd-rec badge badge-buy">BUY</div><div class="rd-pos">仓位 0.25%</div><div class="rd-risk">核心风险: 年报归母净利润若低于105亿且Q4环比未改善，将触发&quot;盈利下修+估值收缩&quot;双杀，叠加年线失守可能引发融资盘连锁止损的负向反身性循环，最大下行空间约-9.5%至8</div></div><div class="rd-col"><div class="rd-stance">保守派</div><div class="rd-rec badge badge-hold">HOLD</div><div class="rd-pos">仓位 0.1%</div><div class="rd-risk">核心风险: 年报结果不及预期（净利润&lt;105亿）叠加市场风格从RISK_OFF向RISK_ON切换，将导致防御板块资金系统性撤退，3月16日主力单日净流出2.59亿（-10</div></div><div class="rd-col"><div class="rd-stance">中性派</div><div class="rd-rec badge badge-hold">HOLD</div><div class="rd-pos">仓位 0.15%</div><div class="rd-risk">核心风险: 年报结果（2-4周内）是唯一的决定性变量，在此之前所有估值和盈利判断均为推算；3月16日市场风格向成长倾斜叠加主力单日净流出-10.3%，显示防御板块正面临轮动</div></div></div>
+    </div>
+    <div class="card reveal reveal-d5"><h3>近期催化剂</h3><ul><li>[2026年3月底至4月30日（法定截止日）] 2025年度年报披露：若归母净利润增速转正&gt;10%则业绩拐点确认，动态PE降至&lt;18.5倍，形成强正向催化；若继续同比下滑（三季报已-10.42%）则PE压缩，形成负向催化 <span class="badge badge-green">看多</span></li><li>[2026年Q1-Q2（具体时间不确定，依赖政策窗口）] 核电新机组核准/投产政策公告：国常会或发改委批准新核电项目，直接上修远期盈利预期，为第2大估值敏感变量 <span class="badge badge-green">看多</span></li><li>[2026-03-16至2026-03-27（关键验证窗口）] 年线（250日均线）突破有效性验证：2026-03-11已突破，当前处于3日确认中（需5-10个交易日），有效则多头格局确立，失效（连续2日收盘跌破9.00元）则结构逆转 <span class="badge badge-green">看多</span></li><li>[2026年3月下旬至4月中旬] 前高阻力区9.30-9.35放量突破决战：03-13盘中已触及9.30，距01-12阶段高点9.34仅0.4%，放量（&gt;400万手）突破则升级看多，受阻则短期整理 <span class="badge badge-green">看多</span></li></ul></div>
+    
+    <div class="card">
+      <h3>历史信号</h3>
+      <table class="sig-hist-table">
+        <tbody><tr><td>2026-03-18</td><td>🟡 维持观察</td></tr><tr><td>2026-03-18</td><td>🟡 维持观察</td></tr><tr><td>2026-03-12</td><td>🟢 建议关注</td></tr><tr><td>2026-03-18</td><td>🟢 建议关注</td></tr><tr><td>2026-03-16</td><td>🟡 维持观察</td></tr></tbody>
+      </table>
+    </div>
+<div class="footer">TradingAgents 研究快照 v0.2.0</div>
+</div>
+</body>
+</html>

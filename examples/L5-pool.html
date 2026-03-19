@@ -1,0 +1,2363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>多空分歧池 — 2026-03-19</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   Unified Theme v2 — Institutional Research Command Center
+   Tokens aligned with pool/market/debate reports
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  --bg: #06101a;
+  --fg: #dce9ef;
+  --card: rgba(10, 22, 34, 0.82);
+  --border: rgba(110, 148, 171, 0.22);
+  --green: #52d6a7;
+  --red: #ff7e6b;
+  --yellow: #f6c66d;
+  --blue: #69c8ff;
+  --muted: #91a8b8;
+  --white: #f5fbff;
+  --surface: rgba(18, 34, 49, 0.92);
+  --accent: #ffb16d;
+  --mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", -apple-system,
+               BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(246, 198, 109, 0.12), transparent 28%),
+    radial-gradient(circle at 85% 18%, rgba(105, 200, 255, 0.10), transparent 26%),
+    radial-gradient(circle at 50% 110%, rgba(82, 214, 167, 0.10), transparent 36%),
+    linear-gradient(180deg, #08131f 0%, #06101a 55%, #050d16 100%);
+  color: var(--fg); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+.container { max-width: 1060px; margin: 0 auto; padding: 2.2rem 1.5rem 4rem; }
+
+/* ── Typography ── */
+h1 {
+  color: var(--white); margin-bottom: .3rem;
+  font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 800; letter-spacing: -0.03em;
+}
+h2 {
+  color: var(--accent); margin: 2rem 0 1rem;
+  font-size: 1rem; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  border-bottom: none; padding-bottom: 0;
+}
+h3 {
+  color: var(--white); margin: .8rem 0 .5rem;
+  font-size: .92rem; font-weight: 700; letter-spacing: 0.02em;
+}
+.subtitle { color: var(--muted); margin-bottom: 1.2rem; font-size: .88rem; letter-spacing: 0.04em; }
+
+/* ── Banner ── */
+.banner {
+  background: rgba(246, 198, 109, 0.08);
+  border: 1px solid rgba(246, 198, 109, 0.25);
+  border-radius: 14px;
+  padding: .65rem 1rem; margin-bottom: 1.2rem;
+  color: var(--yellow); font-size: .82rem;
+}
+
+/* ── Glass Card ── */
+.card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(12, 23, 35, 0.94), rgba(8, 16, 25, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  padding: 1.25rem 1.3rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255,255,255,0.04);
+  backdrop-filter: blur(12px);
+  transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
+}
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255,255,255,0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Hero (Decision Cockpit) ── */
+.hero {
+  position: relative; overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(135deg, rgba(12, 29, 45, 0.96) 0%, rgba(12, 21, 31, 0.88) 45%, rgba(24, 34, 28, 0.9) 100%);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.26);
+  padding: 2rem;
+  margin-bottom: 1.2rem;
+}
+.hero::after {
+  content: ""; position: absolute;
+  inset: -20% auto auto 56%;
+  width: 340px; height: 340px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 177, 109, 0.14), transparent 64%);
+  pointer-events: none;
+}
+.hero-grid {
+  position: relative; z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.9fr);
+  gap: 1.2rem; align-items: start;
+}
+.hero-left {}
+.hero-right { display: grid; gap: .7rem; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: .5rem;
+  text-transform: uppercase; letter-spacing: .18em;
+  font-size: .72rem; color: var(--yellow); margin-bottom: .6rem;
+}
+.hero-action {
+  font-size: clamp(2.2rem, 4vw, 3.2rem);
+  font-weight: 800; line-height: 1; letter-spacing: -0.04em;
+  margin-bottom: .5rem;
+}
+.hero-summary {
+  color: #c9d8df; font-size: .95rem; line-height: 1.6;
+  max-width: 36rem; margin-bottom: .75rem;
+}
+
+/* ── KPI Panels ── */
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.kpi {
+  position: relative; overflow: hidden;
+  background: linear-gradient(180deg, rgba(10, 22, 34, 0.94), rgba(10, 18, 28, 0.88));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  padding: .9rem 1rem; text-align: center;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255,255,255,0.03);
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+.kpi:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.kpi::before {
+  content: ""; position: absolute; inset: 0 auto auto 0;
+  width: 100%; height: 3px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04));
+}
+.kpi-val {
+  display: block; font-size: 1.8rem; font-weight: 800;
+  font-family: var(--mono); color: var(--white); line-height: 1;
+}
+.kpi-label { display: block; font-size: .72rem; color: var(--muted); margin-top: .35rem; letter-spacing: .04em; }
+.kpi.buy .kpi-val { color: var(--green); }
+.kpi.buy::before { background: linear-gradient(90deg, transparent, rgba(82, 214, 167, 0.8), transparent); }
+.kpi.sell .kpi-val, .kpi.veto .kpi-val { color: var(--red); }
+.kpi.sell::before, .kpi.veto::before { background: linear-gradient(90deg, transparent, rgba(255, 126, 107, 0.8), transparent); }
+.kpi.hold .kpi-val { color: var(--yellow); }
+.kpi.hold::before { background: linear-gradient(90deg, transparent, rgba(246, 198, 109, 0.8), transparent); }
+
+/* ── Badges (pill) ── */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 3px 12px; border-radius: 999px;
+  font-size: .74rem; font-weight: 600;
+  backdrop-filter: blur(8px);
+}
+.badge-buy { background: rgba(82, 214, 167, 0.14); color: var(--green); }
+.badge-hold { background: rgba(246, 198, 109, 0.14); color: var(--yellow); }
+.badge-sell, .badge-veto { background: rgba(255, 126, 107, 0.14); color: var(--red); }
+.badge-high { background: rgba(255, 126, 107, 0.14); color: var(--red); }
+.badge-medium { background: rgba(246, 198, 109, 0.14); color: var(--yellow); }
+.badge-low { background: rgba(105, 200, 255, 0.12); color: var(--muted); }
+.badge-muted { background: rgba(255, 255, 255, 0.06); color: var(--muted); }
+.badge-ok, .badge-good { background: rgba(82, 214, 167, 0.14); color: var(--green); }
+.badge-warn, .badge-bad { background: rgba(255, 126, 107, 0.14); color: var(--red); }
+
+/* ── Status lights ── */
+.light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 6px currentColor; }
+.light-green { background: var(--green); color: var(--green); }
+.light-red { background: var(--red); color: var(--red); }
+.light-yellow { background: var(--yellow); color: var(--yellow); }
+.light-gray { background: var(--muted); color: var(--muted); }
+
+/* ── Bull/Bear bar ── */
+.bb-bar { display: flex; height: 24px; border-radius: 999px; overflow: hidden; margin: .5rem 0; background: rgba(255,255,255,0.04); }
+.bb-bull { background: linear-gradient(90deg, rgba(82, 214, 167, 0.85), rgba(82, 214, 167, 0.55)); }
+.bb-bear { background: linear-gradient(90deg, rgba(255, 126, 107, 0.55), rgba(255, 126, 107, 0.85)); }
+.bb-label { font-size: .75rem; color: var(--muted); display: flex; justify-content: space-between; }
+
+/* ── Probability bar ── */
+.prob-bar { display: flex; height: 32px; border-radius: 999px; overflow: hidden; margin: .5rem 0; background: rgba(255,255,255,0.04); }
+.prob-bar > div { display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 600; }
+
+/* ── Claim card grid ── */
+.claim-grid { display: grid; gap: .75rem; margin: .75rem 0; }
+.claim-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: .85rem 1rem; font-size: .85rem;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.claim-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.2); }
+.claim-card .dim { font-size: .7rem; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-bottom: .25rem; }
+.claim-card .conf-bar { height: 4px; background: rgba(255,255,255,0.06); border-radius: 999px; margin-top: .5rem; }
+.claim-card .conf-fill { height: 100%; border-radius: 999px; }
+.claim-card .ev-tags { margin-top: .3rem; font-size: .7rem; color: var(--muted); }
+
+/* ── Trade plan card ── */
+.tp-table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-bottom: .5rem; }
+.tp-table th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.08); padding: .45rem .4rem; font-size: .76rem; letter-spacing: .06em; text-transform: uppercase; }
+.tp-table td { padding: .45rem .4rem; border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 150ms ease; }
+.tp-table tr:hover td { background: rgba(255,255,255,0.02); }
+.tp-table .mono { font-family: var(--mono); }
+.tp-row { display: flex; align-items: center; gap: .6rem; padding: .35rem 0; font-size: .85rem; }
+.tp-label { font-weight: 600; min-width: 5em; }
+.tp-detail { color: var(--muted); font-size: .8rem; }
+.tp-section-title { font-size: .76rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; margin-bottom: .4rem; }
+.tp-inval-list { margin: .25rem 0 0 1.2rem; font-size: .82rem; color: var(--fg); }
+.tp-inval-list li { margin-bottom: .2rem; }
+.tp-stop { border-top: 1px solid rgba(255,255,255,0.06); margin-top: .35rem; padding-top: .5rem; }
+.tp-target { padding: .2rem 0; }
+.mono { font-family: var(--mono); }
+
+/* ── Trust signal cards ── */
+.trust-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: .8rem; margin: .75rem 0; }
+.trust-card {
+  position: relative; overflow: hidden;
+  background: linear-gradient(180deg, rgba(10, 22, 34, 0.94), rgba(10, 18, 28, 0.88));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  padding: 1rem; text-align: center;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.14);
+}
+.trust-card::before {
+  content: ""; position: absolute; inset: 0 auto auto 0;
+  width: 100%; height: 3px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04));
+}
+.trust-card .tv { font-size: 1.8rem; font-weight: 800; font-family: var(--mono); }
+.trust-card .tl { font-size: .75rem; color: var(--muted); margin-top: .3rem; }
+.trust-card .te { font-size: .7rem; color: var(--muted); margin-top: .2rem; }
+.trust-card.good .tv { color: var(--green); }
+.trust-card.good::before { background: linear-gradient(90deg, transparent, rgba(82, 214, 167, 0.8), transparent); }
+.trust-card.warn .tv { color: var(--yellow); }
+.trust-card.warn::before { background: linear-gradient(90deg, transparent, rgba(246, 198, 109, 0.8), transparent); }
+.trust-card.bad .tv { color: var(--red); }
+.trust-card.bad::before { background: linear-gradient(90deg, transparent, rgba(255, 126, 107, 0.8), transparent); }
+
+/* ── Tables ── */
+table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+th, td { padding: .55rem .75rem; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); }
+th { color: var(--muted); font-weight: 600; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; }
+tbody tr { transition: background 120ms ease; }
+tbody tr:hover { background: rgba(255,255,255,0.03); }
+
+/* Lists */
+ul, ol { padding-left: 1.5rem; margin-bottom: .75rem; }
+li { margin-bottom: .3rem; font-size: .9rem; }
+
+/* ── Excerpt box ── */
+.excerpt {
+  background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px;
+  padding: 1rem; font-size: .85rem; white-space: pre-wrap; word-wrap: break-word;
+  max-height: 300px; overflow-y: auto; margin: .5rem 0;
+}
+.excerpt-short { max-height: 150px; }
+
+/* ── Two-column layout ── */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+/* ── Callout ── */
+.callout {
+  background: rgba(246, 198, 109, 0.08); border-left: 4px solid var(--yellow); border-radius: 14px;
+  padding: .75rem 1rem; margin: 1rem 0; font-size: .88rem; color: var(--yellow);
+}
+
+/* ── Checklist ── */
+.checklist { display: grid; gap: .5rem; margin: .75rem 0; }
+.ck-item {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .55rem .8rem; border-radius: 14px;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  transition: transform 160ms ease;
+}
+.ck-item:hover { transform: translateX(4px); }
+.ck-emoji { font-size: 1.2rem; flex-shrink: 0; }
+.ck-pillar { font-weight: 600; min-width: 3em; }
+.ck-score { color: var(--muted); font-size: .82rem; font-family: var(--mono); margin-left: auto; white-space: nowrap; }
+.ck-label { font-size: .82rem; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Risk Debate Summary ── */
+.risk-debate-row { display: flex; gap: .75rem; flex-wrap: wrap; }
+.rd-col {
+  flex: 1; min-width: 140px;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 18px;
+  padding: .85rem; text-align: center;
+  transition: transform 160ms ease;
+}
+.rd-col:hover { transform: translateY(-2px); }
+.rd-stance { font-weight: 700; margin-bottom: .35rem; color: var(--white); }
+.rd-rec { font-size: 1rem; margin-bottom: .25rem; }
+.rd-pos { font-size: .85rem; color: var(--muted); font-family: var(--mono); }
+.rd-risk { font-size: .78rem; color: var(--muted); margin-top: .35rem; word-break: break-all; }
+
+/* ── Battle Plan ── */
+.battle-plan { border-left: none; }
+.battle-plan::before {
+  content: ""; position: absolute; inset: 0 auto auto 0;
+  width: 4px; height: 100%; border-radius: 20px 0 0 20px;
+  background: var(--green);
+}
+.battle-plan.sell-plan::before { background: var(--red); }
+.battle-plan.hold-plan::before { background: var(--yellow); }
+.bp-header { display: flex; align-items: center; gap: .6rem; margin-bottom: .75rem; flex-wrap: wrap; }
+.bp-side { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; }
+.bp-rationale { font-size: .88rem; color: var(--muted); margin-bottom: .75rem; line-height: 1.5; }
+.bp-gauge { height: 8px; background: rgba(255,255,255,0.06); border-radius: 999px; overflow: hidden; margin: .3rem 0; }
+.bp-gauge-fill { height: 100%; border-radius: 999px; }
+
+/* ── Signal History ── */
+.sig-hist-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.sig-hist-table td { padding: .45rem .5rem; border-bottom: 1px solid rgba(255,255,255,0.06); }
+
+/* ── Decision chain timeline ── */
+.timeline { border-left: 2px solid rgba(105, 200, 255, 0.3); margin-left: 10px; padding-left: 22px; }
+.timeline-item { position: relative; padding: .7rem 0; border-bottom: 1px dashed rgba(255,255,255,0.06); }
+.timeline-item:last-child { border-bottom: none; }
+.timeline-item::before {
+  content: ''; position: absolute; left: -27px; top: 1.1rem;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--blue); box-shadow: 0 0 8px rgba(105, 200, 255, 0.5);
+}
+.timeline-node { font-weight: 700; color: var(--white); min-width: 120px; display: inline-block; }
+.timeline-detail { font-size: .85rem; color: var(--muted); }
+
+/* ── Status Lights Bar ── */
+.status-bar {
+  display: flex; gap: 1.2rem; flex-wrap: wrap;
+  padding: .8rem 1rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 18px;
+  margin-bottom: 1rem;
+}
+
+/* ── Reveal Animations ── */
+.reveal { animation: card-rise 520ms ease both; }
+.reveal-d1 { animation-delay: 60ms; }
+.reveal-d2 { animation-delay: 120ms; }
+.reveal-d3 { animation-delay: 180ms; }
+.reveal-d4 { animation-delay: 240ms; }
+.reveal-d5 { animation-delay: 300ms; }
+.reveal-d6 { animation-delay: 360ms; }
+@keyframes card-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Footer ── */
+.footer {
+  margin-top: 2.5rem; color: var(--muted); font-size: .78rem;
+  border-top: 1px solid rgba(255,255,255,0.06); padding-top: 1rem;
+  letter-spacing: .04em; text-align: center;
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,0.01));
+  border-radius: 0 0 20px 20px; padding-bottom: 1rem;
+}
+
+/* ── Mobile ── */
+@media (max-width: 760px) {
+  .cols { grid-template-columns: 1fr; }
+  .container { padding: 1.25rem .75rem 2.5rem; }
+  .hero { border-radius: 18px; padding: 1.25rem; }
+  .hero-grid { grid-template-columns: 1fr; }
+  .hero-action { font-size: 2rem; }
+  h1 { font-size: 1.3rem; }
+  h2 { font-size: .95rem; margin: 1.2rem 0 .6rem; }
+  .kpi-row { grid-template-columns: repeat(2, 1fr); gap: .5rem; }
+  .kpi { padding: .7rem .5rem; }
+  .kpi-val { font-size: 1.4rem; }
+  .card { padding: 1rem; border-radius: 14px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .badge { min-height: 28px; }
+  .claim-grid { gap: .5rem; }
+  .claim-card { padding: .6rem .8rem; font-size: .82rem; border-radius: 10px; }
+  .trust-grid { grid-template-columns: repeat(2, 1fr); gap: .6rem; }
+  .trust-card { padding: .75rem; border-radius: 14px; }
+  .trust-card .tv { font-size: 1.5rem; }
+  th, td { padding: .4rem .5rem; font-size: .82rem; }
+  .excerpt { font-size: .82rem; max-height: 220px; border-radius: 10px; }
+  .timeline { padding-left: 16px; margin-left: 6px; }
+  .footer { font-size: .75rem; }
+  .rd-col { border-radius: 14px; }
+  .status-bar { gap: .8rem; }
+  .reveal { animation: none !important; }
+}
+@supports (padding: env(safe-area-inset-left)) {
+  @media (max-width: 760px) {
+    .container {
+      padding-left: max(.75rem, env(safe-area-inset-left));
+      padding-right: max(.75rem, env(safe-area-inset-right));
+      padding-bottom: max(2.5rem, env(safe-area-inset-bottom));
+    }
+  }
+}
+
+:root {
+  --bg: #06101a;
+  --fg: #dce9ef;
+  --card: rgba(10, 22, 34, 0.82);
+  --border: rgba(110, 148, 171, 0.22);
+  --green: #52d6a7;
+  --red: #ff7e6b;
+  --yellow: #f6c66d;
+  --blue: #69c8ff;
+  --muted: #91a8b8;
+  --surface: rgba(18, 34, 49, 0.92);
+  --accent: #ffb16d;
+}
+body {
+  background:
+    radial-gradient(circle at 12% 20%, rgba(246, 198, 109, 0.16), transparent 28%),
+    radial-gradient(circle at 88% 16%, rgba(105, 200, 255, 0.14), transparent 26%),
+    radial-gradient(circle at 50% 120%, rgba(82, 214, 167, 0.14), transparent 36%),
+    linear-gradient(180deg, #08131f 0%, #06101a 55%, #050d16 100%);
+}
+.container { max-width: 1360px; padding: 2.2rem 1.5rem 4rem; }
+.pool-shell { display: grid; gap: 1.25rem; }
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(135deg, rgba(12, 29, 45, 0.96) 0%, rgba(12, 21, 31, 0.88) 45%, rgba(24, 34, 28, 0.9) 100%);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.26);
+  padding: 2rem;
+}
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: -20% auto auto 56%;
+  width: 340px;
+  height: 340px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 177, 109, 0.16), transparent 64%);
+  pointer-events: none;
+}
+.hero-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.9fr);
+  gap: 1.2rem;
+  align-items: stretch;
+}
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+  color: var(--yellow);
+  margin-bottom: 0.9rem;
+}
+.hero h1 {
+  font-size: clamp(2.5rem, 4.4vw, 4rem);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  margin-bottom: 0.85rem;
+}
+.hero-copy {
+  max-width: 46rem;
+  color: #c9d8df;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+}
+.hero-chips, .anchor-nav, .spotlight-tags, .stock-badges, .risk-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+.hero-chip, .anchor-link, .spotlight-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+  font-size: 0.84rem;
+}
+.anchor-nav { margin-top: 1rem; }
+.anchor-link {
+  color: inherit;
+  text-decoration: none;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.anchor-link:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 177, 109, 0.45);
+  background: rgba(255, 177, 109, 0.08);
+}
+.hero-spotlights { display: grid; gap: 0.8rem; }
+.spotlight-card {
+  border-radius: 20px;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.025));
+  backdrop-filter: blur(16px);
+}
+.spotlight-card.buy { box-shadow: inset 0 0 0 1px rgba(82, 214, 167, 0.18); }
+.spotlight-card.hold { box-shadow: inset 0 0 0 1px rgba(246, 198, 109, 0.18); }
+.spotlight-card.sell, .spotlight-card.veto { box-shadow: inset 0 0 0 1px rgba(255, 126, 107, 0.18); }
+.spotlight-label {
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
+}
+.spotlight-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.45rem;
+}
+.spotlight-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #f5fbff;
+}
+.spotlight-score {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+.spotlight-copy {
+  color: #bdd0da;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+.kpi-deck {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.95rem;
+}
+.kpi-panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  padding: 1.1rem 1.15rem;
+  background: linear-gradient(180deg, rgba(10, 22, 34, 0.94), rgba(10, 18, 28, 0.88));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.16);
+}
+.kpi-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.04));
+}
+.kpi-panel.buy::before { background: linear-gradient(90deg, transparent, rgba(82, 214, 167, 0.9), transparent); }
+.kpi-panel.sell::before, .kpi-panel.veto::before { background: linear-gradient(90deg, transparent, rgba(255, 126, 107, 0.9), transparent); }
+.kpi-panel.hold::before { background: linear-gradient(90deg, transparent, rgba(246, 198, 109, 0.9), transparent); }
+.kpi-panel.neutral::before { background: linear-gradient(90deg, transparent, rgba(105, 200, 255, 0.9), transparent); }
+.kpi-value {
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 0.3rem;
+}
+.kpi-title {
+  color: #f4fbff;
+  font-size: 0.9rem;
+  margin-bottom: 0.22rem;
+}
+.kpi-note {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.section-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 1rem;
+}
+.insight-card, .board-card, .method-card {
+  background: linear-gradient(180deg, rgba(12, 23, 35, 0.94), rgba(8, 16, 25, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 24px;
+  padding: 1.2rem;
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.18);
+}
+.insight-card { min-height: 100%; }
+.insight-card.span-4 { grid-column: span 4; }
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.section-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #f5fbff;
+}
+.section-copy {
+  color: var(--muted);
+  font-size: 0.82rem;
+  max-width: 34rem;
+}
+.pool-summary { display: grid; gap: 0.65rem; }
+.pool-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  font-size: 0.88rem;
+}
+.pool-stat-row .num {
+  width: 2.8rem;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+.mix-track {
+  flex: 1;
+  height: 0.8rem;
+  display: flex;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.mix-seg { height: 100%; }
+.mix-seg.buy { background: linear-gradient(90deg, rgba(82, 214, 167, 0.92), rgba(82, 214, 167, 0.58)); }
+.mix-seg.hold { background: linear-gradient(90deg, rgba(246, 198, 109, 0.92), rgba(246, 198, 109, 0.6)); }
+.mix-seg.sell, .mix-seg.veto { background: linear-gradient(90deg, rgba(255, 126, 107, 0.92), rgba(255, 126, 107, 0.58)); }
+.mix-legend, .risk-list, .method-list { display: grid; gap: 0.7rem; }
+.legend-item, .risk-row, .method-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.85rem;
+}
+.legend-dot {
+  width: 0.68rem;
+  height: 0.68rem;
+  border-radius: 50%;
+}
+.legend-dot.buy { background: var(--green); }
+.legend-dot.hold { background: var(--yellow); }
+.legend-dot.sell, .legend-dot.veto { background: var(--red); }
+.conviction-wrap { display: grid; gap: 0.75rem; }
+.chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+}
+.risk-row { grid-template-columns: minmax(0, 120px) 1fr auto; }
+.risk-bar {
+  height: 0.7rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+.risk-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(255, 126, 107, 0.92), rgba(246, 198, 109, 0.74));
+}
+.priority-table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+}
+.priority-table th {
+  font-size: 0.77rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.priority-table td {
+  padding: 0.9rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  vertical-align: middle;
+}
+.priority-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.rank-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.06);
+}
+.score-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.58rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+}
+.stock-grid { display: grid; gap: 1rem; }
+.stock-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  padding: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(180deg, rgba(13, 24, 36, 0.95), rgba(8, 15, 24, 0.92)),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.02), transparent 55%);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.2);
+}
+.stock-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.04));
+}
+.stock-card.buy::before { background: linear-gradient(90deg, transparent, rgba(82, 214, 167, 0.92), transparent); }
+.stock-card.hold::before { background: linear-gradient(90deg, transparent, rgba(246, 198, 109, 0.92), transparent); }
+.stock-card.sell::before, .stock-card.veto::before { background: linear-gradient(90deg, transparent, rgba(255, 126, 107, 0.92), transparent); }
+.stock-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.stock-kicker {
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 0.2rem;
+}
+.stock-name {
+  font-size: 1.32rem;
+  font-weight: 800;
+  color: #f6fbff;
+}
+.stock-sub {
+  color: var(--muted);
+  margin-top: 0.24rem;
+  font-size: 0.84rem;
+}
+.stock-side { text-align: right; }
+.stock-verdict {
+  font-size: 1.16rem;
+  font-weight: 800;
+}
+.stock-confidence {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.stock-badges { margin-top: 0.85rem; }
+.risk-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.36rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg);
+}
+.risk-tag.high, .risk-tag.critical { background: rgba(255, 126, 107, 0.12); color: #ffd2ca; }
+.risk-tag.medium { background: rgba(246, 198, 109, 0.12); color: #ffe4b2; }
+.risk-tag.low { background: rgba(105, 200, 255, 0.1); color: #d2efff; }
+.signal-card {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.signal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 0.55rem;
+}
+.signal-meter {
+  display: flex;
+  height: 0.9rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.signal-bull { background: linear-gradient(90deg, rgba(82, 214, 167, 0.94), rgba(82, 214, 167, 0.62)); }
+.signal-bear { background: linear-gradient(90deg, rgba(255, 126, 107, 0.82), rgba(255, 126, 107, 0.56)); }
+.signal-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+  margin-top: 0.45rem;
+}
+.stock-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(220px, 0.8fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.claim-panel, .metric-panel {
+  border-radius: 20px;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.03);
+}
+.claim-panel h4, .metric-panel h4 {
+  font-size: 0.82rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.75rem;
+}
+.claim-panel.bull h4 { color: var(--green); }
+.claim-panel.bear h4 { color: var(--red); }
+.claim-stack { display: grid; gap: 0.75rem; }
+.claim-item {
+  border-radius: 16px;
+  padding: 0.8rem 0.88rem;
+  background: rgba(5, 12, 19, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 0.86rem;
+  line-height: 1.58;
+}
+.claim-panel.bull .claim-item { border-left: 3px solid rgba(82, 214, 167, 0.8); }
+.claim-panel.bear .claim-item { border-left: 3px solid rgba(255, 126, 107, 0.8); }
+.claim-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.45rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.metric-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 0.75rem;
+}
+.metric-table td {
+  padding: 0.46rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.84rem;
+}
+.metric-table td:last-child {
+  text-align: right;
+  color: #f2f8fb;
+  font-weight: 600;
+}
+.mini-note {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+.method-list { margin-top: 0.2rem; }
+.method-item {
+  grid-template-columns: auto 1fr;
+  align-items: flex-start;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.method-item:last-child { border-bottom: none; padding-bottom: 0; }
+.method-index {
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 177, 109, 0.12);
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.reveal { animation: pool-rise 520ms ease both; }
+.reveal-delay-1 { animation-delay: 60ms; }
+.reveal-delay-2 { animation-delay: 110ms; }
+.reveal-delay-3 { animation-delay: 160ms; }
+@keyframes pool-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 1120px) {
+  .hero-grid, .stock-body, .kpi-deck { grid-template-columns: 1fr 1fr; }
+  .insight-card.span-4 { grid-column: span 6; }
+  .stock-body { grid-template-columns: 1fr 1fr; }
+  .metric-panel { grid-column: span 2; }
+}
+@media (max-width: 760px) {
+  .container { padding: 1rem .75rem 2.5rem; }
+  .hero, .insight-card, .board-card, .stock-card, .method-card { border-radius: 16px; }
+  .hero { padding: 1.25rem; }
+  .hero-grid, .kpi-deck, .stock-body { grid-template-columns: 1fr; }
+  .insight-card.span-4 { grid-column: span 12; }
+  .stock-top, .section-head { flex-direction: column; gap: .5rem; }
+  .stock-side { text-align: left; }
+  .priority-table { font-size: 0.82rem; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .kpi-deck { gap: .5rem; }
+  .stock-card { padding: 1rem; }
+  .stock-body { gap: .6rem; }
+  .metric-panel { grid-column: span 1; }
+  .board-card { padding: 1rem; }
+  .insight-card { padding: 1rem; }
+}
+@supports (padding: env(safe-area-inset-left)) {
+  @media (max-width: 760px) {
+    .container {
+      padding-left: max(.75rem, env(safe-area-inset-left));
+      padding-right: max(.75rem, env(safe-area-inset-right));
+      padding-bottom: max(2.5rem, env(safe-area-inset-bottom));
+    }
+  }
+}
+/* ── Cover Page ─────────────────────────────────────────────── */
+.cover-page {
+  margin: -2.2rem -1.5rem 1.5rem;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  border-radius: 0 0 32px 32px;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(255, 177, 109, 0.12), transparent 42%),
+    radial-gradient(circle at 20% 80%, rgba(82, 214, 167, 0.08), transparent 30%),
+    radial-gradient(circle at 80% 70%, rgba(105, 200, 255, 0.08), transparent 30%),
+    linear-gradient(180deg, #0a1520 0%, #06101a 100%);
+}
+.cover-page::before {
+  content: "";
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+}
+.cover-page::after {
+  content: "";
+  position: absolute;
+  top: 14%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 700px;
+  height: 700px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.025);
+  pointer-events: none;
+}
+.cover-content {
+  position: relative;
+  z-index: 1;
+  max-width: 640px;
+}
+.cover-logo { margin-bottom: 2rem; }
+.cover-title {
+  font-size: clamp(3rem, 6vw, 5rem);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: #f6fbff;
+  margin-bottom: 0.6rem;
+}
+.cover-subtitle {
+  font-size: 1rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 2rem;
+}
+.cover-date {
+  font-size: 1.1rem;
+  color: var(--fg);
+  margin-bottom: 0.5rem;
+}
+.cover-meta {
+  font-size: 0.88rem;
+  color: var(--muted);
+  margin-bottom: 3rem;
+}
+.cover-disclaimer {
+  font-size: 0.76rem;
+  color: var(--muted);
+  opacity: 0.7;
+  max-width: 420px;
+  margin: 0 auto;
+  line-height: 1.55;
+}
+/* ── Brand Mark ─────────────────────────────────────────────── */
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.brand-mark svg { flex-shrink: 0; }
+/* ── Brand Footer ───────────────────────────────────────────── */
+.brand-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.5rem 0.5rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 0.5rem;
+}
+.brand-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.brand-footer-right {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-align: right;
+  opacity: 0.7;
+}
+/* ── Sparkline ──────────────────────────────────────────────── */
+.sparkline-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+  margin-top: 0.35rem;
+}
+.sparkline { display: block; }
+.sparkline-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+/* ── Filter Bar ─────────────────────────────────────────────── */
+.filter-bar {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.8rem 1rem;
+  border-radius: 18px;
+  background: rgba(8, 16, 26, 0.92);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+.filter-bar .filter-label {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-right: 0.2rem;
+  white-space: nowrap;
+}
+.filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.filter-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.filter-btn.active {
+  background: rgba(255, 177, 109, 0.14);
+  border-color: rgba(255, 177, 109, 0.4);
+  color: var(--accent);
+}
+.filter-btn .f-count {
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+.filter-status {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+/* ── Print / Export ─────────────────────────────────────────── */
+@media print {
+  @page { size: A3 landscape; margin: 12mm; }
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .cover-page { page-break-after: always; min-height: 100vh; }
+  .anchor-nav, .filter-bar { display: none !important; }
+  .stock-card { page-break-inside: avoid; break-inside: avoid; }
+  .board-card { page-break-before: always; }
+  .insight-card { page-break-inside: avoid; break-inside: avoid; }
+  .reveal {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+/* ── Market Command Center ── */
+.mkt-shell {
+  position: relative; z-index: 1; max-width: 1360px; margin: 0 auto;
+  padding: 1.5rem; display: grid; gap: 1.25rem;
+}
+.mkt-glass {
+  background: rgba(10, 22, 34, 0.82);
+  border: 1px solid rgba(110, 148, 171, 0.22);
+  border-radius: 14px; padding: 1.25rem;
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
+}
+.mkt-glass:hover {
+  transform: translateY(-1px);
+  border-color: rgba(110, 148, 171, 0.32);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.mkt-glass.glow-gold  { box-shadow: 0 0 24px rgba(255,177,109,.12), inset 0 1px 0 rgba(255,177,109,.06); }
+.mkt-glass.glow-green { box-shadow: 0 0 20px rgba(82,214,167,.12), inset 0 1px 0 rgba(82,214,167,.06); }
+.mkt-glass.glow-red   { box-shadow: 0 0 20px rgba(255,126,107,.12), inset 0 1px 0 rgba(255,126,107,.06); }
+.mkt-glass.glow-blue  { box-shadow: 0 0 20px rgba(105,200,255,.12), inset 0 1px 0 rgba(105,200,255,.06); }
+.mono { font-family: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Consolas, monospace; }
+
+/* ── 1. Hero ── */
+.mkt-hero {
+  position: relative; overflow: hidden; border-radius: 24px;
+  background: linear-gradient(135deg, rgba(10,18,32,.96), rgba(14,28,46,.92));
+  border: 1px solid rgba(105,200,255,.1);
+  padding: 2.2rem 2.4rem;
+  box-shadow: 0 16px 48px rgba(0,0,0,.3);
+}
+.mkt-hero::after {
+  content: ""; position: absolute;
+  width: 360px; height: 360px; border-radius: 50%;
+  top: -30%; right: -6%;
+  background: radial-gradient(circle, rgba(255,177,109,.12), transparent 60%);
+  pointer-events: none;
+}
+.mkt-hero::before {
+  content: ""; position: absolute;
+  width: 240px; height: 240px; border-radius: 50%;
+  bottom: -20%; left: 10%;
+  background: radial-gradient(circle, rgba(82,214,167,.08), transparent 60%);
+  pointer-events: none;
+}
+.mkt-hero-inner { position: relative; z-index: 1; }
+.mkt-hero-top {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 2rem; flex-wrap: wrap;
+}
+.mkt-hero-left { flex: 1; min-width: 300px; }
+.mkt-hero-eyebrow {
+  text-transform: uppercase; letter-spacing: .18em;
+  font-size: .72rem; color: var(--blue); margin-bottom: .6rem;
+}
+.mkt-hero h1 {
+  font-size: clamp(1.8rem, 3.5vw, 2.6rem);
+  letter-spacing: -.03em; line-height: 1.15; margin-bottom: .6rem;
+  background: linear-gradient(135deg, #fff 30%, var(--accent));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.mkt-hero-verdict { font-size: 1rem; color: #9ab; line-height: 1.7; margin-bottom: .8rem; max-width: 600px; }
+.mkt-hero-chips { display: flex; flex-wrap: wrap; gap: .5rem; }
+.mkt-hero-chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .3rem .75rem; border-radius: 20px;
+  font-size: .78rem; font-weight: 600;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+}
+.mkt-hero-chip.up   { color: var(--green); border-color: rgba(82,214,167,.25); }
+.mkt-hero-chip.down { color: var(--red);   border-color: rgba(255,126,107,.25); }
+.mkt-hero-chip.neu  { color: var(--yellow); border-color: rgba(246,198,109,.25); }
+.mkt-hero-kpi {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: .6rem; min-width: 340px;
+}
+.mkt-kpi {
+  text-align: center; padding: .7rem .5rem;
+  background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 10px; transition: border-color .2s;
+}
+.mkt-kpi:hover { border-color: rgba(105,200,255,.2); }
+.mkt-kpi .val {
+  font-size: 1.4rem; font-weight: 700;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+.mkt-kpi .val.up   { color: var(--green); }
+.mkt-kpi .val.down { color: var(--red); }
+.mkt-kpi .val.neu  { color: var(--yellow); }
+.mkt-kpi .val.gold { color: var(--accent); }
+.mkt-kpi .lab { font-size: .7rem; color: var(--muted); margin-top: .15rem; }
+
+/* Section head */
+.mkt-sec-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .8rem; }
+.mkt-sec-title {
+  font-size: 1.1rem; font-weight: 700;
+  background: linear-gradient(90deg, var(--blue), var(--green));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.mkt-sec-sub { color: var(--muted); font-size: .78rem; }
+
+/* ── 2. Index Battle Cards ── */
+.idx-battle-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .8rem;
+}
+.idx-battle-card { position: relative; overflow: hidden; padding: .9rem 1rem; }
+.idx-battle-card .idx-name { font-size: .82rem; color: var(--muted); margin-bottom: .3rem; }
+.idx-battle-card .idx-close {
+  font-size: 1.4rem; font-weight: 700; font-family: "JetBrains Mono", monospace;
+}
+.idx-battle-card .idx-pct {
+  font-size: .95rem; font-weight: 600; font-family: "JetBrains Mono", monospace; margin-top: .15rem;
+}
+.idx-battle-card .idx-pct.up { color: var(--green); }
+.idx-battle-card .idx-pct.down { color: var(--red); }
+.idx-battle-card .idx-pct.flat { color: var(--muted); }
+.idx-battle-card .idx-bar {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 3px; border-radius: 0 0 14px 14px;
+}
+.idx-battle-card .idx-tag {
+  display: inline-block; margin-top: .4rem;
+  font-size: .68rem; padding: .15rem .45rem; border-radius: 4px;
+  background: rgba(255,255,255,.04); color: var(--muted);
+}
+.idx-battle-card .idx-tag.strong { background: rgba(82,214,167,.1); color: var(--green); }
+.idx-battle-card .idx-tag.weak { background: rgba(255,126,107,.1); color: var(--red); }
+
+/* ── 3. Breadth & Sentiment ── */
+.sentiment-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.breadth-dual-bar {
+  display: flex; height: 36px; border-radius: 6px; overflow: hidden;
+  margin: .6rem 0; position: relative;
+}
+.breadth-dual-bar .bar-up { background: linear-gradient(90deg, rgba(82,214,167,.6), var(--green)); }
+.breadth-dual-bar .bar-dn { background: linear-gradient(90deg, var(--red), rgba(255,126,107,.6)); }
+.breadth-dual-bar .bar-label {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  font-size: .78rem; font-weight: 600; color: #fff;
+  font-family: "JetBrains Mono", monospace;
+}
+.breadth-dual-bar .bar-label.left { left: .6rem; }
+.breadth-dual-bar .bar-label.right { right: .6rem; }
+.breadth-stats { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-top: .6rem; }
+.breadth-stat { text-align: center; padding: .4rem; border-radius: 6px; background: rgba(255,255,255,.02); }
+.breadth-stat .bs-val { font-size: 1.1rem; font-weight: 700; font-family: "JetBrains Mono", monospace; }
+.breadth-stat .bs-lab { font-size: .7rem; color: var(--muted); }
+.thermo-track {
+  height: 16px; border-radius: 8px; position: relative;
+  background: linear-gradient(90deg, var(--green), var(--yellow), var(--red));
+  margin: .8rem 0 .5rem;
+}
+.thermo-needle {
+  position: absolute; top: -4px; width: 3px; height: 24px;
+  background: #fff; border-radius: 2px; box-shadow: 0 0 6px rgba(255,255,255,.5);
+  transform: translateX(-50%);
+}
+.thermo-labels { display: flex; justify-content: space-between; font-size: .7rem; color: var(--muted); }
+.alert-strip {
+  margin-top: .8rem; padding: .5rem .8rem; border-radius: 6px;
+  background: rgba(255,126,107,.06); border: 1px solid rgba(255,126,107,.15);
+  font-size: .82rem; color: var(--red); line-height: 1.6;
+}
+
+/* ── 4. Sector Engine ── */
+.sector-engine-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
+.sector-hm-wrap { max-width: 100%; }
+.shm-node { cursor: default; }
+.shm-node text { pointer-events: none; font-family: "JetBrains Mono", monospace; }
+.sector-sidebar { display: grid; gap: .8rem; align-content: start; }
+.sector-list-title { font-size: .85rem; font-weight: 600; margin-bottom: .5rem; display: flex; align-items: center; gap: .4rem; }
+.sector-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: .3rem .4rem; border-bottom: 1px solid rgba(255,255,255,.04); font-size: .82rem;
+  border-radius: 6px; transition: background 150ms ease;
+}
+.sector-item:hover { background: rgba(255,255,255,.02); }
+.sector-item .si-name { flex: 1; }
+.sector-item .si-flow { font-size: .75rem; font-family: monospace; color: var(--muted); }
+.sector-item .si-pct { font-family: monospace; font-weight: 600; min-width: 55px; text-align: right; }
+.sector-item .si-pct.up { color: var(--green); }
+.sector-item .si-pct.dn { color: var(--red); }
+.rotation-phase-badge {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .3rem .6rem; border-radius: 6px;
+  font-size: .78rem; font-weight: 600;
+  background: rgba(105,200,255,.08); color: var(--blue);
+  border: 1px solid rgba(105,200,255,.15);
+}
+.sector-attr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .6rem; }
+.sector-attr-card { padding: .6rem .8rem; }
+.sector-attr-name { font-weight: 600; font-size: .85rem; margin-bottom: .2rem; }
+.sector-attr-count { font-size: .72rem; color: var(--muted); }
+.sector-attr-bar { height: 3px; border-radius: 2px; background: var(--green); margin-top: .3rem; opacity: .7; }
+.sector-attr-stocks { font-size: .7rem; color: var(--muted); margin-top: .2rem; line-height: 1.4; }
+
+/* ── 5. Limit Universe ── */
+.limit-universe-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.limit-col-header { display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem; }
+.limit-col-header .lch-count { font-size: 1.6rem; font-weight: 700; font-family: "JetBrains Mono", monospace; }
+.limit-col-header .lch-count.up { color: var(--green); }
+.limit-col-header .lch-count.dn { color: var(--red); }
+.limit-col-header .lch-label { font-size: .85rem; color: var(--muted); }
+.limit-stock-row {
+  display: flex; align-items: center; gap: .4rem;
+  padding: .35rem .4rem; border-bottom: 1px solid rgba(255,255,255,.04); font-size: .82rem;
+  border-radius: 6px; transition: background 150ms ease;
+}
+.limit-stock-row:hover { background: rgba(255,255,255,.02);
+}
+.limit-stock-row .ls-name { flex: 1; font-weight: 500; }
+.limit-stock-row .ls-sector {
+  font-size: .7rem; padding: .1rem .4rem; border-radius: 4px;
+  background: rgba(105,200,255,.06); color: var(--blue);
+}
+.limit-stock-row .ls-boards {
+  font-size: .7rem; padding: .1rem .35rem; border-radius: 4px; font-weight: 700; font-family: monospace;
+}
+.limit-stock-row .ls-boards.hot { background: rgba(255,177,109,.12); color: var(--accent); }
+.limit-stock-row .ls-boards.normal { background: rgba(82,214,167,.1); color: var(--green); }
+.limit-stock-row .ls-seal { font-size: .75rem; color: var(--muted); font-family: monospace; min-width: 48px; text-align: right; }
+.limit-stock-row .ls-pct { font-size: .78rem; font-family: monospace; font-weight: 600; min-width: 52px; text-align: right; }
+.limit-stock-row .ls-pct.up { color: var(--green); }
+.limit-stock-row .ls-pct.dn { color: var(--red); }
+.consec-ladder { display: flex; gap: .5rem; align-items: flex-end; margin: .8rem 0; }
+.consec-ladder-wrap { position: relative; }
+
+/* ── 6. Battle Brief ── */
+.battle-brief-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.brief-block { padding: .8rem 1rem; }
+.brief-block-title { font-size: .82rem; font-weight: 600; margin-bottom: .4rem; display: flex; align-items: center; gap: .3rem; }
+.brief-block-body { font-size: .85rem; line-height: 1.7; color: #9ab; }
+.brief-block-body ul { list-style: none; padding: 0; }
+.brief-block-body li { padding: .2rem 0; }
+.brief-block-body li::before { content: "\203A"; color: var(--blue); margin-right: .4rem; font-weight: 700; }
+
+/* ── Risk banner ── */
+.mkt-risk-banner {
+  background: rgba(255,126,107,.06); border: 1px solid rgba(255,126,107,.15);
+  border-left: 4px solid var(--red); border-radius: 8px;
+  padding: .6rem 1rem; font-size: .82rem; color: var(--red); line-height: 1.6;
+}
+
+/* ── Reused heatmap/drawer/regime ── */
+.regime-badge { padding: .25rem .6rem; border-radius: 4px; font-weight: 600; font-size: .85rem; }
+.regime-badge.buy { background: rgba(82,214,167,.15); color: var(--green); }
+.regime-badge.hold { background: rgba(246,198,109,.15); color: var(--yellow); }
+.regime-badge.sell { background: rgba(255,126,107,.15); color: var(--red); }
+.heatmap-section { margin: 1.2rem 0; }
+.heatmap-wrap { max-width: 960px; margin: 0 auto; }
+.hm-node { cursor: pointer; transition: opacity .15s; }
+.hm-node:hover { opacity: .85; }
+.hm-node text { pointer-events: none; }
+.hm-legend { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; font-size: .78rem; color: var(--muted); padding: .4rem 0 .6rem; }
+.hm-leg-item { display: flex; align-items: center; gap: .3rem; }
+.hm-leg-dot { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.hm-leg-note { font-style: italic; opacity: .7; }
+.hm-mobile-list { display: none; }
+.drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 998; display: none; }
+.drawer-overlay.open { display: block; }
+.detail-drawer { position: fixed; right: 0; top: 0; width: 420px; height: 100vh;
+  background: var(--card); border-left: 1px solid var(--border); z-index: 999;
+  transform: translateX(100%); transition: transform .25s ease;
+  overflow-y: auto; padding: 1.2rem; }
+.detail-drawer.open { transform: translateX(0); }
+.drawer-close { position: absolute; top: .8rem; right: .8rem; background: none; border: none;
+  color: var(--muted); font-size: 1.5rem; cursor: pointer; }
+.drawer-header { display: flex; align-items: center; gap: .8rem; margin-bottom: 1rem; padding-right: 2rem; }
+.drawer-header h3 { font-size: 1.1rem; }
+.drawer-kpi { display: flex; gap: 1rem; margin-bottom: 1rem; }
+.drawer-kpi .kpi { background: var(--surface); padding: .5rem .8rem; border-radius: 6px; flex: 1; text-align: center; }
+.drawer-kpi .kpi-val { font-size: 1.2rem; font-weight: 700; }
+.drawer-kpi .kpi-lab { font-size: .75rem; color: var(--muted); }
+.drawer-section { margin: .8rem 0; }
+.drawer-section h4 { font-size: .85rem; color: var(--muted); margin-bottom: .4rem; }
+.hm-tooltip { position: fixed; pointer-events: none; z-index: 997;
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+  padding: .4rem .6rem; font-size: .8rem; display: none; white-space: nowrap; }
+
+/* ── Footer ── */
+.mkt-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: .72rem; color: var(--muted); padding: .8rem 0;
+  border-top: 1px solid var(--border); margin-top: .5rem;
+}
+
+/* ── Animations ── */
+@keyframes mktFadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+.mkt-anim { animation: mktFadeUp .45s ease both; }
+.mkt-d1 { animation-delay: .06s; } .mkt-d2 { animation-delay: .12s; }
+.mkt-d3 { animation-delay: .18s; } .mkt-d4 { animation-delay: .24s; }
+.mkt-d5 { animation-delay: .30s; } .mkt-d6 { animation-delay: .36s; }
+
+/* ── Responsive ── */
+@media (min-width: 1200px) { .mkt-shell { max-width: 1360px; } }
+@media (min-width: 768px) and (max-width: 1199px) {
+  .mkt-shell { max-width: 100%; }
+  .mkt-hero-top { flex-direction: column; }
+  .mkt-hero-kpi { min-width: auto; }
+  .sector-engine-grid { grid-template-columns: 1fr; }
+  .detail-drawer { width: 380px; }
+}
+@media (max-width: 767px) {
+  .mkt-shell { padding: .8rem; gap: 1rem; }
+  .mkt-hero { padding: 1.2rem; border-radius: 14px; }
+  .mkt-hero h1 { font-size: 1.5rem; }
+  .mkt-hero-top { flex-direction: column; }
+  .mkt-hero-kpi { grid-template-columns: repeat(3, 1fr); min-width: auto; }
+  .mkt-kpi .val { font-size: 1.1rem; }
+  .idx-battle-grid { grid-template-columns: repeat(2, 1fr); gap: .6rem; }
+  .sentiment-grid { grid-template-columns: 1fr; }
+  .sector-engine-grid { grid-template-columns: 1fr; }
+  .limit-universe-grid { grid-template-columns: 1fr; }
+  .battle-brief-grid { grid-template-columns: 1fr; }
+  .consec-ladder { flex-direction: column; align-items: stretch; }
+  .sector-attr-grid { grid-template-columns: 1fr 1fr; }
+  .detail-drawer {
+    right: 0; top: auto; bottom: 0; width: 100%; height: 70vh;
+    border-radius: 14px 14px 0 0; border-left: none;
+    border-top: 1px solid var(--border); transform: translateY(100%);
+  }
+  .detail-drawer.open { transform: translateY(0); }
+  .heatmap-wrap > svg { display: none; }
+  .hm-mobile-list { display: block !important; }
+}
+@media (max-width: 400px) {
+  .mkt-hero-kpi { grid-template-columns: repeat(2, 1fr); }
+  .idx-battle-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+</head>
+<body>
+<div class="container">
+
+    
+    <section class="cover-page">
+      <div class="cover-content">
+        <div class="cover-logo"><svg width="72" height="72" viewBox="0 0 44 44" fill="none"><rect width="44" height="44" rx="12" fill="rgba(255,177,109,0.12)"/><rect x="9" y="11" width="26" height="3" rx="1.5" fill="#ffb16d" opacity="0.9"/><rect x="20" y="11" width="4" height="22" rx="2" fill="#ffb16d" opacity="0.9"/></svg></div>
+        <div class="cover-title">多空分歧池</div>
+        <div class="cover-subtitle">研究报告 · 多空分歧横向对比</div>
+        <div class="cover-date">2026-03-19</div>
+        <div class="cover-meta">10 只标的覆盖 · 平均置信度 70% · 风险标签 53</div>
+        <div class="cover-disclaimer">本报告由 AI 多智能体系统自动生成，仅供研究参考，不构成投资建议。</div>
+      </div>
+    </section>
+    <div class="pool-shell">
+      
+    <section class="hero reveal" id="top">
+      <div class="hero-grid">
+        <div>
+          <div class="eyebrow"><span class="brand-mark"><svg width="22" height="22" viewBox="0 0 44 44" fill="none"><rect width="44" height="44" rx="12" fill="rgba(255,177,109,0.15)"/><rect x="9" y="11" width="26" height="3" rx="1.5" fill="#ffb16d"/><rect x="20" y="11" width="4" height="22" rx="2" fill="#ffb16d"/></svg> TradingAgents</span> · 研究报告</div>
+          <h1>多空分歧池</h1>
+          <p class="hero-copy">多空分歧、风险审查与估值锚点的横向对比</p>
+          <div class="hero-chips">
+            <span class="hero-chip">交易日 2026-03-19</span>
+            <span class="hero-chip">10 只标的覆盖</span>
+            <span class="hero-chip">平均置信度 70%</span>
+            <span class="hero-chip">风险标签 53</span>
+          </div>
+          <div class="anchor-nav">
+            <a class="anchor-link" href="#overview">总览</a>
+            <a class="anchor-link" href="#charts">图表</a>
+            <a class="anchor-link" href="#table">总表</a>
+            <a class="anchor-link" href="#cards">个股卡片</a>
+          </div>
+        </div>
+        <div class="hero-spotlights">
+          
+    <div class="spotlight-card hold reveal">
+      <div class="spotlight-label">进攻首选</div>
+      <div class="spotlight-main">
+        <div class="spotlight-name">688114.SS 华大智造</div>
+        <div class="spotlight-score" style="color:#f6c66d">64%</div>
+      </div>
+      <div class="spotlight-copy">扣非亏损同比收窄42.11%证明经营层面减亏真实，非经常项目不是减亏的唯一来源</div>
+      <div class="spotlight-tags" style="margin-top:.7rem;">
+        <span class="spotlight-pill">维持观察 64%</span>
+        <span class="spotlight-pill">风控否决</span>
+      </div>
+    </div>
+          
+    <div class="spotlight-card hold reveal">
+      <div class="spotlight-label">观察焦点</div>
+      <div class="spotlight-main">
+        <div class="spotlight-name">688114.SS 华大智造</div>
+        <div class="spotlight-score" style="color:#f6c66d">64%</div>
+      </div>
+      <div class="spotlight-copy">扣非亏损同比收窄42.11%证明经营层面减亏真实，非经常项目不是减亏的唯一来源</div>
+      <div class="spotlight-tags" style="margin-top:.7rem;">
+        <span class="spotlight-pill">维持观察 64%</span>
+        <span class="spotlight-pill">风控否决</span>
+      </div>
+    </div>
+          
+    <div class="spotlight-card sell reveal">
+      <div class="spotlight-label">风险规避</div>
+      <div class="spotlight-main">
+        <div class="spotlight-name">603065.SS 宿迁联盛</div>
+        <div class="spotlight-score" style="color:#ff7e6b">82%</div>
+      </div>
+      <div class="spotlight-copy">PE=102倍是行业均值的3-7倍，即使在最乐观的盈利修复情景下，股价也面临-60%以上的下行风险</div>
+      <div class="spotlight-tags" style="margin-top:.7rem;">
+        <span class="spotlight-pill">建议回避 82%</span>
+        <span class="spotlight-pill">风控否决</span>
+      </div>
+    </div>
+        </div>
+      </div>
+    </section>
+      <div class="banner">本报告由 AI 多智能体系统自动生成，仅供研究参考，不构成投资建议。使用前请结合人工判断。</div>
+      
+    <div class="market-summary-banner">
+      <span class="regime-badge sell">防御</span>
+      <span>今日A股市场呈现极端弱势格局，全市场超过90%个股收跌，三大指数全线下行，尤以深证成指跌幅最大（-2.02%）。市场宽度指标涨跌比仅0.09，已触发RISK_OFF预警，北向持股标的亦呈偏空走势。建议客户短期大幅降低仓位至50%以下，回避高估值成长赛道，以防御性价值配置为主，等待市场企稳信号确认后再考虑逐步加仓。</span>
+    </div>
+      
+    <nav class="filter-bar" id="filter-bar">
+      <span class="filter-label">筛选</span>
+      <button class="filter-btn active" data-filter="ALL">全部 <span class="f-count">10</span></button>
+      <button class="filter-btn" data-filter="BUY">建议关注 <span class="f-count">0</span></button>
+      <button class="filter-btn" data-filter="HOLD">维持观察 <span class="f-count">5</span></button>
+      <button class="filter-btn" data-filter="SELL">建议回避 <span class="f-count">1</span></button>
+      <button class="filter-btn" data-filter="VETO">风控否决 <span class="f-count">4</span></button>
+      <span class="filter-status" id="filter-status">显示 10/10</span>
+    </nav>
+      
+    <section class="heatmap-section reveal" id="heatmap">
+      <div class="section-head">
+        <div class="section-title">热力图</div>
+        <div class="section-copy">点击色块查看个股详情</div>
+      </div>
+      <div class="hm-legend"><span class="hm-leg-item"><span class="hm-leg-dot" style="background:#1a7f37"></span> BUY/↑</span><span class="hm-leg-item"><span class="hm-leg-dot" style="background:#2ea043"></span> HOLD/↑</span><span class="hm-leg-item"><span class="hm-leg-dot" style="background:#da3633"></span> HOLD/↓</span><span class="hm-leg-item"><span class="hm-leg-dot" style="background:#cf222e"></span> SELL/↓</span><span class="hm-leg-item"><span class="hm-leg-dot" style="background:#6e40c9"></span> VETO</span><span class="hm-leg-note">面积 ∝ 市值</span></div>
+      <div class="heatmap-wrap">
+        <svg viewBox="0 0 960 400" width="100%" preserveAspectRatio="xMidYMid meet"><g class="hm-node" data-idx="0" data-ticker="688114.SS" data-name="华大智造" data-pct="0.00" data-action="HOLD" data-conf="64%" data-sector=""><rect x="0.0" y="0.0" width="895.0" height="395.4" rx="3" fill="#da3633" stroke="var(--bg, #0d1117)" stroke-width="1.5"/><text x="448.0" y="195.2" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">华大智造</text><text x="448.0" y="209.2" text-anchor="middle" fill="rgba(255,255,255,.7)" font-size="10">0.0%</text></g><g class="hm-node" data-idx="1" data-ticker="300627.SZ" data-name="华测导航" data-pct="0.00" data-action="HOLD" data-conf="62%" data-sector=""><rect x="0.0" y="396.4" width="895.0" height="2.6" rx="3" fill="#da3633" stroke="var(--bg, #0d1117)" stroke-width="1.5"/></g><g class="hm-node" data-idx="2" data-ticker="601985.SS" data-name="中国核电" data-pct="0.00" data-action="HOLD" data-conf="62%" data-sector=""><rect x="896.0" y="0.0" width="31.0" height="5.7" rx="3" fill="#da3633" stroke="var(--bg, #0d1117)" stroke-width="1.5"/></g><g class="hm-node" data-idx="3" data-ticker="300676.SZ" data-name="华大基因" data-pct="0.00" data-action="HOLD" data-conf="62%" data-sector=""><rect x="928.0" y="0.0" width="31.0" height="5.7" rx="3" fill="#da3633" stroke="var(--bg, #0d1117)" stroke-width="1.5"/></g><g class="hm-node" data-idx="4" data-ticker="600529.SS" data-name="山东药玻" data-pct="0.00" data-action="HOLD" data-conf="55%" data-sector=""><rect x="896.0" y="100.0" width="31.0" height="4.0" rx="3" fill="#da3633" stroke="var(--bg, #0d1117)" stroke-width="1.5"/></g><g class="hm-node" data-idx="5" data-ticker="603065.SS" data-name="宿迁联盛" data-pct="0.00" data-action="SELL" data-conf="82%" data-sector=""><rect x="928.0" y="100.0" width="31.0" height="4.0" rx="3" fill="#da3633" stroke="var(--bg, #0d1117)" stroke-width="1.5"/></g><g class="hm-node" data-idx="6" data-ticker="000710.SZ" data-name="贝瑞基因" data-pct="0.00" data-action="VETO" data-conf="88%" data-sector=""><rect x="896.0" y="200.0" width="31.0" height="2.3" rx="3" fill="#6e40c9" stroke="var(--bg, #0d1117)" stroke-width="1.5"/></g><g class="hm-node" data-idx="7" data-ticker="920344.BJ" data-name="三元生物" data-pct="0.00" data-action="VETO" data-conf="82%" data-sector=""><rect x="928.0" y="200.0" width="31.0" height="2.3" rx="3" fill="#6e40c9" stroke="var(--bg, #0d1117)" stroke-width="1.5"/></g><g class="hm-node" data-idx="8" data-ticker="688298.SS" data-name="东方生物" data-pct="0.00" data-action="VETO" data-conf="78%" data-sector=""><rect x="896.0" y="300.0" width="31.0" height="1.0" rx="3" fill="#6e40c9" stroke="var(--bg, #0d1117)" stroke-width="1.5"/></g><g class="hm-node" data-idx="9" data-ticker="002131.SZ" data-name="利欧股份" data-pct="0.00" data-action="VETO" data-conf="62%" data-sector=""><rect x="928.0" y="300.0" width="31.0" height="1.0" rx="3" fill="#6e40c9" stroke="var(--bg, #0d1117)" stroke-width="1.5"/></g></svg><div class="hm-mobile-list"><div class="hm-list-row" data-idx="0" data-ticker="688114.SS" data-name="华大智造" data-pct="0.00" data-action="HOLD" data-conf="64%" data-sector=""><span class="hm-list-dot" style="background:#da3633"></span><span class="hm-list-name">华大智造</span><span class="hm-list-pct ">0.0%</span><span class="hm-list-act">HOLD</span></div><div class="hm-list-row" data-idx="1" data-ticker="300627.SZ" data-name="华测导航" data-pct="0.00" data-action="HOLD" data-conf="62%" data-sector=""><span class="hm-list-dot" style="background:#da3633"></span><span class="hm-list-name">华测导航</span><span class="hm-list-pct ">0.0%</span><span class="hm-list-act">HOLD</span></div><div class="hm-list-row" data-idx="2" data-ticker="601985.SS" data-name="中国核电" data-pct="0.00" data-action="HOLD" data-conf="62%" data-sector=""><span class="hm-list-dot" style="background:#da3633"></span><span class="hm-list-name">中国核电</span><span class="hm-list-pct ">0.0%</span><span class="hm-list-act">HOLD</span></div><div class="hm-list-row" data-idx="3" data-ticker="300676.SZ" data-name="华大基因" data-pct="0.00" data-action="HOLD" data-conf="62%" data-sector=""><span class="hm-list-dot" style="background:#da3633"></span><span class="hm-list-name">华大基因</span><span class="hm-list-pct ">0.0%</span><span class="hm-list-act">HOLD</span></div><div class="hm-list-row" data-idx="4" data-ticker="600529.SS" data-name="山东药玻" data-pct="0.00" data-action="HOLD" data-conf="55%" data-sector=""><span class="hm-list-dot" style="background:#da3633"></span><span class="hm-list-name">山东药玻</span><span class="hm-list-pct ">0.0%</span><span class="hm-list-act">HOLD</span></div><div class="hm-list-row" data-idx="5" data-ticker="603065.SS" data-name="宿迁联盛" data-pct="0.00" data-action="SELL" data-conf="82%" data-sector=""><span class="hm-list-dot" style="background:#da3633"></span><span class="hm-list-name">宿迁联盛</span><span class="hm-list-pct ">0.0%</span><span class="hm-list-act">SELL</span></div><div class="hm-list-row" data-idx="6" data-ticker="000710.SZ" data-name="贝瑞基因" data-pct="0.00" data-action="VETO" data-conf="88%" data-sector=""><span class="hm-list-dot" style="background:#6e40c9"></span><span class="hm-list-name">贝瑞基因</span><span class="hm-list-pct ">0.0%</span><span class="hm-list-act">VETO</span></div><div class="hm-list-row" data-idx="7" data-ticker="920344.BJ" data-name="三元生物" data-pct="0.00" data-action="VETO" data-conf="82%" data-sector=""><span class="hm-list-dot" style="background:#6e40c9"></span><span class="hm-list-name">三元生物</span><span class="hm-list-pct ">0.0%</span><span class="hm-list-act">VETO</span></div><div class="hm-list-row" data-idx="8" data-ticker="688298.SS" data-name="东方生物" data-pct="0.00" data-action="VETO" data-conf="78%" data-sector=""><span class="hm-list-dot" style="background:#6e40c9"></span><span class="hm-list-name">东方生物</span><span class="hm-list-pct ">0.0%</span><span class="hm-list-act">VETO</span></div><div class="hm-list-row" data-idx="9" data-ticker="002131.SZ" data-name="利欧股份" data-pct="0.00" data-action="VETO" data-conf="62%" data-sector=""><span class="hm-list-dot" style="background:#6e40c9"></span><span class="hm-list-name">利欧股份</span><span class="hm-list-pct ">0.0%</span><span class="hm-list-act">VETO</span></div></div>
+      </div>
+    </section>
+      
+    <section class="kpi-deck reveal reveal-delay-1" id="overview">
+      <div class="kpi-panel neutral">
+        <div class="kpi-value">10</div>
+        <div class="kpi-title">标的总数</div>
+        <div class="kpi-note">本期覆盖标的</div>
+      </div>
+      <div class="kpi-panel buy">
+        <div class="kpi-value">0</div>
+        <div class="kpi-title">建议关注</div>
+        <div class="kpi-note">多空共振且置信度较高</div>
+      </div>
+      <div class="kpi-panel hold">
+        <div class="kpi-value">5</div>
+        <div class="kpi-title">维持观察</div>
+        <div class="kpi-note">适合做条件触发式跟踪</div>
+      </div>
+      <div class="kpi-panel sell">
+        <div class="kpi-value">5</div>
+        <div class="kpi-title">规避 / 否决</div>
+        <div class="kpi-note">风控否决或看空主导</div>
+      </div>
+    </section>
+      
+    <section class="section-grid" id="charts">
+      
+    <div class="insight-card span-4 reveal reveal-delay-1">
+      <div class="section-head">
+        <div>
+          <div class="section-title">建议分布图</div>
+          <div class="section-copy">进攻、观察和规避的比例分布</div>
+        </div>
+      </div>
+      <div class="pool-summary"><div class="pool-stat-row"><div class="num" style="color:#52d6a7">0</div><div style="min-width:74px">建议关注</div><div class="mix-track"><div class="mix-seg buy" style="width:0%"></div></div><div style="color:var(--muted)">0%</div></div><div class="pool-stat-row"><div class="num" style="color:#f6c66d">5</div><div style="min-width:74px">维持观察</div><div class="mix-track"><div class="mix-seg hold" style="width:50.0%"></div></div><div style="color:var(--muted)">50%</div></div><div class="pool-stat-row"><div class="num" style="color:#ff7e6b">1</div><div style="min-width:74px">建议回避</div><div class="mix-track"><div class="mix-seg sell" style="width:10.0%"></div></div><div style="color:var(--muted)">10%</div></div><div class="pool-stat-row"><div class="num" style="color:#ff7e6b">4</div><div style="min-width:74px">风控否决</div><div class="mix-track"><div class="mix-seg veto" style="width:40.0%"></div></div><div style="color:var(--muted)">40%</div></div></div>
+      <div class="mix-legend" style="margin-top:1rem;"><div class="legend-item"><span class="legend-dot buy"></span><span>建议关注</span><span>0 只</span></div><div class="legend-item"><span class="legend-dot hold"></span><span>维持观察</span><span>5 只</span></div><div class="legend-item"><span class="legend-dot sell"></span><span>建议回避</span><span>1 只</span></div><div class="legend-item"><span class="legend-dot veto"></span><span>风控否决</span><span>4 只</span></div></div>
+    </div>
+      
+    <div class="insight-card span-4 reveal reveal-delay-2">
+      <div class="section-head">
+        <div>
+          <div class="section-title">置信度景深图</div>
+          <div class="section-copy">各标的结论强弱一览</div>
+        </div>
+        <div class="score-pill">平均置信度 70%</div>
+      </div>
+      <div class="conviction-wrap">
+        <svg class="chart-svg" viewBox="0 0 692 250" role="img" aria-label="置信度景深图">
+          <line x1="18" y1="28" x2="676" y2="28" stroke="rgba(255,255,255,0.08)" stroke-width="1" /><line x1="18" y1="70" x2="676" y2="70" stroke="rgba(255,255,255,0.08)" stroke-width="1" /><line x1="18" y1="112" x2="676" y2="112" stroke="rgba(255,255,255,0.08)" stroke-width="1" /><line x1="18" y1="154" x2="676" y2="154" stroke="rgba(255,255,255,0.08)" stroke-width="1" /><line x1="18" y1="196" x2="676" y2="196" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
+          <rect x="28" y="90" width="56" height="108" rx="14" fill="#f6c66d" opacity="0.9"></rect><text x="56" y="80" text-anchor="middle" fill="#dce9ef" font-size="12" font-weight="700">64%</text><text x="56" y="220" text-anchor="middle" fill="#91a8b8" font-size="11">688114</text><rect x="108" y="93" width="56" height="105" rx="14" fill="#f6c66d" opacity="0.9"></rect><text x="136" y="83" text-anchor="middle" fill="#dce9ef" font-size="12" font-weight="700">62%</text><text x="136" y="220" text-anchor="middle" fill="#91a8b8" font-size="11">300627</text><rect x="188" y="93" width="56" height="105" rx="14" fill="#f6c66d" opacity="0.9"></rect><text x="216" y="83" text-anchor="middle" fill="#dce9ef" font-size="12" font-weight="700">62%</text><text x="216" y="220" text-anchor="middle" fill="#91a8b8" font-size="11">601985</text><rect x="268" y="93" width="56" height="105" rx="14" fill="#f6c66d" opacity="0.9"></rect><text x="296" y="83" text-anchor="middle" fill="#dce9ef" font-size="12" font-weight="700">62%</text><text x="296" y="220" text-anchor="middle" fill="#91a8b8" font-size="11">300676</text><rect x="348" y="105" width="56" height="93" rx="14" fill="#f6c66d" opacity="0.9"></rect><text x="376" y="95" text-anchor="middle" fill="#dce9ef" font-size="12" font-weight="700">55%</text><text x="376" y="220" text-anchor="middle" fill="#91a8b8" font-size="11">600529</text><rect x="428" y="59" width="56" height="139" rx="14" fill="#ff7e6b" opacity="0.9"></rect><text x="456" y="49" text-anchor="middle" fill="#dce9ef" font-size="12" font-weight="700">82%</text><text x="456" y="220" text-anchor="middle" fill="#91a8b8" font-size="11">603065</text><rect x="508" y="49" width="56" height="149" rx="14" fill="#ff7e6b" opacity="0.9"></rect><text x="536" y="39" text-anchor="middle" fill="#dce9ef" font-size="12" font-weight="700">88%</text><text x="536" y="220" text-anchor="middle" fill="#91a8b8" font-size="11">000710</text><rect x="588" y="59" width="56" height="139" rx="14" fill="#ff7e6b" opacity="0.9"></rect><text x="616" y="49" text-anchor="middle" fill="#dce9ef" font-size="12" font-weight="700">82%</text><text x="616" y="220" text-anchor="middle" fill="#91a8b8" font-size="11">920344</text>
+        </svg>
+      </div>
+    </div>
+      
+    <div class="insight-card span-4 reveal reveal-delay-3">
+      <div class="section-head">
+        <div>
+          <div class="section-title">风险热度图</div>
+          <div class="section-copy">高频风险类别汇总</div>
+        </div>
+        <div class="score-pill">总风险标签 53</div>
+      </div>
+      <div class="risk-list"><div class="risk-row"><span>估值风险</span><div class="risk-bar"><div class="risk-fill" style="width:100%"></div></div><span>4 次</span></div><div class="risk-row"><span>基本面风险</span><div class="risk-bar"><div class="risk-fill" style="width:75%"></div></div><span>3 次</span></div><div class="risk-row"><span>流动性风险</span><div class="risk-bar"><div class="risk-fill" style="width:75%"></div></div><span>3 次</span></div><div class="risk-row"><span>资金面</span><div class="risk-bar"><div class="risk-fill" style="width:75%"></div></div><span>3 次</span></div><div class="risk-row"><span>事件风险</span><div class="risk-bar"><div class="risk-fill" style="width:50%"></div></div><span>2 次</span></div></div>
+    </div>
+    </section>
+      
+    <div class="board-card reveal" id="table">
+      <div class="section-head">
+        <div>
+          <div class="section-title">决策总表</div>
+          <div class="section-copy">按优先级排列，点击标的可下钻至个股卡片</div>
+        </div>
+      </div>
+      <table class="priority-table">
+        <thead>
+          <tr>
+            <th>优先级</th>
+            <th>标的</th>
+            <th>结论</th>
+            <th>置信度</th>
+            <th>多空分歧</th>
+            <th>估值速览</th>
+            <th>关键风险</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr data-action="HOLD">
+          <td><span class="rank-pill">01</span></td>
+          <td>
+            <div style="font-weight:700">688114.SS 华大智造</div>
+            <div style="color:var(--muted); font-size:.78rem;">风控否决</div>
+          </td>
+          <td><span class="badge badge-hold">🟡 维持观察</span></td>
+          <td>64%</td>
+          <td>多 2.19 / 空 2.13</td>
+          <td>PE -92.38 · PB 2.83 · 市值 111亿</td>
+          <td>风险较轻</td>
+        </tr>
+        <tr data-action="HOLD">
+          <td><span class="rank-pill">02</span></td>
+          <td>
+            <div style="font-weight:700">300627.SZ 华测导航</div>
+            <div style="color:var(--muted); font-size:.78rem;">风控否决</div>
+          </td>
+          <td><span class="badge badge-hold">🟡 维持观察</span></td>
+          <td>62%</td>
+          <td>多 2.45 / 空 2.50</td>
+          <td>PE 300627</td>
+          <td>技术面、资金面</td>
+        </tr>
+        <tr data-action="HOLD">
+          <td><span class="rank-pill">03</span></td>
+          <td>
+            <div style="font-weight:700">601985.SS 中国核电</div>
+            <div style="color:var(--muted); font-size:.78rem;">风控通过，附带风险</div>
+          </td>
+          <td><span class="badge badge-hold">🟡 维持观察</span></td>
+          <td>62%</td>
+          <td>多 2.59 / 空 2.61</td>
+          <td>PE 23.20 · PB 1.58</td>
+          <td>年报业绩不确定性、电价市场化结构性压力</td>
+        </tr>
+        <tr data-action="HOLD">
+          <td><span class="rank-pill">04</span></td>
+          <td>
+            <div style="font-weight:700">300676.SZ 华大基因</div>
+            <div style="color:var(--muted); font-size:.78rem;">风控通过，附带风险</div>
+          </td>
+          <td><span class="badge badge-hold">🟡 维持观察</span></td>
+          <td>62%</td>
+          <td>多 1.80 / 空 2.33</td>
+          <td>PE 300676 · PB .</td>
+          <td>股东结构、基本面</td>
+        </tr>
+        <tr data-action="HOLD">
+          <td><span class="rank-pill">05</span></td>
+          <td>
+            <div style="font-weight:700">600529.SS 山东药玻</div>
+            <div style="color:var(--muted); font-size:.78rem;">风控通过，附带风险</div>
+          </td>
+          <td><span class="badge badge-hold">🟡 维持观察</span></td>
+          <td>55%</td>
+          <td>多 2.35 / 空 2.40</td>
+          <td>PE 600529</td>
+          <td>增发稀释风险、业绩持续风险</td>
+        </tr>
+        <tr data-action="SELL">
+          <td><span class="rank-pill">06</span></td>
+          <td>
+            <div style="font-weight:700">603065.SS 宿迁联盛</div>
+            <div style="color:var(--muted); font-size:.78rem;">风控否决</div>
+          </td>
+          <td><span class="badge badge-sell">🔴 建议回避</span></td>
+          <td>82%</td>
+          <td>多 0.75 / 空 2.74</td>
+          <td>PE 603065</td>
+          <td>估值风险、资金流动风险</td>
+        </tr>
+        <tr data-action="VETO">
+          <td><span class="rank-pill">07</span></td>
+          <td>
+            <div style="font-weight:700">000710.SZ 贝瑞基因</div>
+            <div style="color:var(--muted); font-size:.78rem;">风控否决</div>
+          </td>
+          <td><span class="badge badge-veto">⛔ 风控否决</span></td>
+          <td>88%</td>
+          <td>多 1.38 / 空 2.74</td>
+          <td>PE 000710</td>
+          <td>事件风险、流动性风险</td>
+        </tr>
+        <tr data-action="VETO">
+          <td><span class="rank-pill">08</span></td>
+          <td>
+            <div style="font-weight:700">920344.BJ 三元生物</div>
+            <div style="color:var(--muted); font-size:.78rem;">风控否决</div>
+          </td>
+          <td><span class="badge badge-veto">⛔ 风控否决</span></td>
+          <td>82%</td>
+          <td>多 1.85 / 空 2.47</td>
+          <td>PE 498.26 · PB 4.47</td>
+          <td>基本面风险、供给端风险</td>
+        </tr>
+        <tr data-action="VETO">
+          <td><span class="rank-pill">09</span></td>
+          <td>
+            <div style="font-weight:700">688298.SS 东方生物</div>
+            <div style="color:var(--muted); font-size:.78rem;">风控否决</div>
+          </td>
+          <td><span class="badge badge-veto">⛔ 风控否决</span></td>
+          <td>78%</td>
+          <td>多 1.50 / 空 1.50</td>
+          <td>PE 688298 · PB 1</td>
+          <td>基本面风险、法律风险</td>
+        </tr>
+        <tr data-action="VETO">
+          <td><span class="rank-pill">10</span></td>
+          <td>
+            <div style="font-weight:700">002131.SZ 利欧股份</div>
+            <div style="color:var(--muted); font-size:.78rem;">风控否决</div>
+          </td>
+          <td><span class="badge badge-veto">⛔ 风控否决</span></td>
+          <td>62%</td>
+          <td>多 2.17 / 空 2.66</td>
+          <td>PE 002131</td>
+          <td>估值、资金面</td>
+        </tr></tbody>
+      </table>
+    </div>
+      <section class="stock-grid" id="cards">
+        <article class="stock-card hold reveal" data-action="HOLD" id="stock-688114">
+          <div class="stock-top">
+            <div>
+              <div class="stock-kicker">688114</div>
+              <div class="stock-name">688114.SS 华大智造</div>
+              <div class="stock-sub">风控否决</div>
+            </div>
+            <div class="stock-side">
+              <div class="stock-verdict" style="color:#f6c66d">维持观察</div>
+              <div class="stock-confidence">置信度 64%</div>
+              
+            </div>
+          </div>
+          <div class="signal-card">
+            <div class="signal-head">
+              <span>多空强度图</span>
+              <span>看多 2.19 / 看空 2.13</span>
+            </div>
+            <div class="signal-meter">
+              <div class="signal-bull" style="width:51%"></div>
+              <div class="signal-bear" style="width:49%"></div>
+            </div>
+            <div class="signal-labels">
+              <span>看多占比 51%</span>
+              <span>看空占比 49%</span>
+            </div>
+          </div>
+          <div class="stock-body">
+            
+    <div class="claim-panel bull">
+      <h4>看多核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>扣非亏损同比收窄42.11%证明经营层面减亏真实，非经常项目不是减亏的唯一来源</div><div class="claim-meta"><span>E6, E9</span><span>75%</span></div></div><div class="claim-item"><div>减亏60.57%是基本面实质性改善的可验证信号，而非一次性因素驱动</div><div class="claim-meta"><span>E6, E9</span><span>72%</span></div></div><div class="claim-item"><div>CGI出售5000万美元价款独立于授权费，即使Swiss Rockets后续授权费延迟，现金流底线已锁定</div><div class="claim-meta"><span>E6, E7</span><span>72%</span></div></div></div>
+    </div>
+            
+    <div class="claim-panel bear">
+      <h4>看空核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>收入下滑7.73%揭示华大智造核心业务需求萎缩，减亏主要依赖非经常性收益支撑</div><div class="claim-meta"><span>E4, E6</span><span>75%</span></div></div><div class="claim-item"><div>减亏60.57%主要来自CGI相关高基数费用消退（一次性），2026年减亏空间将大幅收窄</div><div class="claim-meta"><span>E6, E9</span><span>70%</span></div></div><div class="claim-item"><div>科创50持续偏弱叠加北向数据盲区，缺乏系统性资金支撑，个股反弹可持续性存疑</div><div class="claim-meta"><span>E8</span><span>68%</span></div></div></div>
+    </div>
+            <div class="metric-panel">
+              <h4>核心指标</h4>
+              <table class="metric-table"><tr><td>结论</td><td>维持观察</td></tr><tr><td>置信度</td><td>64%</td></tr><tr><td>PE</td><td>-92.38</td></tr><tr><td>PB</td><td>2.83</td></tr><tr><td>市值</td><td>111亿</td></tr><tr><td>风控</td><td>风控否决</td></tr></table>
+              <h4>风险标签</h4>
+              <div class="risk-tags"><span class="risk-tag low">暂无显式风险标签</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="stock-card hold reveal" data-action="HOLD" id="stock-300627">
+          <div class="stock-top">
+            <div>
+              <div class="stock-kicker">300627</div>
+              <div class="stock-name">300627.SZ 华测导航</div>
+              <div class="stock-sub">风控否决</div>
+            </div>
+            <div class="stock-side">
+              <div class="stock-verdict" style="color:#f6c66d">维持观察</div>
+              <div class="stock-confidence">置信度 62%</div>
+              
+            </div>
+          </div>
+          <div class="signal-card">
+            <div class="signal-head">
+              <span>多空强度图</span>
+              <span>看多 2.45 / 看空 2.50</span>
+            </div>
+            <div class="signal-meter">
+              <div class="signal-bull" style="width:49%"></div>
+              <div class="signal-bear" style="width:51%"></div>
+            </div>
+            <div class="signal-labels">
+              <span>看多占比 49%</span>
+              <span>看空占比 51%</span>
+            </div>
+          </div>
+          <div class="stock-body">
+            
+    <div class="claim-panel bull">
+      <h4>看多核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>华测导航2025年净利润增速16.7%超过收入增速13.24%，证明规模效应推动利润率改善</div><div class="claim-meta"><span>E11, E9</span><span>85%</span></div></div><div class="claim-item"><div>毛利率60.41%在精密仪器行业处于顶级水平，体现强定价权和护城河</div><div class="claim-meta"><span>E9</span><span>80%</span></div></div><div class="claim-item"><div>净利润增速（16.7%）超过收入增速（13.24%），间接证明盈利质量良好（非应收账款驱动）</div><div class="claim-meta"><span>E11, E9</span><span>80%</span></div></div></div>
+    </div>
+            
+    <div class="claim-panel bear">
+      <h4>看空核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>在创业板当日大涨+1.41%的背景下，个股仍下跌-1.32%，相对弱势差达4.7%，证明个股存在独立性系统性卖压</div><div class="claim-meta"><span>E1, E6</span><span>85%</span></div></div><div class="claim-item"><div>5日连续净流出的统计显著性（非随机概率96.9%），以及3月10日高估值高点出货模式，共同指向机构持续性主动减仓，而非换手</div><div class="claim-meta"><span>E2, E6</span><span>83%</span></div></div><div class="claim-item"><div>5个连续交易日主力净流出，无一日转正，3月10日&quot;主力卖散户接&quot;是典型出货形态，并非换手健康</div><div class="claim-meta"><span>E2, E3</span><span>82%</span></div></div></div>
+    </div>
+            <div class="metric-panel">
+              <h4>核心指标</h4>
+              <table class="metric-table"><tr><td>结论</td><td>维持观察</td></tr><tr><td>置信度</td><td>62%</td></tr><tr><td>PE</td><td>300627</td></tr><tr><td>PB</td><td>—</td></tr><tr><td>市值</td><td>—</td></tr><tr><td>风控</td><td>风控否决</td></tr></table>
+              <h4>风险标签</h4>
+              <div class="risk-tags"><span class="risk-tag high">HIGH 技术面</span><span class="risk-tag high">HIGH 资金面</span><span class="risk-tag medium">MEDIUM 估值风险</span><span class="risk-tag medium">MEDIUM 信息风险</span><span class="risk-tag low">LOW 市场环境</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="stock-card hold reveal" data-action="HOLD" id="stock-601985">
+          <div class="stock-top">
+            <div>
+              <div class="stock-kicker">601985</div>
+              <div class="stock-name">601985.SS 中国核电</div>
+              <div class="stock-sub">风控通过，附带风险</div>
+            </div>
+            <div class="stock-side">
+              <div class="stock-verdict" style="color:#f6c66d">维持观察</div>
+              <div class="stock-confidence">置信度 62%</div>
+              
+            </div>
+          </div>
+          <div class="signal-card">
+            <div class="signal-head">
+              <span>多空强度图</span>
+              <span>看多 2.59 / 看空 2.61</span>
+            </div>
+            <div class="signal-meter">
+              <div class="signal-bull" style="width:50%"></div>
+              <div class="signal-bear" style="width:50%"></div>
+            </div>
+            <div class="signal-labels">
+              <span>看多占比 50%</span>
+              <span>看空占比 50%</span>
+            </div>
+          </div>
+          <div class="stock-body">
+            
+    <div class="claim-panel bull">
+      <h4>看多核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>3月11日主力净流入3.08亿元/净占比13.70%属于机构级集中建仓信号，5日累计净流入5.66亿元确认资金面空翻多转变，不对称比率8.3:1方向明确</div><div class="claim-meta"><span>E28, E29</span><span>87%</span></div></div><div class="claim-item"><div>P/CFO是核电重资产高折旧企业的最优估值框架。中国核电年化P/CFO约4.8倍，远低于公用事业行业8-15倍历史区间，最悲观情景（P/CFO=6x）隐含股价11.67元（较当前+26.3%），基准情景（P/CFO=8x）隐含15.56元（</div><div class="claim-meta"><span>E15, E16</span><span>87%</span></div></div><div class="claim-item"><div>主力资金&quot;脉冲建仓+缓步加仓&quot;模式（3.08亿→1.32亿→0.67亿递减）正是机构有计划分批建仓的标准节奏，不是资金退潮的信号。5日累计净流入5.66亿元，仅1日微幅净流出（-3,702万），流入不对称比达8.3:1，确认机构系统性建仓意</div><div class="claim-meta"><span>E26, E27</span><span>85%</span></div></div></div>
+    </div>
+            
+    <div class="claim-panel bear">
+      <h4>看空核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>少数股东损益吞噬近半利润，归母股东实际受益远低于合并报表数字，P/CFO低估论点存在根本缺陷</div><div class="claim-meta"><span>E10, E11</span><span>88%</span></div></div><div class="claim-item"><div>看多方核心估值论据P/CFO=4.8x存在致命的口径错误——用合并口径CFO（302.66亿）除以母公司口径市值（1900亿），忽视了少数股东损益占合并净利润48.4%的事实。修正为归母口径后P/CFO约12.2x，位于公用事业8-15x区</div><div class="claim-meta"><span>基本面报告-F8少数股东损益48.4%, 基本面报告-F3经营现金流302.66亿</span><span>88%</span></div></div><div class="claim-item"><div>少数股东损益占合并净利润48.4%，归母股东实际可分配利润被严重稀释，P/CFO=6.3x低估论点存在根本缺陷</div><div class="claim-meta"><span>E10, E11</span><span>85%</span></div></div></div>
+    </div>
+            <div class="metric-panel">
+              <h4>核心指标</h4>
+              <table class="metric-table"><tr><td>结论</td><td>维持观察</td></tr><tr><td>置信度</td><td>62%</td></tr><tr><td>PE</td><td>23.20</td></tr><tr><td>PB</td><td>1.58</td></tr><tr><td>市值</td><td>—</td></tr><tr><td>风控</td><td>风控通过，附带风险</td></tr></table>
+              <h4>风险标签</h4>
+              <div class="risk-tags"><span class="risk-tag high">HIGH 年报业绩不确定性</span><span class="risk-tag medium">MEDIUM 电价市场化结构性压力</span><span class="risk-tag medium">MEDIUM 资金脉冲衰减</span><span class="risk-tag medium">MEDIUM 多维数据盲区</span><span class="risk-tag medium">MEDIUM PE估值偏高</span><span class="risk-tag medium">MEDIUM 风格切换风险</span><span class="risk-tag medium">MEDIUM 技术面待确认</span><span class="risk-tag low">LOW 证据质量/合规</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="stock-card hold reveal" data-action="HOLD" id="stock-300676">
+          <div class="stock-top">
+            <div>
+              <div class="stock-kicker">300676</div>
+              <div class="stock-name">300676.SZ 华大基因</div>
+              <div class="stock-sub">风控通过，附带风险</div>
+            </div>
+            <div class="stock-side">
+              <div class="stock-verdict" style="color:#f6c66d">维持观察</div>
+              <div class="stock-confidence">置信度 62%</div>
+              
+            </div>
+          </div>
+          <div class="signal-card">
+            <div class="signal-head">
+              <span>多空强度图</span>
+              <span>看多 1.80 / 看空 2.33</span>
+            </div>
+            <div class="signal-meter">
+              <div class="signal-bull" style="width:44%"></div>
+              <div class="signal-bear" style="width:56%"></div>
+            </div>
+            <div class="signal-labels">
+              <span>看多占比 44%</span>
+              <span>看空占比 56%</span>
+            </div>
+          </div>
+          <div class="stock-body">
+            
+    <div class="claim-panel bull">
+      <h4>看多核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>华大基因EPS=-0.05为多年亏损周期最浅点，基本面拐点即将由年报验证</div><div class="claim-meta"><span>E8, E6</span><span>60%</span></div></div><div class="claim-item"><div>2025年报（4月披露）是最大正向催化剂期权，EPS若转正触发30-50%重估</div><div class="claim-meta"><span>E8, E6</span><span>60%</span></div></div><div class="claim-item"><div>生命科学亏损公司PB合理区间2-3.5x而非0.5-1.5x，PB=2.02处于合理下沿</div><div class="claim-meta"><span>E8</span><span>60%</span></div></div></div>
+    </div>
+            
+    <div class="claim-panel bear">
+      <h4>看空核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>质押为非线性尾部事件+控股股东净增质押表明压力上升，市场惯性低估此风险</div><div class="claim-meta"><span>E5, E3</span><span>80%</span></div></div><div class="claim-item"><div>控股股东质押超七成，距预警线仅6-11%，构成持续悬顶的尾部风险</div><div class="claim-meta"><span>E5, E7</span><span>78%</span></div></div><div class="claim-item"><div>12个月研报真空锁死机构增量资金合规入场路径，即便年报良好也需研报重启</div><div class="claim-meta"><span>E7</span><span>75%</span></div></div></div>
+    </div>
+            <div class="metric-panel">
+              <h4>核心指标</h4>
+              <table class="metric-table"><tr><td>结论</td><td>维持观察</td></tr><tr><td>置信度</td><td>62%</td></tr><tr><td>PE</td><td>300676</td></tr><tr><td>PB</td><td>.</td></tr><tr><td>市值</td><td>—</td></tr><tr><td>风控</td><td>风控通过，附带风险</td></tr></table>
+              <h4>风险标签</h4>
+              <div class="risk-tags"><span class="risk-tag high">HIGH 股东结构</span><span class="risk-tag medium">MEDIUM 基本面</span><span class="risk-tag medium">MEDIUM 机构覆盖</span><span class="risk-tag medium">MEDIUM 资金面</span><span class="risk-tag low">LOW 数据完整性</span><span class="risk-tag low">LOW 市场对齐</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="stock-card hold reveal" data-action="HOLD" id="stock-600529">
+          <div class="stock-top">
+            <div>
+              <div class="stock-kicker">600529</div>
+              <div class="stock-name">600529.SS 山东药玻</div>
+              <div class="stock-sub">风控通过，附带风险</div>
+            </div>
+            <div class="stock-side">
+              <div class="stock-verdict" style="color:#f6c66d">维持观察</div>
+              <div class="stock-confidence">置信度 55%</div>
+              
+            </div>
+          </div>
+          <div class="signal-card">
+            <div class="signal-head">
+              <span>多空强度图</span>
+              <span>看多 2.35 / 看空 2.40</span>
+            </div>
+            <div class="signal-meter">
+              <div class="signal-bull" style="width:49%"></div>
+              <div class="signal-bear" style="width:51%"></div>
+            </div>
+            <div class="signal-labels">
+              <span>看多占比 49%</span>
+              <span>看空占比 51%</span>
+            </div>
+          </div>
+          <div class="stock-body">
+            
+    <div class="claim-panel bull">
+      <h4>看多核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>山东药玻毛利率33.31%（+1.59pct）在营收下滑背景下逆势改善，证明公司核心竞争力和定价权未受损</div><div class="claim-meta"><span>E16</span><span>85%</span></div></div><div class="claim-item"><div>PB=1.56倍处于2020-2023年历史区间（1.5-3.0倍）的绝对低位，下行空间极为有限，提供强安全边际</div><div class="claim-meta"><span>E15, E10</span><span>80%</span></div></div><div class="claim-item"><div>控制权变更为央企（S1级公告确认）是最重要的中长期催化剂，估值重塑空间高达20-30%，当前市价严重低估此期权价值</div><div class="claim-meta"><span>E13, E15</span><span>70%</span></div></div></div>
+    </div>
+            
+    <div class="claim-panel bear">
+      <h4>看空核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>净利润-26.87%严重超预期（市场预期-15~-20%），揭示结构性费用风险：净利降幅是收入降幅的3倍，说明固定成本/减值/非经常性损益约额外拖累1.88亿元，2026年存在延续性风险</div><div class="claim-meta"><span>E12, E10</span><span>85%</span></div></div><div class="claim-item"><div>主力资金连续3日净流出累计3739万元，3月16日净占比-16.29%为加速出货信号，价格已形成清晰的Lower High + Lower Low下行结构，短期向下突破概率大于向上</div><div class="claim-meta"><span>E2, E3</span><span>80%</span></div></div><div class="claim-item"><div>3月6日年报披露后股价持续创新低（19.69→19.52），说明年报负面冲击仍在持续定价中，而非如多头所称&quot;已定价&quot;</div><div class="claim-meta"><span>E2, E3</span><span>75%</span></div></div></div>
+    </div>
+            <div class="metric-panel">
+              <h4>核心指标</h4>
+              <table class="metric-table"><tr><td>结论</td><td>维持观察</td></tr><tr><td>置信度</td><td>55%</td></tr><tr><td>PE</td><td>600529</td></tr><tr><td>PB</td><td>—</td></tr><tr><td>市值</td><td>—</td></tr><tr><td>风控</td><td>风控通过，附带风险</td></tr></table>
+              <h4>风险标签</h4>
+              <div class="risk-tags"><span class="risk-tag medium">MEDIUM 增发稀释风险</span><span class="risk-tag medium">MEDIUM 业绩持续风险</span><span class="risk-tag medium">MEDIUM 技术面压力</span><span class="risk-tag medium">MEDIUM 控制权变更延迟风险</span><span class="risk-tag low">LOW 市场环境约束</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="stock-card sell reveal" data-action="SELL" id="stock-603065">
+          <div class="stock-top">
+            <div>
+              <div class="stock-kicker">603065</div>
+              <div class="stock-name">603065.SS 宿迁联盛</div>
+              <div class="stock-sub">风控否决</div>
+            </div>
+            <div class="stock-side">
+              <div class="stock-verdict" style="color:#ff7e6b">建议回避</div>
+              <div class="stock-confidence">置信度 82%</div>
+              
+            </div>
+          </div>
+          <div class="signal-card">
+            <div class="signal-head">
+              <span>多空强度图</span>
+              <span>看多 0.75 / 看空 2.74</span>
+            </div>
+            <div class="signal-meter">
+              <div class="signal-bull" style="width:21%"></div>
+              <div class="signal-bear" style="width:79%"></div>
+            </div>
+            <div class="signal-labels">
+              <span>看多占比 21%</span>
+              <span>看空占比 79%</span>
+            </div>
+          </div>
+          <div class="stock-body">
+            
+    <div class="claim-panel bull">
+      <h4>看多核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>宿迁联盛处于盈利谷底而非业务崩溃，PB=1.84倍提供资产价值底部支撑</div><div class="claim-meta"><span>E10, E11</span><span>25%</span></div></div><div class="claim-item"><div>宿迁联盛处于铜加工行业盈利谷底，非业务崩溃，PB=1.84倍提供资产价值底部支撑</div><div class="claim-meta"><span>E10, E11</span><span>25%</span></div></div><div class="claim-item"><div>股东户数持续下降+筹码集中与&quot;大户出货散户接盘&quot;的解读逻辑矛盾，更可能是散户止损离场后筹码向少数坚定持有者集中</div><div class="claim-meta"><span>E17, E19</span><span>25%</span></div></div></div>
+    </div>
+            
+    <div class="claim-panel bear">
+      <h4>看空核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>PE=102倍是行业均值的3-7倍，即使在最乐观的盈利修复情景下，股价也面临-60%以上的下行风险</div><div class="claim-meta"><span>E7, E8</span><span>92%</span></div></div><div class="claim-item"><div>PE=102倍/ROE=0.44%构成不可持续的估值悖论，即使最乐观情景（EPS=0.15元）目标价也仅约3元，较现价8.90元下行66%</div><div class="claim-meta"><span>E10, E11</span><span>92%</span></div></div><div class="claim-item"><div>603065处于结构性盈利危机，PE=102倍对应ROE=0.44%构成不可持续的估值悖论，合理估值目标价远低于当前价格</div><div class="claim-meta"><span>E10, E11</span><span>90%</span></div></div></div>
+    </div>
+            <div class="metric-panel">
+              <h4>核心指标</h4>
+              <table class="metric-table"><tr><td>结论</td><td>建议回避</td></tr><tr><td>置信度</td><td>82%</td></tr><tr><td>PE</td><td>603065</td></tr><tr><td>PB</td><td>—</td></tr><tr><td>市值</td><td>—</td></tr><tr><td>风控</td><td>风控否决</td></tr></table>
+              <h4>风险标签</h4>
+              <div class="risk-tags"><span class="risk-tag critical">CRITICAL 估值风险</span><span class="risk-tag high">HIGH 资金流动风险</span><span class="risk-tag high">HIGH 技术面风险</span><span class="risk-tag critical">CRITICAL 事件风险</span><span class="risk-tag high">HIGH 流动性风险</span><span class="risk-tag medium">MEDIUM 市场环境风险</span><span class="risk-tag medium">MEDIUM 信息不对称风险</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="stock-card veto reveal" data-action="VETO" id="stock-000710">
+          <div class="stock-top">
+            <div>
+              <div class="stock-kicker">000710</div>
+              <div class="stock-name">000710.SZ 贝瑞基因</div>
+              <div class="stock-sub">风控否决</div>
+            </div>
+            <div class="stock-side">
+              <div class="stock-verdict" style="color:#ff7e6b">风控否决</div>
+              <div class="stock-confidence">置信度 88%</div>
+              
+            </div>
+          </div>
+          <div class="signal-card">
+            <div class="signal-head">
+              <span>多空强度图</span>
+              <span>看多 1.38 / 看空 2.74</span>
+            </div>
+            <div class="signal-meter">
+              <div class="signal-bull" style="width:33%"></div>
+              <div class="signal-bear" style="width:67%"></div>
+            </div>
+            <div class="signal-labels">
+              <span>看多占比 33%</span>
+              <span>看空占比 67%</span>
+            </div>
+          </div>
+          <div class="stock-body">
+            
+    <div class="claim-panel bull">
+      <h4>看多核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>毛利率47.75%证明NIPT核心业务定价权尚存，亏损来自期间费用而非产品失去竞争力</div><div class="claim-meta"><span>E3</span><span>65%</span></div></div><div class="claim-item"><div>预告区间中值1.7亿元情景下，2025年亏损同比收窄，非加速恶化；下限情景存在边际改善</div><div class="claim-meta"><span>E5</span><span>38%</span></div></div><div class="claim-item"><div>2025年预亏若实际落在下限1.7亿元，亏损同比收窄，为边际改善信号</div><div class="claim-meta"><span>E5</span><span>35%</span></div></div></div>
+    </div>
+            
+    <div class="claim-panel bear">
+      <h4>看空核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>3·15曝光叠加T+1规则，3月17日跌停风险较高，连续跌停可能性存在</div><div class="claim-meta"><span>E8</span><span>92%</span></div></div><div class="claim-item"><div>3·15曝光叠加T+1规则，3月17日跌停风险较高，连续跌停可能性存在</div><div class="claim-meta"><span>E8</span><span>92%</span></div></div><div class="claim-item"><div>技术面形成LH/LL下降结构，3·15事件将直接击穿当前支撑区，连续跌停风险存在</div><div class="claim-meta"><span>E2</span><span>90%</span></div></div></div>
+    </div>
+            <div class="metric-panel">
+              <h4>核心指标</h4>
+              <table class="metric-table"><tr><td>结论</td><td>风控否决</td></tr><tr><td>置信度</td><td>88%</td></tr><tr><td>PE</td><td>000710</td></tr><tr><td>PB</td><td>—</td></tr><tr><td>市值</td><td>—</td></tr><tr><td>风控</td><td>风控否决</td></tr></table>
+              <h4>风险标签</h4>
+              <div class="risk-tags"><span class="risk-tag critical">CRITICAL 事件风险</span><span class="risk-tag critical">CRITICAL 流动性风险</span><span class="risk-tag high">HIGH 基本面风险</span><span class="risk-tag high">HIGH 股权风险</span><span class="risk-tag high">HIGH 资金面风险</span><span class="risk-tag medium">MEDIUM 估值风险</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="stock-card veto reveal" data-action="VETO" id="stock-920344">
+          <div class="stock-top">
+            <div>
+              <div class="stock-kicker">920344</div>
+              <div class="stock-name">920344.BJ 三元生物</div>
+              <div class="stock-sub">风控否决</div>
+            </div>
+            <div class="stock-side">
+              <div class="stock-verdict" style="color:#ff7e6b">风控否决</div>
+              <div class="stock-confidence">置信度 82%</div>
+              
+            </div>
+          </div>
+          <div class="signal-card">
+            <div class="signal-head">
+              <span>多空强度图</span>
+              <span>看多 1.85 / 看空 2.47</span>
+            </div>
+            <div class="signal-meter">
+              <div class="signal-bull" style="width:43%"></div>
+              <div class="signal-bear" style="width:57%"></div>
+            </div>
+            <div class="signal-labels">
+              <span>看多占比 43%</span>
+              <span>看空占比 57%</span>
+            </div>
+          </div>
+          <div class="stock-body">
+            
+    <div class="claim-panel bull">
+      <h4>看多核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>三元生物毛利率76.45%显示产品具有真实技术壁垒，当前亏损属费用扩张型暂时性问题，非商业模式失败</div><div class="claim-meta"><span>E3</span><span>65%</span></div></div><div class="claim-item"><div>大宗交易折价反映流动性风险溢价，而非公司内在价值锚点，空头将大宗价格等同于真实价值存在根本性逻辑错误</div><div class="claim-meta"><span>E1, E2</span><span>65%</span></div></div><div class="claim-item"><div>76.45%毛利率意味着公司盈利弹性极大，期间费用率仅需改善10-15个百分点，净利润即可实现200-300%反弹</div><div class="claim-meta"><span>E3, E5</span><span>55%</span></div></div></div>
+    </div>
+            
+    <div class="claim-panel bear">
+      <h4>看空核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>2025年年报净利润仅500-550万元，年报披露（约6周后）将触发机构系统性重新定价，估值泡沫破裂风险高</div><div class="claim-meta"><span>E5, E2</span><span>85%</span></div></div><div class="claim-item"><div>多头&quot;费用控制改善触发盈利反转&quot;依赖未证实假设，而使净利润恢复至2000万元需费用削减约1500万元（削减43%），在一年内几乎不可能实现</div><div class="claim-meta"><span>E2, E3</span><span>82%</span></div></div><div class="claim-item"><div>大宗出货日均约240万元而主力净流入日均约60万元，实质净资金流出约180万元/日，资金面持续恶化</div><div class="claim-meta"><span>E2, E14</span><span>80%</span></div></div></div>
+    </div>
+            <div class="metric-panel">
+              <h4>核心指标</h4>
+              <table class="metric-table"><tr><td>结论</td><td>风控否决</td></tr><tr><td>置信度</td><td>82%</td></tr><tr><td>PE</td><td>498.26</td></tr><tr><td>PB</td><td>4.47</td></tr><tr><td>市值</td><td>—</td></tr><tr><td>风控</td><td>风控否决</td></tr></table>
+              <h4>风险标签</h4>
+              <div class="risk-tags"><span class="risk-tag critical">CRITICAL 基本面风险</span><span class="risk-tag critical">CRITICAL 供给端风险</span><span class="risk-tag high">HIGH 估值风险</span><span class="risk-tag high">HIGH 流动性风险</span><span class="risk-tag medium">MEDIUM 板块风险</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="stock-card veto reveal" data-action="VETO" id="stock-688298">
+          <div class="stock-top">
+            <div>
+              <div class="stock-kicker">688298</div>
+              <div class="stock-name">688298.SS 东方生物</div>
+              <div class="stock-sub">风控否决</div>
+            </div>
+            <div class="stock-side">
+              <div class="stock-verdict" style="color:#ff7e6b">风控否决</div>
+              <div class="stock-confidence">置信度 78%</div>
+              
+            </div>
+          </div>
+          <div class="signal-card">
+            <div class="signal-head">
+              <span>多空强度图</span>
+              <span>看多 1.50 / 看空 1.50</span>
+            </div>
+            <div class="signal-meter">
+              <div class="signal-bull" style="width:50%"></div>
+              <div class="signal-bear" style="width:50%"></div>
+            </div>
+            <div class="signal-labels">
+              <span>看多占比 50%</span>
+              <span>看空占比 50%</span>
+            </div>
+          </div>
+          <div class="stock-body">
+            
+    <div class="claim-panel bull">
+      <h4>看多核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>2025年营收9.59亿元，同比增长15.83%，连续两年正增长，收入端未萎缩。</div><div class="claim-meta"><span>E4</span><span>50%</span></div></div><div class="claim-item"><div>PB = 0.74，股价低于账面净资产，提供理论安全底。</div><div class="claim-meta"><span>E2</span><span>50%</span></div></div><div class="claim-item"><div>体外诊断行业历史上，困境反转公司在底部PB 0.5-0.8时区间往往是最佳建仓窗口。</div><div class="claim-meta"><span>结构化主张</span><span>50%</span></div></div></div>
+    </div>
+            
+    <div class="claim-panel bear">
+      <h4>看空核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>2025年净亏5.64亿元，超出自身1月预告5.23亿元（预告误差0.41亿元，约8%），表明管理层对自身成本控制都缺乏准确判断。</div><div class="claim-meta"><span>E4</span><span>50%</span></div></div><div class="claim-item"><div>连续3年巨亏（2023+2024+2025），3年累计亏损约16亿元以上，已远超公司任何合理的经营周转储备。</div><div class="claim-meta"><span>E5</span><span>50%</span></div></div><div class="claim-item"><div>PB = 0.74看似低估，但10亿美元诉讼（72亿人民币）悬而未决。若败诉，净资产将面临清零乃至为负的风险。</div><div class="claim-meta"><span>E5</span><span>50%</span></div></div></div>
+    </div>
+            <div class="metric-panel">
+              <h4>核心指标</h4>
+              <table class="metric-table"><tr><td>结论</td><td>风控否决</td></tr><tr><td>置信度</td><td>78%</td></tr><tr><td>PE</td><td>688298</td></tr><tr><td>PB</td><td>1</td></tr><tr><td>市值</td><td>—</td></tr><tr><td>风控</td><td>风控否决</td></tr></table>
+              <h4>风险标签</h4>
+              <div class="risk-tags"><span class="risk-tag critical">CRITICAL 基本面风险</span><span class="risk-tag critical">CRITICAL 法律风险</span><span class="risk-tag high">HIGH 资金风险</span><span class="risk-tag high">HIGH 杠杆风险</span><span class="risk-tag high">HIGH 退市风险</span><span class="risk-tag medium">MEDIUM 市场风险</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="stock-card veto reveal" data-action="VETO" id="stock-002131">
+          <div class="stock-top">
+            <div>
+              <div class="stock-kicker">002131</div>
+              <div class="stock-name">002131.SZ 利欧股份</div>
+              <div class="stock-sub">风控否决</div>
+            </div>
+            <div class="stock-side">
+              <div class="stock-verdict" style="color:#ff7e6b">风控否决</div>
+              <div class="stock-confidence">置信度 62%</div>
+              
+            </div>
+          </div>
+          <div class="signal-card">
+            <div class="signal-head">
+              <span>多空强度图</span>
+              <span>看多 2.17 / 看空 2.66</span>
+            </div>
+            <div class="signal-meter">
+              <div class="signal-bull" style="width:45%"></div>
+              <div class="signal-bear" style="width:55%"></div>
+            </div>
+            <div class="signal-labels">
+              <span>看多占比 45%</span>
+              <span>看空占比 55%</span>
+            </div>
+          </div>
+          <div class="stock-body">
+            
+    <div class="claim-panel bull">
+      <h4>看多核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>利欧股份主力净流出速度大幅收窄，出逃峰值已过，边际最坏时刻结束</div><div class="claim-meta"><span>E25, E27</span><span>75%</span></div></div><div class="claim-item"><div>主力净占比从-16.25%收窄至-1.74%，3个交易日改善14.51ppt，速度和幅度均符合A股底部形成的典型特征</div><div class="claim-meta"><span>E25, E27</span><span>72%</span></div></div><div class="claim-item"><div>空方PB-ROE=0.56x的&quot;合理估值&quot;基于ROE永续稳定假设，对处于AI转型低谷期的利欧不适用，合理PB应基于2-3年后ROE回升至12-15%计算</div><div class="claim-meta"><span>E20, E15</span><span>70%</span></div></div></div>
+    </div>
+            
+    <div class="claim-panel bear">
+      <h4>看空核心论据</h4>
+      <div class="claim-stack"><div class="claim-item"><div>利欧股份PE=108x、ROE=4.5%，基于PB-ROE模型当前PB=4.0x较合理PB=0.56x高估613%，存在极大估值泡沫</div><div class="claim-meta"><span>E20, E15</span><span>90%</span></div></div><div class="claim-item"><div>5日主力累计净流出20.24亿元（净占比峰值-16.25%），是机构系统性清仓的明确信号，而非正常减仓</div><div class="claim-meta"><span>E23, E25</span><span>88%</span></div></div><div class="claim-item"><div>多头PEG=1.27的估值论证使用了无S1/S2数据支撑的增速假设（70-100%），且PEG框架对毛利率8.74%的广告中介模式不适用</div><div class="claim-meta"><span>E13, E20</span><span>88%</span></div></div></div>
+    </div>
+            <div class="metric-panel">
+              <h4>核心指标</h4>
+              <table class="metric-table"><tr><td>结论</td><td>风控否决</td></tr><tr><td>置信度</td><td>62%</td></tr><tr><td>PE</td><td>002131</td></tr><tr><td>PB</td><td>—</td></tr><tr><td>市值</td><td>—</td></tr><tr><td>风控</td><td>风控否决</td></tr></table>
+              <h4>风险标签</h4>
+              <div class="risk-tags"><span class="risk-tag high">HIGH 估值</span><span class="risk-tag high">HIGH 资金面</span><span class="risk-tag critical">CRITICAL 流动性尾部风险</span><span class="risk-tag medium">MEDIUM 监管风险</span><span class="risk-tag medium">MEDIUM 基本面不确定性</span></div>
+            </div>
+          </div>
+        </article></section>
+      
+    <section class="method-card reveal">
+      <div class="section-head">
+        <div>
+          <div class="section-title">阅读指南</div>
+          <div class="section-copy">报告结构与使用说明</div>
+        </div>
+      </div>
+      <div class="method-list">
+        <div class="method-item"><span class="method-index">1</span><div>顶部为组合级结论：建议分布图、置信度景深图与风险热度图，呈现整体研判基调。</div></div>
+        <div class="method-item"><span class="method-index">2</span><div>中部决策总表按优先级横向对比全部标的，支持快速定位。</div></div>
+        <div class="method-item"><span class="method-index">3</span><div>底部个股卡片逐只展示多空论据、估值指标与风险标签。</div></div>
+      </div>
+    </section>
+      
+    <footer class="brand-footer">
+      <div class="brand-footer-left"><svg width="22" height="22" viewBox="0 0 44 44" fill="none"><rect width="44" height="44" rx="12" fill="rgba(255,177,109,0.15)"/><rect x="9" y="11" width="26" height="3" rx="1.5" fill="#ffb16d"/><rect x="20" y="11" width="4" height="22" rx="2" fill="#ffb16d"/></svg> TradingAgents · AI 多智能体研究系统</div>
+      <div class="brand-footer-right">报告日期 2026-03-19 · v0.2.0 · 仅供研究参考</div>
+    </footer>
+    </div>
+    
+    <div class="drawer-overlay" id="drawerOverlay"></div>
+    <div class="detail-drawer" id="detailDrawer">
+      <button class="drawer-close" id="drawerClose">&times;</button>
+      <div class="drawer-header">
+        <h3 id="drawerTitle">--</h3>
+      </div>
+      <div class="drawer-kpi">
+        <div class="kpi"><div class="kpi-val" id="drawerPct">--</div><div class="kpi-lab">涨跌幅</div></div>
+        <div class="kpi"><div class="kpi-val" id="drawerAction">--</div><div class="kpi-lab">信号</div></div>
+        <div class="kpi"><div class="kpi-val" id="drawerConf">--</div><div class="kpi-lab">置信度</div></div>
+      </div>
+      <div class="drawer-section">
+        <h4>板块</h4>
+        <div id="drawerSector">--</div>
+      </div>
+    </div>
+    
+    <script>
+    (function(){
+      var bar = document.getElementById('filter-bar');
+      if (!bar) return;
+      var status = document.getElementById('filter-status');
+      var cards = document.querySelectorAll('.stock-card[data-action]');
+      var rows = document.querySelectorAll('.priority-table tr[data-action]');
+      var total = cards.length;
+
+      bar.addEventListener('click', function(e) {
+        var btn = e.target.closest('.filter-btn');
+        if (!btn) return;
+        var filter = btn.getAttribute('data-filter');
+
+        bar.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+
+        var shown = 0;
+        cards.forEach(function(card) {
+          var match = filter === 'ALL' || card.getAttribute('data-action') === filter;
+          card.style.display = match ? '' : 'none';
+          if (match) shown++;
+        });
+        rows.forEach(function(row) {
+          var match = filter === 'ALL' || row.getAttribute('data-action') === filter;
+          row.style.display = match ? '' : 'none';
+        });
+
+        if (status) status.textContent = '显示 ' + shown + '/' + total;
+      });
+    })();
+    </script>
+    
+    <div class="hm-tooltip" id="hmTooltip"></div>
+    <script>
+    (function(){
+      var drawer = document.getElementById('detailDrawer');
+      var overlay = document.getElementById('drawerOverlay');
+      var tooltip = document.getElementById('hmTooltip');
+      if (!drawer) return;
+
+      function openDrawer(el) {
+        document.getElementById('drawerTitle').textContent = el.dataset.name || '--';
+        var pct = parseFloat(el.dataset.pct || 0);
+        var pctEl = document.getElementById('drawerPct');
+        pctEl.textContent = (pct > 0 ? '+' : '') + pct.toFixed(2) + '%';
+        pctEl.style.color = pct > 0 ? 'var(--green)' : (pct < 0 ? 'var(--red)' : 'var(--muted)');
+        document.getElementById('drawerAction').textContent = el.dataset.action || '--';
+        document.getElementById('drawerConf').textContent = el.dataset.conf || '--';
+        document.getElementById('drawerSector').textContent = el.dataset.sector || '--';
+        drawer.classList.add('open');
+        overlay.classList.add('open');
+      }
+
+      document.querySelectorAll('.hm-node, .hm-list-row').forEach(function(el){
+        el.addEventListener('click', function(){ openDrawer(el); });
+      });
+
+      function closeDrawer() { drawer.classList.remove('open'); overlay.classList.remove('open'); }
+      document.getElementById('drawerClose').addEventListener('click', closeDrawer);
+      overlay.addEventListener('click', closeDrawer);
+
+      document.querySelectorAll('.hm-node').forEach(function(el){
+        el.addEventListener('mouseenter', function(e){
+          var n = el.dataset.name || '';
+          var p = parseFloat(el.dataset.pct || 0);
+          tooltip.textContent = n + ' ' + (p>0?'+':'') + p.toFixed(2) + '%';
+          tooltip.style.display = 'block';
+          tooltip.style.left = e.clientX + 12 + 'px';
+          tooltip.style.top = e.clientY - 8 + 'px';
+        });
+        el.addEventListener('mousemove', function(e){
+          tooltip.style.left = e.clientX + 12 + 'px';
+          tooltip.style.top = e.clientY - 8 + 'px';
+        });
+        el.addEventListener('mouseleave', function(){ tooltip.style.display = 'none'; });
+      });
+    })();
+    </script>
+<div class="footer">TradingAgents 多空分歧池 v0.2.0</div>
+</div>
+</body>
+</html>

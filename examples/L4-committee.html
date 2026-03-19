@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>中国核电 — AI投研委员会</title>
+<style>
+/* ── AI Investment Committee — Neon Cockpit ── */
+:root {
+  --bg: #0a0e1a;
+  --fg: #c8d6e5;
+  --card: rgba(14, 21, 38, 0.88);
+  --border: rgba(0, 212, 255, 0.12);
+  --green: #00ff88;
+  --red: #ff4757;
+  --yellow: #ffd32a;
+  --blue: #00d4ff;
+  --muted: #5a6f82;
+  --surface: rgba(12, 18, 32, 0.92);
+  --glow-green: rgba(0, 255, 136, 0.15);
+  --glow-red: rgba(255, 71, 87, 0.15);
+  --glow-blue: rgba(0, 212, 255, 0.12);
+  --glow-yellow: rgba(255, 211, 42, 0.12);
+  --white: #f0f6fc;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", -apple-system,
+               BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: linear-gradient(180deg, #0a0e1a 0%, #0d1220 40%, #080c16 100%);
+  background-attachment: fixed;
+  color: var(--fg); line-height: 1.7; min-height: 100vh;
+}
+body::before {
+  content: "";
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(0,212,255,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,255,.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none; z-index: 0;
+}
+.debate-shell { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 1.5rem; display: grid; gap: 1.25rem; }
+.mono { font-family: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Consolas, monospace; }
+
+/* ── Glass card ── */
+.glass {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px; padding: 1.25rem;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
+}
+.glass:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 212, 255, 0.18);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.glass-glow-green { box-shadow: 0 0 20px var(--glow-green), inset 0 1px 0 rgba(0,255,136,.06); }
+.glass-glow-red   { box-shadow: 0 0 20px var(--glow-red),   inset 0 1px 0 rgba(255,71,87,.06); }
+.glass-glow-blue  { box-shadow: 0 0 20px var(--glow-blue),  inset 0 1px 0 rgba(0,212,255,.06); }
+.glass-glow-yellow { box-shadow: 0 0 20px var(--glow-yellow), inset 0 1px 0 rgba(255,211,42,.06); }
+
+/* ── Section head ── */
+.sec-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .8rem; }
+.sec-title {
+  font-size: 1.15rem; font-weight: 700;
+  background: linear-gradient(90deg, var(--blue), var(--green));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.sec-sub { color: var(--muted); font-size: .78rem; }
+
+/* ─────────── Section 1: Hero + Roster ─────────── */
+.debate-hero {
+  position: relative; overflow: hidden;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(10,14,26,.96), rgba(14,24,42,.92));
+  border: 1px solid rgba(0,212,255,.1);
+  padding: 2rem 2.2rem;
+  box-shadow: 0 12px 40px rgba(0,0,0,.3);
+}
+.debate-hero::after {
+  content: ""; position: absolute;
+  width: 300px; height: 300px; border-radius: 50%;
+  top: -30%; right: -5%;
+  background: radial-gradient(circle, rgba(0,212,255,.08), transparent 60%);
+  pointer-events: none;
+}
+.hero-eyebrow {
+  text-transform: uppercase; letter-spacing: .18em;
+  font-size: .72rem; color: var(--blue); margin-bottom: .5rem;
+}
+.debate-hero h1 {
+  font-size: clamp(1.8rem, 3.5vw, 2.6rem);
+  letter-spacing: -.03em; line-height: 1.15; margin-bottom: .3rem;
+  background: linear-gradient(135deg, #fff 30%, var(--blue));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero-verdict {
+  display: inline-flex; align-items: center; gap: .5rem;
+  margin-top: .6rem; padding: .4rem 1rem; border-radius: 20px;
+  font-size: .9rem; font-weight: 700;
+}
+.hero-verdict.buy  { color: var(--green); background: rgba(0,255,136,.1); border: 1px solid rgba(0,255,136,.25); }
+.hero-verdict.hold { color: var(--yellow); background: rgba(255,211,42,.1); border: 1px solid rgba(255,211,42,.25); }
+.hero-verdict.sell { color: var(--red); background: rgba(255,71,87,.1); border: 1px solid rgba(255,71,87,.25); }
+.hero-verdict.veto { color: var(--red); background: rgba(255,71,87,.15); border: 1px solid rgba(255,71,87,.35); }
+.hero-meta { color: var(--muted); font-size: .82rem; margin-top: .6rem; }
+
+/* Roster grid */
+.roster-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+  gap: .6rem; margin-top: .8rem;
+}
+.roster-card {
+  background: rgba(255,255,255,.02);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 12px; padding: .65rem .8rem;
+  text-align: center;
+  transition: transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
+}
+.roster-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0,212,255,.22);
+  box-shadow: 0 6px 18px rgba(0,0,0,.2);
+  background: rgba(255,255,255,.035);
+}
+.roster-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  margin: 0 auto .4rem; display: flex; align-items: center;
+  justify-content: center; font-size: 1rem;
+  border: 2px solid var(--border);
+}
+.roster-avatar.stance-bull { border-color: var(--green); background: rgba(0,255,136,.08); }
+.roster-avatar.stance-bear { border-color: var(--red); background: rgba(255,71,87,.08); }
+.roster-avatar.stance-neutral { border-color: var(--blue); background: rgba(0,212,255,.08); }
+.roster-avatar.stance-cautious { border-color: var(--yellow); background: rgba(255,211,42,.08); }
+.roster-name { font-size: .82rem; font-weight: 600; color: var(--white); }
+.roster-role { font-size: .68rem; color: var(--muted); }
+.roster-stance {
+  display: inline-block; margin-top: .3rem;
+  padding: 1px 8px; border-radius: 10px;
+  font-size: .65rem; font-weight: 600;
+}
+.stance-bull   { color: var(--green); background: rgba(0,255,136,.1); }
+.stance-bear   { color: var(--red);   background: rgba(255,71,87,.1); }
+.stance-neutral { color: var(--blue); background: rgba(0,212,255,.1); }
+.stance-cautious { color: var(--yellow); background: rgba(255,211,42,.1); }
+
+/* Phase group label */
+.roster-phase-label {
+  grid-column: 1 / -1;
+  font-size: .72rem; color: var(--blue); font-weight: 600;
+  padding: .3rem 0; border-bottom: 1px solid rgba(0,212,255,.08);
+  letter-spacing: .1em; text-transform: uppercase;
+  margin-top: .3rem;
+}
+
+/* ─────────── Section 2: Timeline ─────────── */
+.debate-timeline { position: relative; padding-left: 30px; }
+.timeline-spine {
+  position: absolute; left: 13px; top: 0; bottom: 0;
+  width: 2px; background: linear-gradient(180deg, var(--blue), var(--green), var(--yellow), var(--red), var(--blue));
+  border-radius: 1px;
+}
+.tl-phase {
+  position: relative; margin-bottom: 1.2rem;
+}
+.tl-phase-dot {
+  position: absolute; left: -24px; top: .2rem;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--bg); border: 2px solid var(--blue);
+  z-index: 2; transition: box-shadow 300ms ease;
+}
+.tl-phase:hover .tl-phase-dot {
+  box-shadow: 0 0 10px currentColor;
+}
+.tl-phase.phase-initial .tl-phase-dot  { border-color: var(--blue); }
+.tl-phase.phase-debate  .tl-phase-dot  { border-color: var(--green); }
+.tl-phase.phase-scenario .tl-phase-dot { border-color: var(--yellow); }
+.tl-phase.phase-risk    .tl-phase-dot  { border-color: var(--red); }
+.tl-phase.phase-verdict .tl-phase-dot  { border-color: var(--blue); background: var(--blue); }
+
+.tl-phase-label {
+  font-size: .85rem; font-weight: 700; color: var(--white);
+  margin-bottom: .5rem;
+}
+.tl-phase-en { color: var(--muted); font-size: .72rem; margin-left: .4rem; }
+.tl-entry {
+  display: flex; gap: .7rem; padding: .5rem .4rem;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+  border-radius: 8px; transition: background 200ms ease;
+}
+.tl-entry:hover { background: rgba(255,255,255,.015); }
+.tl-entry:last-child { border-bottom: none; }
+.tl-entry-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .75rem; flex-shrink: 0;
+  border: 1.5px solid var(--border); margin-top: .15rem;
+}
+.tl-entry-body { flex: 1; min-width: 0; }
+.tl-speaker {
+  font-size: .78rem; font-weight: 600; color: var(--fg);
+}
+.tl-speaker .stance-tag {
+  display: inline-block; padding: 0 6px; border-radius: 8px;
+  font-size: .62rem; font-weight: 600; margin-left: .3rem;
+  vertical-align: middle;
+}
+.tl-summary {
+  font-size: .82rem; color: var(--fg); margin-top: .15rem;
+  line-height: 1.55;
+}
+.tl-evidence {
+  margin-top: .25rem; display: flex; gap: .3rem; flex-wrap: wrap;
+}
+.ev-chip {
+  display: inline-block; padding: 0 6px; border-radius: 4px;
+  font-size: .62rem; font-weight: 600;
+  color: var(--muted); background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.06);
+}
+
+/* ─────────── Section 3: Bull/Bear Arena ─────────── */
+.arena-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 700px) { .arena-wrap { grid-template-columns: 1fr; } }
+
+.arena-side { padding: .5rem 0; }
+.arena-side-label {
+  font-size: .9rem; font-weight: 700; margin-bottom: .6rem;
+  display: flex; align-items: center; gap: .4rem;
+}
+.arena-bull .arena-side-label { color: var(--green); }
+.arena-bear .arena-side-label { color: var(--red); }
+
+/* Strength bar */
+.strength-bar-wrap { margin-bottom: 1rem; }
+.strength-bar-labels {
+  display: flex; justify-content: space-between;
+  font-size: .72rem; margin-bottom: .3rem;
+}
+.strength-bar-labels .bull-label { color: var(--green); }
+.strength-bar-labels .bear-label { color: var(--red); }
+.strength-bar {
+  display: flex; height: 8px; border-radius: 4px;
+  overflow: hidden; background: rgba(255,255,255,.06);
+}
+.strength-bull { background: linear-gradient(90deg, rgba(0,255,136,.3), var(--green)); border-radius: 4px 0 0 4px; }
+.strength-bear { background: linear-gradient(90deg, var(--red), rgba(255,71,87,.3)); border-radius: 0 4px 4px 0; }
+.strength-pct {
+  text-align: center; font-size: .72rem; font-weight: 700;
+  margin-top: .2rem;
+}
+
+/* Claim cards */
+.claim-card {
+  background: rgba(255,255,255,.02);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 10px; padding: .7rem .9rem;
+  margin-bottom: .6rem; transition: border-color .2s;
+}
+.claim-card:hover { border-color: rgba(0,212,255,.15); }
+.arena-bull .claim-card { border-left: 3px solid rgba(0,255,136,.3); }
+.arena-bear .claim-card { border-left: 3px solid rgba(255,71,87,.3); }
+.claim-dim {
+  font-size: .65rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; margin-bottom: .2rem;
+}
+.arena-bull .claim-dim { color: var(--green); }
+.arena-bear .claim-dim { color: var(--red); }
+.claim-text { font-size: .82rem; color: var(--fg); line-height: 1.5; }
+.claim-meta {
+  display: flex; align-items: center; gap: .6rem;
+  margin-top: .4rem; font-size: .68rem; color: var(--muted);
+}
+.claim-conf-bar {
+  flex: 1; max-width: 100px; height: 4px;
+  background: rgba(255,255,255,.06); border-radius: 2px;
+}
+.claim-conf-fill { height: 100%; border-radius: 2px; }
+.arena-bull .claim-conf-fill { background: var(--green); }
+.arena-bear .claim-conf-fill { background: var(--red); }
+.claim-invalidation {
+  font-size: .68rem; color: var(--yellow);
+  margin-top: .3rem; padding-left: .5rem;
+  border-left: 2px solid rgba(255,211,42,.2);
+}
+
+/* ─────────── Section 4: Controversy ─────────── */
+.controversy-list { display: grid; gap: .6rem; }
+.controversy-item {
+  display: flex; align-items: flex-start; gap: .6rem;
+  padding: .6rem .8rem;
+  background: rgba(255,211,42,.03);
+  border: 1px solid rgba(255,211,42,.1);
+  border-radius: 10px;
+}
+.controversy-icon {
+  flex-shrink: 0; width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .85rem; color: var(--yellow);
+}
+.controversy-text { font-size: .82rem; color: var(--fg); line-height: 1.5; }
+
+/* ─────────── Section 5: Verdict Card ─────────── */
+.verdict-card {
+  position: relative; overflow: hidden;
+  border-radius: 16px; padding: 1.5rem 1.8rem;
+}
+.verdict-card.buy {
+  background: linear-gradient(135deg, rgba(0,255,136,.06), rgba(0,212,255,.04));
+  border: 1px solid rgba(0,255,136,.2);
+}
+.verdict-card.hold {
+  background: linear-gradient(135deg, rgba(255,211,42,.06), rgba(0,212,255,.04));
+  border: 1px solid rgba(255,211,42,.2);
+}
+.verdict-card.sell, .verdict-card.veto {
+  background: linear-gradient(135deg, rgba(255,71,87,.06), rgba(0,212,255,.04));
+  border: 1px solid rgba(255,71,87,.2);
+}
+.verdict-action {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: 1.4rem; font-weight: 800;
+}
+.verdict-action.buy  { color: var(--green); }
+.verdict-action.hold { color: var(--yellow); }
+.verdict-action.sell, .verdict-action.veto { color: var(--red); }
+.verdict-reason {
+  font-size: .92rem; color: var(--fg); margin-top: .5rem;
+  line-height: 1.6; max-width: 700px;
+}
+.verdict-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: .8rem; margin-top: 1rem;
+}
+.verdict-kpi {
+  text-align: center; padding: .7rem .5rem;
+  background: rgba(255,255,255,.02);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 10px;
+}
+.verdict-kpi .vk-val {
+  font-size: 1.5rem; font-weight: 700;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+.verdict-kpi .vk-label { font-size: .7rem; color: var(--muted); margin-top: .15rem; }
+.verdict-kpi.buy .vk-val  { color: var(--green); }
+.verdict-kpi.hold .vk-val { color: var(--yellow); }
+.verdict-kpi.sell .vk-val, .verdict-kpi.veto .vk-val { color: var(--red); }
+.verdict-kpi.risk-ok .vk-val  { color: var(--green); }
+.verdict-kpi.risk-warn .vk-val { color: var(--yellow); }
+.verdict-kpi.risk-bad .vk-val  { color: var(--red); }
+
+.verdict-conditions {
+  display: grid; grid-template-columns: 1fr 1fr; gap: .8rem;
+  margin-top: 1rem;
+}
+@media (max-width: 600px) { .verdict-conditions { grid-template-columns: 1fr; } }
+.vc-box {
+  padding: .7rem .9rem; border-radius: 10px;
+  font-size: .82rem; line-height: 1.5;
+}
+.vc-box.trigger {
+  background: rgba(0,255,136,.04);
+  border: 1px solid rgba(0,255,136,.12);
+}
+.vc-box.invalidator {
+  background: rgba(255,71,87,.04);
+  border: 1px solid rgba(255,71,87,.12);
+}
+.vc-label { font-size: .68rem; font-weight: 700; margin-bottom: .25rem; }
+.vc-box.trigger .vc-label { color: var(--green); }
+.vc-box.invalidator .vc-label { color: var(--red); }
+
+.verdict-flags {
+  display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .8rem;
+}
+.risk-flag {
+  display: inline-flex; align-items: center; gap: .25rem;
+  padding: .2rem .6rem; border-radius: 8px;
+  font-size: .7rem; font-weight: 600;
+}
+.risk-flag.medium { color: var(--yellow); background: rgba(255,211,42,.08); border: 1px solid rgba(255,211,42,.15); }
+.risk-flag.low    { color: var(--muted); background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06); }
+.risk-flag.high   { color: var(--red); background: rgba(255,71,87,.08); border: 1px solid rgba(255,71,87,.15); }
+
+/* ─────────── Section 6: Audit ─────────── */
+.audit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: .6rem;
+}
+.audit-cell {
+  text-align: center; padding: .7rem .5rem;
+  background: rgba(255,255,255,.02);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 10px;
+}
+.audit-cell .av {
+  font-size: 1.3rem; font-weight: 700;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+.audit-cell .al { font-size: .68rem; color: var(--muted); margin-top: .15rem; }
+.audit-cell.good .av { color: var(--green); }
+.audit-cell.warn .av { color: var(--yellow); }
+.audit-cell.bad .av  { color: var(--red); }
+.audit-cell.info .av { color: var(--blue); }
+
+/* ─────────── AI disclaimer ─────────── */
+.ai-banner {
+  background: rgba(255,211,42,.04);
+  border: 1px solid rgba(255,211,42,.15);
+  border-radius: 10px; padding: .6rem 1rem;
+  font-size: .75rem; color: var(--yellow);
+  text-align: center;
+}
+
+/* Footer */
+.debate-footer {
+  text-align: center; color: var(--muted); font-size: .72rem;
+  padding: .8rem 0 .5rem; border-top: 1px solid rgba(255,255,255,.04);
+  letter-spacing: .04em;
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,0.008));
+}
+
+/* ─────────── Market Wind Banner ─────────── */
+.market-wind-card {
+  display: flex; align-items: center; gap: 1rem;
+  padding: .8rem 1.2rem; border-radius: 12px;
+}
+.market-wind-card.wind-tailwind {
+  background: rgba(0,255,136,.06); border: 1px solid rgba(0,255,136,.18);
+}
+.market-wind-card.wind-headwind {
+  background: rgba(255,71,87,.06); border: 1px solid rgba(255,71,87,.18);
+}
+.market-wind-card.wind-neutral {
+  background: rgba(0,212,255,.04); border: 1px solid rgba(0,212,255,.12);
+}
+.wind-icon { font-size: 1.5rem; flex-shrink: 0; }
+.wind-body { flex: 1; min-width: 0; }
+.wind-title { font-size: .85rem; font-weight: 700; }
+.wind-tailwind .wind-title { color: var(--green); }
+.wind-headwind .wind-title { color: var(--red); }
+.wind-neutral .wind-title { color: var(--blue); }
+.wind-detail { font-size: .78rem; color: var(--fg); margin-top: .15rem; }
+.wind-chips { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .35rem; }
+.wind-chip {
+  display: inline-block; padding: 1px 8px; border-radius: 8px;
+  font-size: .65rem; font-weight: 600;
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+  color: var(--muted);
+}
+.wind-chip.leader { color: var(--green); border-color: rgba(0,255,136,.15); }
+.wind-chip.avoid { color: var(--red); border-color: rgba(255,71,87,.15); }
+
+/* ─────────── Reveal animation ─────────── */
+.glass, .debate-hero { animation: db-rise 480ms ease both; }
+.debate-shell > :nth-child(2) { animation-delay: 60ms; }
+.debate-shell > :nth-child(3) { animation-delay: 120ms; }
+.debate-shell > :nth-child(4) { animation-delay: 180ms; }
+.debate-shell > :nth-child(5) { animation-delay: 240ms; }
+.debate-shell > :nth-child(6) { animation-delay: 300ms; }
+@keyframes db-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─────────── Responsive ─────────── */
+@media (max-width: 700px) {
+  .glass, .debate-hero { animation: none !important; }
+  .debate-shell { padding: .8rem; gap: 1rem; }
+  .debate-hero { padding: 1.2rem; border-radius: 14px; }
+  .debate-hero h1 { font-size: 1.5rem; }
+  .hero-eyebrow { font-size: .68rem; }
+  .hero-meta { font-size: .78rem; }
+  .roster-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: .5rem; }
+  .roster-card { padding: .5rem .6rem; min-height: 44px; }
+  .roster-name { font-size: .78rem; }
+  .roster-role { font-size: .65rem; }
+  .roster-stance { font-size: .62rem; padding: 2px 7px; }
+  .sec-title { font-size: 1rem; }
+  .arena-wrap { grid-template-columns: 1fr; gap: .75rem; }
+  .arena-claim { padding: .6rem .8rem; font-size: .82rem; }
+  .verdict-card { padding: 1rem; border-radius: 14px; }
+  .verdict-conditions { grid-template-columns: 1fr; gap: .6rem; }
+  .vc-box { padding: .6rem .75rem; font-size: .8rem; }
+  .glass { padding: 1rem; border-radius: 12px; }
+  .debate-timeline { padding-left: 24px; }
+  .tl-phase-label { font-size: .78rem; }
+  .tl-entry { font-size: .82rem; }
+  .debate-footer { font-size: .72rem; }
+}
+@supports (padding: env(safe-area-inset-left)) {
+  @media (max-width: 700px) {
+    .debate-shell {
+      padding-left: max(.8rem, env(safe-area-inset-left));
+      padding-right: max(.8rem, env(safe-area-inset-right));
+      padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    }
+  }
+}
+</style>
+</head>
+<body>
+<div class="debate-shell">
+<div class="ai-banner">AI 生成内容，仅供研究参考，不构成任何投资建议。投资决策需独立判断。</div>
+
+<div class="debate-hero">
+  <div class="hero-eyebrow">AI Investment Committee</div>
+  <h1>中国核电 601985.SS</h1>
+  <div class="hero-verdict hold">⏸ 持有观望</div>
+  <div class="hero-meta">2026-03-19 &middot; 5 轮讨论 &middot; 11 位委员 &middot; 置信度 <span class="mono">50%</span></div>
+</div>
+<div class="glass" style="margin-top:.5rem;">
+  <div class="sec-head"><span class="sec-title">投研委员会成员</span><span class="sec-sub">11 位委员参与</span></div>
+  <div class="roster-grid">
+    <div class="roster-phase-label">PHASE 1 · 初始研判</div>
+    <div class="roster-card">
+      <div class="roster-avatar stance-neutral">📊</div>
+      <div class="roster-name">基本面分析师</div>
+      <div class="roster-role">Fundamental Analyst</div>
+      <span class="roster-stance stance-neutral">中性</span>
+    </div>
+    <div class="roster-card">
+      <div class="roster-avatar stance-neutral">📈</div>
+      <div class="roster-name">技术面分析师</div>
+      <div class="roster-role">Technical Analyst</div>
+      <span class="roster-stance stance-neutral">中性</span>
+    </div>
+    <div class="roster-card">
+      <div class="roster-avatar stance-neutral">⚡</div>
+      <div class="roster-name">催化分析师</div>
+      <div class="roster-role">Catalyst Analyst</div>
+      <span class="roster-stance stance-neutral">中性</span>
+    </div>
+    <div class="roster-card">
+      <div class="roster-avatar stance-neutral">💰</div>
+      <div class="roster-name">资金面分析师</div>
+      <div class="roster-role">Flow Analyst</div>
+      <span class="roster-stance stance-neutral">中性</span>
+    </div>
+    <div class="roster-phase-label">PHASE 2 · 多空辩论</div>
+    <div class="roster-card">
+      <div class="roster-avatar stance-bull">🐂</div>
+      <div class="roster-name">多方研究员</div>
+      <div class="roster-role">Bull Researcher</div>
+      <span class="roster-stance stance-bull">看多</span>
+    </div>
+    <div class="roster-card">
+      <div class="roster-avatar stance-bear">🐻</div>
+      <div class="roster-name">空方研究员</div>
+      <div class="roster-role">Bear Researcher</div>
+      <span class="roster-stance stance-bear">看空</span>
+    </div>
+    <div class="roster-phase-label">PHASE 3 · 风控质疑</div>
+    <div class="roster-card">
+      <div class="roster-avatar stance-bull">⚔️</div>
+      <div class="roster-name">进攻型风控</div>
+      <div class="roster-role">Aggressive Risk</div>
+      <span class="roster-stance stance-bull">看多</span>
+    </div>
+    <div class="roster-card">
+      <div class="roster-avatar stance-bear">🛡️</div>
+      <div class="roster-name">防守型风控</div>
+      <div class="roster-role">Conservative Risk</div>
+      <span class="roster-stance stance-bear">看空</span>
+    </div>
+    <div class="roster-card">
+      <div class="roster-avatar stance-neutral">⚖️</div>
+      <div class="roster-name">平衡型风控</div>
+      <div class="roster-role">Balanced Risk</div>
+      <span class="roster-stance stance-neutral">中性</span>
+    </div>
+    <div class="roster-phase-label">PHASE 4 · 研究裁决</div>
+    <div class="roster-card">
+      <div class="roster-avatar stance-neutral">👑</div>
+      <div class="roster-name">研究主席</div>
+      <div class="roster-role">Research Chair</div>
+      <span class="roster-stance stance-neutral">中性</span>
+    </div>
+    <div class="roster-phase-label">PHASE 5 · 终审签署</div>
+    <div class="roster-card">
+      <div class="roster-avatar stance-neutral">🚨</div>
+      <div class="roster-name">风控官</div>
+      <div class="roster-role">Risk Officer</div>
+      <span class="roster-stance stance-neutral">中性</span>
+    </div>
+  </div>
+</div>
+
+<div class="market-wind-card wind-neutral">
+  <div class="wind-icon">☁️</div>
+  <div class="wind-body">
+    <div class="wind-title">市场感知: 防御 (RISK_OFF) — 中性</div>
+    <div class="wind-detail">三大指数全线收跌、涨跌比低至0.09，市场进入系统性风险释放模式，赚钱效应全面丧失。</div>
+    <div class="wind-detail" style="color:var(--muted)">市场中性，不构成额外加减分</div>
+    <div class="wind-chips">
+      <span class="wind-chip leader">核电</span>
+      <span class="wind-chip leader">AI算力</span>
+      <span class="wind-chip leader">黄金贵金属</span>
+      <span class="wind-chip avoid">房地产</span>
+      <span class="wind-chip avoid">白酒消费</span>
+    </div>
+  </div>
+</div>
+
+<div class="glass">
+  <div class="sec-head"><span class="sec-title">讨论过程</span><span class="sec-sub">5 轮 &middot; 12 次发言</span></div>
+  <div class="debate-timeline">
+    <div class="timeline-spine"></div>
+    <div class="tl-phase phase-initial">
+      <div class="tl-phase-dot"></div>
+      <div class="tl-phase-label">Round 1 · 初判<span class="tl-phase-en">Initial Assessment</span></div>
+      <div class="tl-entry">
+        <div class="tl-entry-avatar stance-neutral">📊</div>
+        <div class="tl-entry-body">
+          <div class="tl-speaker">基本面分析师 <span class="stance-tag stance-neutral">中性</span></div>
+          <div class="tl-summary"># 基本面分析报告 — 中国核电（601985.SH）</div>
+        </div>
+      </div>
+      <div class="tl-entry">
+        <div class="tl-entry-avatar stance-neutral">📈</div>
+        <div class="tl-entry-body">
+          <div class="tl-speaker">技术面分析师 <span class="stance-tag stance-neutral">中性</span></div>
+          <div class="tl-summary"># 601985 中国核电 — 技术分析报告（观星司）</div>
+        </div>
+      </div>
+      <div class="tl-entry">
+        <div class="tl-entry-avatar stance-neutral">⚡</div>
+        <div class="tl-entry-body">
+          <div class="tl-speaker">催化分析师 <span class="stance-tag stance-neutral">中性</span></div>
+          <div class="tl-summary"># 新闻与催化剂分析报告</div>
+        </div>
+      </div>
+      <div class="tl-entry">
+        <div class="tl-entry-avatar stance-neutral">💰</div>
+        <div class="tl-entry-body">
+          <div class="tl-speaker">资金面分析师 <span class="stance-tag stance-neutral">中性</span></div>
+          <div class="tl-summary"># 【察言司】流动性与情绪分析报告</div>
+        </div>
+      </div>
+    </div>
+    <div class="tl-phase phase-debate">
+      <div class="tl-phase-dot"></div>
+      <div class="tl-phase-label">Round 2 · 多空辩论<span class="tl-phase-en">Bull-Bear Debate</span></div>
+      <div class="tl-entry">
+        <div class="tl-entry-avatar stance-bull">🐂</div>
+        <div class="tl-entry-body">
+          <div class="tl-speaker">多方研究员 <span class="stance-tag stance-bull">看多</span></div>
+          <div class="tl-summary">中国核电P/CFO估值显著低估，年化P/CFO约4.8x远低于公用事业历史合理区间8-15x，即使按最保守6x计算合理股价也达11.67元，较当前9.24元有26%以上上涨空间</div>
+          <div class="tl-evidence"><span class="ev-chip">E15</span><span class="ev-chip">E16</span><span class="ev-chip">E9</span><span class="ev-chip">E28</span><span class="ev-chip">E29</span></div>
+        </div>
+      </div>
+      <div class="tl-entry">
+        <div class="tl-entry-avatar stance-bear">🐻</div>
+        <div class="tl-entry-body">
+          <div class="tl-speaker">空方研究员 <span class="stance-tag stance-bear">看空</span></div>
+          <div class="tl-summary">少数股东损益吞噬近半利润，归母股东实际受益远低于合并报表数字，P/CFO低估论点存在根本缺陷</div>
+          <div class="tl-evidence"><span class="ev-chip">E10</span><span class="ev-chip">E11</span><span class="ev-chip">基本面报告-少数股东损益数据</span><span class="ev-chip">基本面报告-ROE数据</span><span class="ev-chip">E9</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="tl-phase phase-scenario">
+      <div class="tl-phase-dot"></div>
+      <div class="tl-phase-label">Round 3 · 场景推演<span class="tl-phase-en">Scenario Analysis</span></div>
+      <div class="tl-entry">
+        <div class="tl-entry-avatar stance-neutral">🔮</div>
+        <div class="tl-entry-body">
+          <div class="tl-speaker">场景分析师 <span class="stance-tag stance-neutral">中性</span></div>
+          <div class="tl-summary">基准 0.5% / 乐观 0.25% / 悲观 0.25%</div>
+        </div>
+      </div>
+    </div>
+    <div class="tl-phase phase-risk">
+      <div class="tl-phase-dot"></div>
+      <div class="tl-phase-label">Round 4 · 风控质疑<span class="tl-phase-en">Risk Challenge</span></div>
+      <div class="tl-entry">
+        <div class="tl-entry-avatar stance-bull">⚔️</div>
+        <div class="tl-entry-body">
+          <div class="tl-speaker">进攻型风控 <span class="stance-tag stance-bull">看多</span></div>
+          <div class="tl-summary"># 601985 中国核电 — 激进风险分析师意见书</div>
+        </div>
+      </div>
+      <div class="tl-entry">
+        <div class="tl-entry-avatar stance-bear">🛡️</div>
+        <div class="tl-entry-body">
+          <div class="tl-speaker">防守型风控 <span class="stance-tag stance-bear">看空</span></div>
+          <div class="tl-summary"># 601985 中国核电 — 保守风险分析师意见书</div>
+        </div>
+      </div>
+      <div class="tl-entry">
+        <div class="tl-entry-avatar stance-neutral">⚖️</div>
+        <div class="tl-entry-body">
+          <div class="tl-speaker">平衡型风控 <span class="stance-tag stance-neutral">中性</span></div>
+          <div class="tl-summary"># 601985 中国核电 — 中性风险分析师意见书</div>
+        </div>
+      </div>
+    </div>
+    <div class="tl-phase phase-verdict">
+      <div class="tl-phase-dot"></div>
+      <div class="tl-phase-label">Round 5 · 最终裁决<span class="tl-phase-en">Final Verdict</span></div>
+      <div class="tl-entry">
+        <div class="tl-entry-avatar stance-neutral">👑</div>
+        <div class="tl-entry-body">
+          <div class="tl-speaker">研究主席 <span class="stance-tag stance-neutral">中性</span></div>
+          <div class="tl-summary"># 601985 中国核电 — 研究总监综合研判报告（Research Manager / Investment Committee CIRO）</div>
+        </div>
+      </div>
+      <div class="tl-entry">
+        <div class="tl-entry-avatar stance-neutral">🚨</div>
+        <div class="tl-entry-body">
+          <div class="tl-speaker">风控官 <span class="stance-tag stance-neutral">中性</span></div>
+          <div class="tl-summary">风险评分 6/10，审查通过</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="glass">
+  <div class="sec-head"><span class="sec-title">多空对抗</span><span class="sec-sub">Bull vs Bear Arena</span></div>
+  <div class="strength-bar-wrap">
+    <div class="strength-bar-labels"><span class="bull-label">看多 4.0</span><span class="bear-label">看空 4.0</span></div>
+    <div class="strength-bar"><div class="strength-bull" style="width:49%"></div><div class="strength-bear" style="width:51%"></div></div>
+    <div class="strength-pct" style="color:var(--yellow)">49% : 51%</div>
+  </div>
+  <div class="arena-wrap">
+    <div class="arena-side arena-bull">
+      <div class="arena-side-label">🐂 看多论据 (5)</div>
+      <div class="claim-card">
+        <div class="claim-dim">valuation</div>
+        <div class="claim-text">P/CFO是核电重资产高折旧企业的最优估值框架。中国核电年化P/CFO约4.8倍，远低于公用事业行业8-15倍历史区间，最悲观情景（P/CFO=6x）隐含股价11.67元（较当前+26.3%），基准情景（P/CFO=8x）隐含15.56元（+68.4%）。空方用PE/PEG批评估值，犯了用错工具的根本性错误，无法有效质疑这一核心低估论据。</div>
+        <div class="claim-meta">
+          <span class="mono">87%</span>
+          <div class="claim-conf-bar"><div class="claim-conf-fill" style="width:87%"></div></div>
+          <span class="ev-chip">E15</span>
+          <span class="ev-chip">E16</span>
+          <span class="ev-chip">E9</span>
+          <span class="ev-chip">E10</span>
+        </div>
+        <div class="claim-invalidation">失效条件: 若公用事业行业P/CFO中枢系统性压缩至&lt;5x（如因利率大幅上升导致资产重估），或年化经营现金流大幅下滑至&lt;300亿元</div>
+      </div>
+      <div class="claim-card">
+        <div class="claim-dim">valuation</div>
+        <div class="claim-text">中国核电P/CFO估值显著低估，年化P/CFO约4.8x远低于公用事业历史合理区间8-15x，即使按最保守6x计算合理股价也达11.67元，较当前9.24元有26%以上上涨空间</div>
+        <div class="claim-meta">
+          <span class="mono">82%</span>
+          <div class="claim-conf-bar"><div class="claim-conf-fill" style="width:82%"></div></div>
+          <span class="ev-chip">E15</span>
+          <span class="ev-chip">E16</span>
+          <span class="ev-chip">E9</span>
+        </div>
+        <div class="claim-invalidation">失效条件: 若2025全年CFO大幅低于前三季度年化水平，或行业估值体系整体压缩至P/CFO&lt;6x</div>
+      </div>
+      <div class="claim-card">
+        <div class="claim-dim">technicals</div>
+        <div class="claim-text">03-13&quot;天量见顶&quot;的空方解读存在技术分析错误。在前高阻力区（9.30-9.35）出现的放量价格停滞属于&quot;量增价阻&quot;（消化套牢盘），而非无阻力区域的&quot;量增价滞&quot;（多空均衡失效）。03-13当日主力仍净流入6,719万元，不满足&quot;天量见顶&quot;的必要条件（主力净流出）。</div>
+        <div class="claim-meta">
+          <span class="mono">80%</span>
+          <div class="claim-conf-bar"><div class="claim-conf-fill" style="width:80%"></div></div>
+          <span class="ev-chip">E4</span>
+          <span class="ev-chip">E5</span>
+          <span class="ev-chip">E6</span>
+          <span class="ev-chip">E7</span>
+          <span class="ev-chip">E8</span>
+        </div>
+        <div class="claim-invalidation">失效条件: 03-14股价继续缩量（&lt;200万手）且下跌&gt;1%，随后连续跌破9.06年线支撑，量价关系逆转为空</div>
+      </div>
+      <div class="claim-card">
+        <div class="claim-dim">technicals</div>
+        <div class="claim-text">W底结构（8.52→8.46双底，差距仅0.7%）+Higher High/Higher Low序列（4个HH+4个HL完整确认）+年线突破后连续3日站稳，构成A股技术分析中最完整的底部反转确认组合。距失效位8.75元约5.3%的安全垫为持仓提供了明确的风险管理框架，止盈止损逻辑清晰。</div>
+        <div class="claim-meta">
+          <span class="mono">78%</span>
+          <div class="claim-conf-bar"><div class="claim-conf-fill" style="width:78%"></div></div>
+          <span class="ev-chip">E3</span>
+          <span class="ev-chip">E4</span>
+          <span class="ev-chip">E23</span>
+          <span class="ev-chip">E24</span>
+          <span class="ev-chip">E6</span>
+        </div>
+        <div class="claim-invalidation">失效条件: 跌破8.75元（最近Higher Low）则HH/HL序列打破；跌破8.46元则W底失败；连续2日收盘跌破9.00元则年线突破失效</div>
+      </div>
+      <div class="claim-card">
+        <div class="claim-dim">valuation</div>
+        <div class="claim-text">年线+半年线双重突破（3月11日，3日已确认站稳）构成中期多头转折信号，技术目标区间9.50-10.50元，中期估值目标11.67元（P/CFO=6x保守）</div>
+        <div class="claim-meta">
+          <span class="mono">75%</span>
+          <div class="claim-conf-bar"><div class="claim-conf-fill" style="width:75%"></div></div>
+          <span class="ev-chip">E4</span>
+          <span class="ev-chip">E5</span>
+          <span class="ev-chip">E23</span>
+          <span class="ev-chip">E24</span>
+          <span class="ev-chip">E8</span>
+        </div>
+        <div class="claim-invalidation">失效条件: 连续2日收盘跌破年线（约9.00-9.10元），或回落至9.00以下且主力资金转为净流出</div>
+      </div>
+    </div>
+    <div class="arena-side arena-bear">
+      <div class="arena-side-label">🐻 看空论据 (5)</div>
+      <div class="claim-card">
+        <div class="claim-dim">catalysts</div>
+        <div class="claim-text">三季报净利润同比-10.42%，全年业绩下滑趋势在无政策催化下大概率延续</div>
+        <div class="claim-meta">
+          <span class="mono">80%</span>
+          <div class="claim-conf-bar"><div class="claim-conf-fill" style="width:80%"></div></div>
+          <span class="ev-chip">E9</span>
+          <span class="ev-chip">新闻报告-三季报净利润同比数据</span>
+        </div>
+        <div class="claim-invalidation">失效条件: 年报净利润增速转正并超过+10%</div>
+      </div>
+      <div class="claim-card">
+        <div class="claim-dim">catalysts</div>
+        <div class="claim-text">看多方列举的6个催化剂中，漳州2号商运和发电量目标上调已分别于1月1日和1月7日公布，但未能阻止2月股价跌至8.46元——市场已用价格表明对这两个催化剂不买账。剩余催化剂中年报方向不明、AI叙事非个股独有、回购象征性、新核准时间不确定——催化剂组合实质为&quot;真空&quot;而非&quot;共振&quot;。</div>
+        <div class="claim-meta">
+          <span class="mono">78%</span>
+          <div class="claim-conf-bar"><div class="claim-conf-fill" style="width:78%"></div></div>
+          <span class="ev-chip">新闻报告-C2催化剂地图</span>
+          <span class="ev-chip">看多R1催化剂列表</span>
+          <span class="ev-chip">技术报告-A1价格序列2月数据</span>
+        </div>
+        <div class="claim-invalidation">失效条件: 年报披露全年净利润同比+10%以上，或3月内发布新核电机组核准公告构成超预期催化。</div>
+      </div>
+      <div class="claim-card">
+        <div class="claim-dim">valuation</div>
+        <div class="claim-text">看多方核心估值论据P/CFO=4.8x存在致命的口径错误——用合并口径CFO（302.66亿）除以母公司口径市值（1900亿），忽视了少数股东损益占合并净利润48.4%的事实。修正为归母口径后P/CFO约12.2x，位于公用事业8-15x区间的中上段，&quot;深度低估至少60%重估空间&quot;的结论完全不成立。</div>
+        <div class="claim-meta">
+          <span class="mono">88%</span>
+          <div class="claim-conf-bar"><div class="claim-conf-fill" style="width:88%"></div></div>
+          <span class="ev-chip">基本面报告-F8少数股东损益48.4%</span>
+          <span class="ev-chip">基本面报告-F3经营现金流302.66亿</span>
+          <span class="ev-chip">基本面报告-B3估值分析</span>
+        </div>
+        <div class="claim-invalidation">失效条件: 若公司披露归母口径经营现金流&gt;250亿元（少数股东CFO占比&lt;17%），或公用事业行业P/CFO估值中枢系统性上移至&gt;15x。</div>
+      </div>
+      <div class="claim-card">
+        <div class="claim-dim">fundamentals</div>
+        <div class="claim-text">2月24-27日连续5日主力出逃和3月9-13日5日主力流入的&quot;戏剧性反转&quot;，本质是同一批资金的高抛低吸短线操作——机构对601985的态度是交易性的（Tactical）而非战略性的（Strategic）。2月27日板块净流入29.20亿但601985仍在流出榜的事实证明：即使在板块走强时，机构也会主动回避该股的基本面。</div>
+        <div class="claim-meta">
+          <span class="mono">77%</span>
+          <div class="claim-conf-bar"><div class="claim-conf-fill" style="width:77%"></div></div>
+          <span class="ev-chip">新闻报告-E3资金出逃2月底</span>
+          <span class="ev-chip">新闻报告-M2板块内分化2月27日</span>
+          <span class="ev-chip">情绪报告-D1-1资金流入3月</span>
+          <span class="ev-chip">证券时报网/S2</span>
+        </div>
+        <div class="claim-invalidation">失效条件: 主力资金连续持有20个交易日以上不出现单日&gt;1亿净流出，证明为长期战略性配置而非短线交易。</div>
+      </div>
+      <div class="claim-card">
+        <div class="claim-dim">valuation</div>
+        <div class="claim-text">PE 24.22x在业绩同比-10%的背景下快速扩张，估值与业绩背离存在均值回归压力</div>
+        <div class="claim-meta">
+          <span class="mono">82%</span>
+          <div class="claim-conf-bar"><div class="claim-conf-fill" style="width:82%"></div></div>
+          <span class="ev-chip">E9</span>
+          <span class="ev-chip">E12</span>
+          <span class="ev-chip">E13</span>
+          <span class="ev-chip">E14</span>
+        </div>
+        <div class="claim-invalidation">失效条件: 年报净利润增速转正至+10%以上，动态PE回落至18x以下，估值压力释放</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="glass glass-glow-yellow">
+  <div class="sec-head"><span class="sec-title">分歧焦点</span><span class="sec-sub">5 个争议点</span></div>
+  <div class="controversy-list">
+    <div class="controversy-item">
+      <div class="controversy-icon">⚠️</div>
+      <div class="controversy-text">(1)FY2025全年归母净利润最终落点——Q4单季度是否实现环比改善</div>
+    </div>
+    <div class="controversy-item">
+      <div class="controversy-icon">⚠️</div>
+      <div class="controversy-text">(2)电价市场化对核电上网电价的实际影响幅度——看多方两轮辩论均未正面回应</div>
+    </div>
+    <div class="controversy-item">
+      <div class="controversy-icon">⚠️</div>
+      <div class="controversy-text">(3)北向资金2024年9月至今的持仓变动方向——19个月数据完全空白</div>
+    </div>
+    <div class="controversy-item">
+      <div class="controversy-icon">⚠️</div>
+      <div class="controversy-text">(4)限售股解禁时间表——akshare无数据，需通过Wind/东方财富独立核查</div>
+    </div>
+    <div class="controversy-item">
+      <div class="controversy-icon">⚠️</div>
+      <div class="controversy-text">valuation维度存在分歧：多方认为年线+半年线双重突破（3月11日，3日已确认站稳）构成中期多，空方认为PE 24.22x在业绩同比-10%的背景下快速扩张，估值与</div>
+    </div>
+  </div>
+</div>
+
+<div class="verdict-card hold">
+  <div class="sec-head"><span class="sec-title">投委会裁决</span></div>
+  <div class="verdict-action hold">⏸ 持有观望</div>
+  <div class="verdict-reason">中国核电修正后归母P/CFO约7-10x处于行业合理偏低位置（仲裁Bull CLAIM1 vs Bear CLAIM1，采纳情景CLAIM1中枢判断），概率加权期望目标价9.85元（+6.6%）为正，但年报（3月底-4月初）方向完全不确定[</div>
+  <div class="verdict-kpi-row">
+    <div class="verdict-kpi hold"><div class="vk-val">50%</div><div class="vk-label">置信度</div></div>
+    <div class="verdict-kpi"><div class="vk-val" style="color:var(--white)">中仓</div><div class="vk-label">建议仓位</div></div>
+    <div class="verdict-kpi risk-ok"><div class="vk-val">0/10</div><div class="vk-label">风险评分</div></div>
+    <div class="verdict-kpi risk-ok"><div class="vk-val">通过</div><div class="vk-label">风控审核</div></div>
+  </div>
+  <div class="verdict-conditions">
+    <div class="vc-box trigger"><div class="vc-label">确认买入信号</div>年报归母净利润&gt;112亿确认盈利拐点+额外催化剂兑现，突破9.34元前高向11.20元进军（+21.2%）</div>
+  </div>
+  <div class="verdict-flags">
+    <span class="risk-flag high" title="FY2025年报2-4周内披露，Q1-Q3归母净利同比-10.42%，Q4需25-32亿方达基准区间下限，方向不明">年报业绩不确定性</span>
+    <span class="risk-flag medium" title="营收+8.16%但净利润-10.42%剪刀差暴露成本压力，看多方两轮辩论未能实质性反驳">电价市场化结构性压力</span>
+    <span class="risk-flag medium" title="主力净流入3日衰减78.2%，2月底连续5日出逃后仅2周180度反转，持续性存疑">资金脉冲衰减</span>
+    <span class="risk-flag medium" title="北向资金数据滞后19个月，限售股解禁计划完全缺失，机构最新研报空窗">多维数据盲区</span>
+    <span class="risk-flag medium" title="PE(TTM)24.22处行业区间上沿，10日扩张+5.2%，ROE仅7.11%不支撑PB 1.64x">PE估值偏高</span>
+  </div>
+</div>
+
+<div class="glass">
+  <div class="sec-head"><span class="sec-title">审计摘要</span><span class="sec-sub">Audit Trail</span></div>
+  <div class="audit-grid">
+    <div class="audit-cell info"><div class="av">5</div><div class="al">讨论轮次</div></div>
+    <div class="audit-cell info"><div class="av">12</div><div class="al">发言次数</div></div>
+    <div class="audit-cell info"><div class="av">10</div><div class="al">论据总数</div></div>
+    <div class="audit-cell info"><div class="av">90</div><div class="al">证据引用</div></div>
+    <div class="audit-cell bad"><div class="av">分歧较大</div><div class="al">分歧水平</div></div>
+    <div class="audit-cell warn"><div class="av">基本收敛</div><div class="al">收敛状态</div></div>
+  </div>
+</div>
+
+<div class="debate-footer">TradingAgents AI Investment Committee v0.2.0</div>
+</div>
+</body>
+</html>
