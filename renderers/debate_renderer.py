@@ -77,6 +77,12 @@ body::before {
   border-radius: 14px; padding: 1.25rem;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
+}
+.glass:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 212, 255, 0.18);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255,255,255,0.04);
 }
 .glass-glow-green { box-shadow: 0 0 20px var(--glow-green), inset 0 1px 0 rgba(0,255,136,.06); }
 .glass-glow-red   { box-shadow: 0 0 20px var(--glow-red),   inset 0 1px 0 rgba(255,71,87,.06); }
@@ -140,10 +146,16 @@ body::before {
 .roster-card {
   background: rgba(255,255,255,.02);
   border: 1px solid rgba(255,255,255,.06);
-  border-radius: 10px; padding: .65rem .8rem;
-  text-align: center; transition: border-color .2s;
+  border-radius: 12px; padding: .65rem .8rem;
+  text-align: center;
+  transition: transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
 }
-.roster-card:hover { border-color: rgba(0,212,255,.2); }
+.roster-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0,212,255,.22);
+  box-shadow: 0 6px 18px rgba(0,0,0,.2);
+  background: rgba(255,255,255,.035);
+}
 .roster-avatar {
   width: 36px; height: 36px; border-radius: 50%;
   margin: 0 auto .4rem; display: flex; align-items: center;
@@ -189,7 +201,10 @@ body::before {
   position: absolute; left: -24px; top: .2rem;
   width: 14px; height: 14px; border-radius: 50%;
   background: var(--bg); border: 2px solid var(--blue);
-  z-index: 2;
+  z-index: 2; transition: box-shadow 300ms ease;
+}
+.tl-phase:hover .tl-phase-dot {
+  box-shadow: 0 0 10px currentColor;
 }
 .tl-phase.phase-initial .tl-phase-dot  { border-color: var(--blue); }
 .tl-phase.phase-debate  .tl-phase-dot  { border-color: var(--green); }
@@ -203,9 +218,11 @@ body::before {
 }
 .tl-phase-en { color: var(--muted); font-size: .72rem; margin-left: .4rem; }
 .tl-entry {
-  display: flex; gap: .7rem; padding: .5rem 0;
+  display: flex; gap: .7rem; padding: .5rem .4rem;
   border-bottom: 1px solid rgba(255,255,255,.03);
+  border-radius: 8px; transition: background 200ms ease;
 }
+.tl-entry:hover { background: rgba(255,255,255,.015); }
 .tl-entry:last-child { border-bottom: none; }
 .tl-entry-avatar {
   width: 28px; height: 28px; border-radius: 50%;
@@ -435,7 +452,9 @@ body::before {
 /* Footer */
 .debate-footer {
   text-align: center; color: var(--muted); font-size: .72rem;
-  padding-top: .8rem; border-top: 1px solid rgba(255,255,255,.04);
+  padding: .8rem 0 .5rem; border-top: 1px solid rgba(255,255,255,.04);
+  letter-spacing: .04em;
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,0.008));
 }
 
 /* ─────────── Market Wind Banner ─────────── */
@@ -469,8 +488,21 @@ body::before {
 .wind-chip.leader { color: var(--green); border-color: rgba(0,255,136,.15); }
 .wind-chip.avoid { color: var(--red); border-color: rgba(255,71,87,.15); }
 
+/* ─────────── Reveal animation ─────────── */
+.glass, .debate-hero { animation: db-rise 480ms ease both; }
+.debate-shell > :nth-child(2) { animation-delay: 60ms; }
+.debate-shell > :nth-child(3) { animation-delay: 120ms; }
+.debate-shell > :nth-child(4) { animation-delay: 180ms; }
+.debate-shell > :nth-child(5) { animation-delay: 240ms; }
+.debate-shell > :nth-child(6) { animation-delay: 300ms; }
+@keyframes db-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ─────────── Responsive ─────────── */
 @media (max-width: 700px) {
+  .glass, .debate-hero { animation: none !important; }
   .debate-shell { padding: .8rem; gap: 1rem; }
   .debate-hero { padding: 1.2rem; border-radius: 14px; }
   .debate-hero h1 { font-size: 1.5rem; }

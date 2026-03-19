@@ -84,6 +84,12 @@ body::before {
   padding: 1.25rem;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
+}
+.glass:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 212, 255, 0.18);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255,255,255,0.04);
 }
 .glass-glow-green { box-shadow: 0 0 20px var(--glow-green), inset 0 1px 0 rgba(0,255,136,.06); }
 .glass-glow-red   { box-shadow: 0 0 20px var(--glow-red),   inset 0 1px 0 rgba(255,71,87,.06); }
@@ -245,9 +251,11 @@ body::before {
 .limit-card-title .cnt.dn { color: var(--red); }
 .limit-stock {
   display: flex; justify-content: space-between; align-items: center;
-  padding: .35rem 0; border-bottom: 1px solid rgba(255,255,255,.04);
-  font-size: .82rem;
+  padding: .35rem .4rem; border-bottom: 1px solid rgba(255,255,255,.04);
+  font-size: .82rem; border-radius: 6px;
+  transition: background 150ms ease;
 }
+.limit-stock:hover { background: rgba(255,255,255,.02); }
 .limit-stock .nm { flex: 1; }
 .limit-stock .sec { color: var(--muted); font-size: .72rem; margin-left: .5rem; }
 .limit-stock .boards-badge {
@@ -320,9 +328,11 @@ body::before {
 /* ── Tooltip ── */
 .shm-tooltip {
   position: fixed; pointer-events: none; z-index: 997;
-  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
-  padding: .4rem .6rem; font-size: .8rem; display: none; white-space: nowrap;
-  backdrop-filter: blur(8px);
+  background: rgba(10, 14, 26, 0.92); border: 1px solid rgba(0,212,255,.15); border-radius: 8px;
+  padding: .5rem .75rem; font-size: .8rem; display: none; white-space: nowrap;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  line-height: 1.5;
 }
 
 /* ── Entry animations ── */

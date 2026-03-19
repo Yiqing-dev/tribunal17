@@ -98,8 +98,14 @@ h3 {
   border-radius: 20px;
   padding: 1.25rem 1.3rem;
   margin-bottom: 1rem;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255,255,255,0.04);
   backdrop-filter: blur(12px);
+  transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
+}
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255,255,255,0.06);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 /* ── Hero (Decision Cockpit) ── */
@@ -151,7 +157,12 @@ h3 {
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 18px;
   padding: .9rem 1rem; text-align: center;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255,255,255,0.03);
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+.kpi:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255,255,255,0.05);
 }
 .kpi::before {
   content: ""; position: absolute; inset: 0 auto auto 0;
@@ -222,7 +233,8 @@ h3 {
 /* ── Trade plan card ── */
 .tp-table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-bottom: .5rem; }
 .tp-table th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.08); padding: .45rem .4rem; font-size: .76rem; letter-spacing: .06em; text-transform: uppercase; }
-.tp-table td { padding: .45rem .4rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.tp-table td { padding: .45rem .4rem; border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 150ms ease; }
+.tp-table tr:hover td { background: rgba(255,255,255,0.02); }
 .tp-table .mono { font-family: var(--mono); }
 .tp-row { display: flex; align-items: center; gap: .6rem; padding: .35rem 0; font-size: .85rem; }
 .tp-label { font-weight: 600; min-width: 5em; }
@@ -373,7 +385,9 @@ li { margin-bottom: .3rem; font-size: .9rem; }
 .footer {
   margin-top: 2.5rem; color: var(--muted); font-size: .78rem;
   border-top: 1px solid rgba(255,255,255,0.06); padding-top: 1rem;
-  letter-spacing: .04em;
+  letter-spacing: .04em; text-align: center;
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,0.01));
+  border-radius: 0 0 20px 20px; padding-bottom: 1rem;
 }
 
 /* ── Mobile ── */
@@ -3103,6 +3117,12 @@ _MARKET_CSS = """
   border: 1px solid rgba(110, 148, 171, 0.22);
   border-radius: 14px; padding: 1.25rem;
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
+}
+.mkt-glass:hover {
+  transform: translateY(-1px);
+  border-color: rgba(110, 148, 171, 0.32);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255,255,255,0.04);
 }
 .mkt-glass.glow-gold  { box-shadow: 0 0 24px rgba(255,177,109,.12), inset 0 1px 0 rgba(255,177,109,.06); }
 .mkt-glass.glow-green { box-shadow: 0 0 20px rgba(82,214,167,.12), inset 0 1px 0 rgba(82,214,167,.06); }
@@ -3262,8 +3282,10 @@ _MARKET_CSS = """
 .sector-list-title { font-size: .85rem; font-weight: 600; margin-bottom: .5rem; display: flex; align-items: center; gap: .4rem; }
 .sector-item {
   display: flex; justify-content: space-between; align-items: center;
-  padding: .3rem 0; border-bottom: 1px solid rgba(255,255,255,.04); font-size: .82rem;
+  padding: .3rem .4rem; border-bottom: 1px solid rgba(255,255,255,.04); font-size: .82rem;
+  border-radius: 6px; transition: background 150ms ease;
 }
+.sector-item:hover { background: rgba(255,255,255,.02); }
 .sector-item .si-name { flex: 1; }
 .sector-item .si-flow { font-size: .75rem; font-family: monospace; color: var(--muted); }
 .sector-item .si-pct { font-family: monospace; font-weight: 600; min-width: 55px; text-align: right; }
@@ -3292,7 +3314,10 @@ _MARKET_CSS = """
 .limit-col-header .lch-label { font-size: .85rem; color: var(--muted); }
 .limit-stock-row {
   display: flex; align-items: center; gap: .4rem;
-  padding: .35rem 0; border-bottom: 1px solid rgba(255,255,255,.04); font-size: .82rem;
+  padding: .35rem .4rem; border-bottom: 1px solid rgba(255,255,255,.04); font-size: .82rem;
+  border-radius: 6px; transition: background 150ms ease;
+}
+.limit-stock-row:hover { background: rgba(255,255,255,.02);
 }
 .limit-stock-row .ls-name { flex: 1; font-weight: 500; }
 .limit-stock-row .ls-sector {
