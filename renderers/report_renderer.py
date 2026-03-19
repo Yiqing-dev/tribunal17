@@ -3308,21 +3308,8 @@ _MARKET_CSS = """
 .limit-stock-row .ls-pct { font-size: .78rem; font-family: monospace; font-weight: 600; min-width: 52px; text-align: right; }
 .limit-stock-row .ls-pct.up { color: var(--green); }
 .limit-stock-row .ls-pct.dn { color: var(--red); }
-.consec-ladder { display: flex; gap: .8rem; align-items: flex-end; flex-wrap: wrap; margin: .8rem 0; }
-.consec-level {
-  display: flex; flex-direction: column; align-items: center; min-width: 100px; flex: 1;
-}
-.consec-bar {
-  width: 100%; border-radius: 8px 8px 0 0;
-  background: linear-gradient(180deg, var(--green), rgba(82,214,167,.25));
-  display: flex; align-items: flex-end; justify-content: center;
-  padding-bottom: .3rem; min-height: 24px;
-}
-.consec-bar .cb-num { font-family: monospace; font-size: 1.2rem; font-weight: 700; color: var(--bg, #06101a); }
-.consec-bar-label { font-size: .78rem; color: var(--muted); margin-top: .3rem; }
-.consec-rate { font-size: .7rem; color: var(--blue); margin-top: .15rem; }
-.consec-names { font-size: .7rem; color: var(--muted); margin-top: .3rem; text-align: center; line-height: 1.4; }
-.consec-arrow { display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: var(--muted); min-width: 20px; align-self: center; }
+.consec-ladder { display: flex; gap: .5rem; align-items: flex-end; margin: .8rem 0; }
+.consec-ladder-wrap { position: relative; }
 
 /* ── 6. Battle Brief ── */
 .battle-brief-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
@@ -3412,9 +3399,6 @@ _MARKET_CSS = """
   .limit-universe-grid { grid-template-columns: 1fr; }
   .battle-brief-grid { grid-template-columns: 1fr; }
   .consec-ladder { flex-direction: column; align-items: stretch; }
-  .consec-level { min-width: auto; flex-direction: row; gap: .6rem; align-items: center; }
-  .consec-bar { width: auto; flex: 1; border-radius: 6px; min-height: 28px; }
-  .consec-arrow { display: none; }
   .sector-attr-grid { grid-template-columns: 1fr 1fr; }
   .detail-drawer {
     right: 0; top: auto; bottom: 0; width: 100%; height: 70vh;
@@ -4580,60 +4564,232 @@ def _render_limit_universe(view: MarketView) -> str:
     if not view.limit_up_stocks and not view.limit_down_stocks and not view.consecutive_boards:
         return ""
 
-    # Consecutive board ladder
+    # Consecutive board ladder — interactive
     consec = view.consecutive_boards
     ladder_html = ""
     if consec:
+        import json as _json
         levels = sorted(consec.items(), key=lambda x: int(x[0]))
-        max_count = max(len(stocks) for _, stocks in levels) if levels else 1
         level_labels = {1: "\u9996\u677f", 2: "\u4e8c\u8fde\u677f", 3: "\u4e09\u8fde\u677f", 4: "\u56db\u8fde\u677f",
                         5: "\u4e94\u8fde\u677f", 6: "\u516d\u8fde\u677f", 7: "\u4e03\u8fde\u677f", 8: "\u516b\u8fde\u677f"}
+        # Build JSON data for JS
+        ladder_data = []
         prev_count = 0
-        ladder_items = []
         for level_str, stocks in levels:
             level = int(level_str)
             count = len(stocks)
-            label = level_labels.get(level, f"{level}\u8fde\u677f")
-            bar_h = max(int(count / max_count * 120), 24)
-
-            rate_str = ""
-            if prev_count > 0 and level > 1:
-                rate = count / prev_count * 100
-                rate_str = f'<div class="consec-rate">\u664b\u7ea7\u7387 {rate:.0f}%</div>'
+            rate = round(count / prev_count * 100) if prev_count > 0 and level > 1 else 0
             prev_count = count
-
-            names = [str(s.get("name", "")) for s in stocks[:3]]
-            names_str = "\u3001".join(names)
-            if len(stocks) > 3:
-                names_str += "\u2026"
-
-            ladder_items.append(f"""
-            <div class="consec-level">
-              <div class="consec-bar" style="height:{bar_h}px">
-                <span class="cb-num">{count}</span>
-              </div>
-              <div class="consec-bar-label">{_esc(label)}</div>
-              {rate_str}
-              <div class="consec-names">{_esc(names_str)}</div>
-            </div>""")
-
-        # Insert arrows between levels
-        ladder_parts = []
-        for i, item in enumerate(ladder_items):
-            ladder_parts.append(item)
-            if i < len(ladder_items) - 1:
-                ladder_parts.append('<div class="consec-arrow">\u203a</div>')
+            stock_list = []
+            for s in stocks:
+                stock_list.append({
+                    "name": str(s.get("name", "")),
+                    "ticker": str(s.get("ticker", "")),
+                    "sector": str(s.get("sector", "")),
+                    "seal": round(float(s.get("seal_amount_yi", 0) or 0), 2),
+                    "first": str(s.get("first_seal", "") or ""),
+                })
+            ladder_data.append({
+                "level": level,
+                "label": level_labels.get(level, f"{level}\u8fde\u677f"),
+                "count": count,
+                "rate": rate,
+                "stocks": stock_list,
+            })
+        ladder_json = _json.dumps(ladder_data, ensure_ascii=False)
 
         ladder_html = f"""
       <div class="mkt-glass mkt-anim mkt-d4" style="margin-bottom:1rem">
         <div class="mkt-sec-head">
           <div class="mkt-sec-title">\u8fde\u677f\u68af\u961f</div>
-          <div class="mkt-sec-sub">\u5404\u5c42\u7ea7\u8fde\u677f\u6570\u91cf\u4e0e\u664b\u7ea7\u7387</div>
+          <div class="mkt-sec-sub">\u70b9\u51fb\u5c42\u7ea7\u67e5\u770b\u6210\u5458\u80a1</div>
         </div>
-        <div class="consec-ladder">
-          {''.join(ladder_parts)}
+        <div class="consec-ladder-wrap" id="consec-ladder-wrap">
+          <div class="consec-ladder" id="consec-ladder"></div>
+          <div id="consec-detail" style="display:none"></div>
         </div>
-      </div>"""
+      </div>
+      <script>
+      (function(){{
+        var D = {ladder_json};
+        var maxC = 0;
+        for (var i = 0; i < D.length; i++) if (D[i].count > maxC) maxC = D[i].count;
+        var ladder = document.getElementById('consec-ladder');
+        var detail = document.getElementById('consec-detail');
+        var expanded = -1;
+
+        /* Color gradient: higher tier = more intense */
+        var tierColors = [
+          '#E8F8DC', '#d4f0c8', '#b8e4a8', '#9cd888',
+          '#E8A8B0', '#d89098', '#c87880', '#b86068'
+        ];
+        function tierColor(lvl, total) {{
+          if (total <= 1) return '#E8F8DC';
+          var t = (lvl - 1) / Math.max(total - 1, 1);
+          var idx = Math.min(Math.round(t * (tierColors.length - 1)), tierColors.length - 1);
+          return tierColors[idx];
+        }}
+
+        function renderLadder() {{
+          ladder.innerHTML = '';
+          ladder.style.display = 'flex';
+          ladder.style.gap = '6px';
+          ladder.style.alignItems = 'flex-end';
+          detail.style.display = 'none';
+          expanded = -1;
+
+          for (var i = 0; i < D.length; i++) {{
+            (function(idx) {{
+              var d = D[idx];
+              var barH = Math.max(Math.round(d.count / maxC * 140), 32);
+              var col = document.createElement('div');
+              col.style.cssText = 'flex:1;display:flex;flex-direction:column;align-items:center;cursor:pointer;transition:all 0.2s ease';
+
+              /* Bar */
+              var bar = document.createElement('div');
+              var bg = tierColor(d.level, D.length);
+              bar.style.cssText = 'width:100%;border-radius:10px 10px 4px 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:32px;transition:all 0.2s ease;box-shadow:inset 0 1px 0 rgba(255,255,255,0.4),inset 0 -1px 0 rgba(0,0,0,0.05),0 2px 8px rgba(0,0,0,0.06)';
+              bar.style.height = barH + 'px';
+              bar.style.background = 'linear-gradient(180deg, ' + bg + ', ' + bg + 'cc)';
+
+              var numEl = document.createElement('div');
+              numEl.style.cssText = 'font:700 1.5rem/1 "PingFang SC","Microsoft YaHei",sans-serif;color:#2a2a2a';
+              numEl.textContent = d.count;
+              bar.appendChild(numEl);
+
+              /* Top stock name preview */
+              if (d.stocks.length > 0 && barH > 48) {{
+                var preview = document.createElement('div');
+                preview.style.cssText = 'font:400 11px/1.3 "PingFang SC",sans-serif;color:rgba(42,42,42,0.6);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90%;text-align:center';
+                preview.textContent = d.stocks[0].name + (d.stocks.length > 1 ? ' ...' : '');
+                bar.appendChild(preview);
+              }}
+              col.appendChild(bar);
+
+              /* Label */
+              var lbl = document.createElement('div');
+              lbl.style.cssText = 'font:500 13px/1.4 "PingFang SC",sans-serif;color:#666;margin-top:6px';
+              lbl.textContent = d.label;
+              col.appendChild(lbl);
+
+              /* Promotion rate */
+              if (d.rate > 0) {{
+                var rate = document.createElement('div');
+                rate.style.cssText = 'font:400 11px/1.3 "PingFang SC",sans-serif;color:#888;margin-top:2px';
+                rate.textContent = '\u664b\u7ea7 ' + d.rate + '%';
+                col.appendChild(rate);
+              }}
+
+              /* Hover */
+              col.addEventListener('mouseenter', function() {{
+                bar.style.transform = 'scaleY(1.05)';
+                bar.style.transformOrigin = 'bottom';
+                bar.style.boxShadow = 'inset 0 1px 0 rgba(255,255,255,0.5),0 4px 16px rgba(0,0,0,0.1)';
+              }});
+              col.addEventListener('mouseleave', function() {{
+                bar.style.transform = '';
+                bar.style.boxShadow = 'inset 0 1px 0 rgba(255,255,255,0.4),inset 0 -1px 0 rgba(0,0,0,0.05),0 2px 8px rgba(0,0,0,0.06)';
+              }});
+
+              /* Click to expand */
+              col.addEventListener('click', function() {{
+                if (expanded === idx) {{ renderLadder(); return; }}
+                showDetail(idx);
+              }});
+
+              ladder.appendChild(col);
+
+              /* Arrow between tiers */
+              if (idx < D.length - 1) {{
+                var arrow = document.createElement('div');
+                arrow.style.cssText = 'display:flex;align-items:center;color:#bbb;font-size:18px;align-self:center;padding-bottom:24px';
+                arrow.textContent = '\u203a';
+                ladder.appendChild(arrow);
+              }}
+            }})(i);
+          }}
+        }}
+
+        function showDetail(idx) {{
+          expanded = idx;
+          var d = D[idx];
+          detail.innerHTML = '';
+          detail.style.display = 'block';
+          detail.style.cssText = 'display:block;margin-top:12px;border-radius:12px;background:rgba(255,255,255,0.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 4px 20px rgba(0,0,0,0.06);border:1px solid rgba(0,0,0,0.05);overflow:hidden;animation:fadeIn 0.25s ease';
+
+          /* Header */
+          var hdr = document.createElement('div');
+          hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid rgba(0,0,0,0.05);background:rgba(0,0,0,0.015)';
+          var title = document.createElement('div');
+          title.style.cssText = 'font:600 14px/1.4 "PingFang SC",sans-serif;color:#1a1a1a';
+          title.textContent = d.label + ' \u00b7 ' + d.count + ' \u53ea';
+          hdr.appendChild(title);
+          var closeBtn = document.createElement('div');
+          closeBtn.style.cssText = 'cursor:pointer;font:400 13px/1 sans-serif;color:#888;padding:4px 10px;border-radius:16px;background:rgba(0,0,0,0.04);transition:all 0.15s ease';
+          closeBtn.textContent = '\u2715 \u6536\u8d77';
+          closeBtn.addEventListener('mouseenter', function(){{ closeBtn.style.background = 'rgba(0,0,0,0.08)'; }});
+          closeBtn.addEventListener('mouseleave', function(){{ closeBtn.style.background = 'rgba(0,0,0,0.04)'; }});
+          closeBtn.addEventListener('click', function(){{ renderLadder(); }});
+          hdr.appendChild(closeBtn);
+          detail.appendChild(hdr);
+
+          /* Stock grid */
+          var grid = document.createElement('div');
+          grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1px;background:rgba(0,0,0,0.04);padding:1px';
+
+          for (var j = 0; j < d.stocks.length; j++) {{
+            var s = d.stocks[j];
+            var cell = document.createElement('div');
+            cell.style.cssText = 'background:#fff;padding:10px 14px;display:flex;flex-direction:column;gap:3px;transition:background 0.15s ease';
+            cell.addEventListener('mouseenter', function(){{ this.style.background = 'rgba(0,0,0,0.015)'; }});
+            cell.addEventListener('mouseleave', function(){{ this.style.background = '#fff'; }});
+
+            var row1 = document.createElement('div');
+            row1.style.cssText = 'display:flex;align-items:center;justify-content:space-between';
+            var nameEl = document.createElement('span');
+            nameEl.style.cssText = 'font:600 13px/1.4 "PingFang SC",sans-serif;color:#1a1a1a';
+            nameEl.textContent = s.name;
+            row1.appendChild(nameEl);
+            if (s.seal > 0) {{
+              var sealEl = document.createElement('span');
+              sealEl.style.cssText = 'font:500 11px/1 "PingFang SC",sans-serif;color:#c87880;background:rgba(232,168,176,0.15);padding:2px 6px;border-radius:10px';
+              sealEl.textContent = '\u5c01 ' + s.seal.toFixed(1) + '\u4ebf';
+              row1.appendChild(sealEl);
+            }}
+            cell.appendChild(row1);
+
+            var row2 = document.createElement('div');
+            row2.style.cssText = 'display:flex;align-items:center;gap:8px;font:400 11px/1.3 "PingFang SC",sans-serif;color:#999';
+            var tickerEl = document.createElement('span');
+            tickerEl.textContent = s.ticker;
+            row2.appendChild(tickerEl);
+            if (s.sector) {{
+              var secEl = document.createElement('span');
+              secEl.style.cssText = 'color:#aaa';
+              secEl.textContent = s.sector;
+              row2.appendChild(secEl);
+            }}
+            if (s.first) {{
+              var firstEl = document.createElement('span');
+              firstEl.style.cssText = 'margin-left:auto;color:#bbb';
+              firstEl.textContent = '\u9996\u5c01 ' + s.first;
+              row2.appendChild(firstEl);
+            }}
+            cell.appendChild(row2);
+            grid.appendChild(cell);
+          }}
+
+          detail.appendChild(grid);
+        }}
+
+        /* fadeIn keyframe */
+        var style = document.createElement('style');
+        style.textContent = '@keyframes fadeIn {{ from {{ opacity:0;transform:translateY(-8px) }} to {{ opacity:1;transform:translateY(0) }} }}';
+        document.head.appendChild(style);
+
+        renderLadder();
+      }})();
+      </script>"""
 
     # Limit up/down dual columns
     limit_html = ""

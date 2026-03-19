@@ -1107,11 +1107,42 @@ def _collect_northbound_market(ms: MarketSnapshot):
         }
 
 
-def _collect_breadth(ms: MarketSnapshot, watchlist: list = None):
-    """Collect market breadth stats from full A-share spot data."""
+def _collect_breadth_ths(ms: MarketSnapshot):
+    """Fallback: derive breadth from THS industry summary (advance/decline per sector)."""
     ak = _get_ak()
-    df = ak.stock_zh_a_spot_em()
+    df = ak.stock_board_industry_summary_ths()
     if df is None or df.empty:
+        return False
+    total_up = int(df["上涨家数"].sum()) if "上涨家数" in df.columns else 0
+    total_down = int(df["下跌家数"].sum()) if "下跌家数" in df.columns else 0
+    if total_up + total_down == 0:
+        return False
+    ms.advance_count = total_up
+    ms.decline_count = total_down
+    ms.total_stocks = total_up + total_down
+    # THS summary doesn't provide limit counts directly — leave at 0
+    # unless board_data fills them later
+    logger.info(f"  [BREADTH] THS fallback: advance={total_up}, decline={total_down}")
+    return True
+
+
+def _collect_breadth(ms: MarketSnapshot, watchlist: list = None):
+    """Collect market breadth stats from full A-share spot data.
+
+    Tries EM (stock_zh_a_spot_em) first.  Falls back to THS industry
+    summary (stock_board_industry_summary_ths) for advance/decline counts.
+    """
+    ak = _get_ak()
+    try:
+        df = ak.stock_zh_a_spot_em()
+        if df is None or df.empty:
+            raise ValueError("empty EM spot data")
+    except Exception as e:
+        logger.warning(f"  [BREADTH] EM spot failed ({e}), trying THS fallback")
+        _collect_breadth_ths(ms)
+        # Watchlist spots via XQ fallback
+        if watchlist:
+            _collect_watchlist_spots_xq(ms, watchlist)
         return
 
     ms.total_stocks = len(df)
@@ -1142,6 +1173,30 @@ def _collect_breadth(ms: MarketSnapshot, watchlist: list = None):
                     "pb": _safe_float(r.get("市净率")),
                     "turnover_rate": _safe_float(r.get("换手率")),
                 }
+
+
+def _collect_watchlist_spots_xq(ms: MarketSnapshot, watchlist: list):
+    """Fallback: fetch watchlist stock spots from XQ (雪球) when EM is down."""
+    ak = _get_ak()
+    for ticker in watchlist:
+        bare = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
+        prefix = "SH" if bare.startswith("6") else "SZ"
+        try:
+            spot = ak.stock_individual_spot_xq(symbol=f"{prefix}{bare}")
+            if spot is None or spot.empty:
+                continue
+            vals = dict(zip(spot["item"], spot["value"]))
+            ms.stock_spots[bare] = {
+                "name": str(vals.get("名称", "")),
+                "price": _safe_float(vals.get("现价")),
+                "pct_change": _safe_float(vals.get("涨幅")),
+                "market_cap": _safe_float(vals.get("流通值", 0)),
+                "pe": _safe_float(vals.get("市盈率(动)", 0)),
+                "pb": 0,
+                "turnover_rate": _safe_float(vals.get("周转率", 0)),
+            }
+        except Exception:
+            continue
 
 
 def _build_market_markdown(ms: MarketSnapshot) -> str:
