@@ -54,6 +54,7 @@ subagent_pipeline/
 ├── batch_process.py       Batch: read raw outputs → bridge → write HTML
 ├── pipeline.py            Reference doc: shows subagent call pattern (not executable)
 ├── demo_601985.py         Generate demo report from mock data
+├── gen_*.py               Ad-hoc per-ticker report generators (read from agent_artifacts/)
 │
 │  ── Vendored: Observability ──
 ├── trace_models.py        NodeStatus, NodeTrace, RunTrace, RunMetrics, compute_hash
@@ -68,6 +69,15 @@ subagent_pipeline/
 │   ├── views.py             View models (data contract for templates)
 │   ├── debate_view.py       Debate-specific view models
 │   └── decision_labels.py   Node name → Chinese labels
+│
+│
+│  ── Tests ──
+├── tests/
+│   ├── test_market_layer.py   78 tests — market layer + report rendering
+│   ├── test_daily_recap.py    96 tests — daily recap collector + renderer
+│   ├── test_debate.py         84 tests — debate + committee report
+│   ├── test_trade_plan.py     31 tests — trade plan parsing + views
+│   └── test_dashboard.py     125 tests — dashboard views + routes
 │
 ├── requirements.txt       akshare>=1.10
 ```
@@ -140,7 +150,7 @@ recap = collect_daily_recap(trade_date="2026-03-14")
 
 #### Layer 1: Market Agents (parallel, run once per day)
 
-Three agents run in parallel. Each receives `market_snapshot_md` from `snapshot.markdown_report` (attribute, NOT a method) after calling `akshare_collector.collect_market_snapshot()`.
+Three agents run in parallel. Each receives `market_snapshot_md` from `snapshot.markdown_report` (attribute, NOT a method) after calling `akshare_collector.collect_market_snapshot(trade_date, watchlist=[...])`. The optional `watchlist` param (list of ticker strings) fetches spot data for those stocks alongside market breadth.
 
 | Agent | Prompt | Model | Output Key |
 |-------|--------|-------|------------|
@@ -472,6 +482,15 @@ Used in:
 - `akshare_collector.collect_market_snapshot()` — all market-level API calls
 - `recap_collector.collect_daily_recap()` — all recap collector calls (imports `_retry_call` from akshare_collector)
 
+### Multi-Source Fallback Chains
+
+Market data collection uses fallback chains when primary APIs are down:
+- **Breadth**: EM spot (`stock_zh_a_spot_em`) → THS industry summary (`stock_board_industry_summary_ths`) for advance/decline counts
+- **Watchlist spots**: EM spot → XQ individual spot (`stock_individual_spot_xq`) per ticker
+- **Sector stocks**: EM sector constituents → SW index constituents (`index_component_sw`) + XQ spot for price data
+
+Fallbacks degrade gracefully — some fields (e.g., limit counts from THS) may be zero but the pipeline continues.
+
 ### Atomic File Writes
 
 `replay_store.ReplayStore.save()` uses write-to-temp-then-rename (`tempfile.mkstemp()` → `os.replace()`). If the process crashes mid-write, the previous file remains intact. Temp files use `.trace-` prefix and `.tmp` suffix in the same directory.
@@ -501,14 +520,21 @@ Used in:
 
 ## Tests
 
-Run from project root (414 tests total):
+Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 414 tests total, no API keys needed:
 
 ```bash
-pytest tests/test_market_layer.py -v   # 78 tests
-pytest tests/test_daily_recap.py -v    # 96 tests
-pytest tests/test_debate.py -v         # 84 tests
-pytest tests/test_trade_plan.py -v     # 31 tests
-pytest tests/test_dashboard.py -v      # 125 tests
+# All tests
+pytest subagent_pipeline/tests/ -q
+
+# Single module
+pytest subagent_pipeline/tests/test_market_layer.py -v   # 78 tests
+pytest subagent_pipeline/tests/test_daily_recap.py -v    # 96 tests
+pytest subagent_pipeline/tests/test_debate.py -v         # 84 tests
+pytest subagent_pipeline/tests/test_trade_plan.py -v     # 31 tests
+pytest subagent_pipeline/tests/test_dashboard.py -v      # 125 tests
+
+# Single test
+pytest subagent_pipeline/tests/test_trade_plan.py::TestViewIntegration::test_no_trade_plan_no_card -v
 ```
 
 ## Output Directory
