@@ -4502,7 +4502,8 @@ def _render_sector_engine(view: MarketView) -> str:
                     "total_turnover_yi": abs(flow) * 10,
                 })
         if synth_sectors:
-            treemap_html = _render_plotly_sector_treemap(synth_sectors)
+            treemap_html = _render_plotly_sector_treemap(
+                synth_sectors, sector_stocks=view.sector_stocks)
 
     # Right sidebar: leaders + avoid + rotation phase + attribution
     leaders_html = ""
@@ -5044,6 +5045,23 @@ def generate_market_report(
             )
         elif market_context.get("sector_momentum"):
             heatmap_data = HeatmapData.build_from_momentum(market_context)
+
+    # Adaptive sector drill-down: when board_data lacks sector_stocks,
+    # try fetching constituent stocks for momentum sectors via akshare
+    if board_data is None:
+        board_data = {}
+    if not board_data.get("sector_stocks"):
+        momentum = market_context.get("sector_momentum", []) if market_context else []
+        sector_names = [m.get("name", "") for m in momentum
+                        if isinstance(m, dict) and m.get("name")]
+        if sector_names:
+            try:
+                from ..akshare_collector import collect_sector_leader_stocks
+                fetched = collect_sector_leader_stocks(sector_names)
+                if fetched:
+                    board_data["sector_stocks"] = fetched
+            except Exception:
+                pass  # graceful — treemap shows sectors without drill-down
 
     view = MarketView.build(
         market_context=market_context,

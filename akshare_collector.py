@@ -1403,3 +1403,58 @@ def collect(ticker: str, trade_date: str = "") -> AkshareBundle:
         f"{b.collection_seconds:.1f}s"
     )
     return b
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Sector constituent stocks (for treemap drill-down)
+# ──────────────────────────────────────────────────────────────────────
+
+def collect_sector_leader_stocks(
+    sector_names: list,
+    top_n: int = 8,
+    max_sectors: int = 20,
+) -> dict:
+    """Fetch top constituent stocks per sector for treemap drill-down.
+
+    Returns {sector_name: [{ticker, name, pct_change, market_cap_yi, amount_yi}]}.
+    Tries EM (stock_board_industry_cons_em) with retry.
+    Falls through gracefully — empty dict if all APIs fail.
+    """
+    ak = _get_ak()
+    result: dict = {}
+    if not sector_names:
+        return result
+
+    consecutive_failures = 0
+    for name in sector_names[:max_sectors]:
+        if not name:
+            continue
+        try:
+            df = _retry_call(ak.stock_board_industry_cons_em, symbol=name)
+            if df is None or df.empty:
+                continue
+            if "总市值" in df.columns:
+                df = df.sort_values("总市值", ascending=False)
+            stocks = []
+            for _, row in df.head(top_n).iterrows():
+                mcap = float(row.get("总市值", 0) or 0)
+                stocks.append({
+                    "ticker": str(row.get("代码", "")),
+                    "name": str(row.get("名称", "")),
+                    "pct_change": round(float(row.get("涨跌幅", 0) or 0), 2),
+                    "market_cap_yi": round(mcap / 1e8, 2) if mcap > 0 else 0,
+                    "amount_yi": round(float(row.get("成交额", 0) or 0) / 1e8, 2),
+                })
+            if stocks:
+                result[name] = stocks
+                consecutive_failures = 0
+            time.sleep(0.3)
+        except Exception as e:
+            consecutive_failures += 1
+            logger.warning(f"sector_cons {name}: {e}")
+            if consecutive_failures >= 3:
+                logger.warning("sector_cons: 3 consecutive failures, aborting")
+                break
+            time.sleep(0.5)
+
+    return result
