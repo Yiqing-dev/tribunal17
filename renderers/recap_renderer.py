@@ -1264,15 +1264,17 @@ def _render_market_context_panel(data: dict) -> str:
 
 # ── Main entry ───────────────────────────────────────────────────────
 
-def render_daily_recap(data: dict) -> str:
+def render_daily_recap(data) -> str:
     """Render complete Daily Recap page from DailyRecapData.to_dict().
 
     Args:
-        data: Dict from DailyRecapData.to_dict().
+        data: DailyRecapData instance or dict from .to_dict().
 
     Returns:
         Complete HTML string.
     """
+    if hasattr(data, "to_dict"):
+        data = data.to_dict()
     hero = _render_recap_hero(data)
     mkt_ctx = _render_market_context_panel(data)
     kpi = _render_index_kpi_ribbon(data)
@@ -1313,13 +1315,13 @@ def render_daily_recap(data: dict) -> str:
 
 
 def generate_daily_recap_report(
-    data: dict,
+    data,
     output_dir: str = "data/reports",
 ) -> Optional[str]:
     """Generate standalone daily recap HTML report.
 
     Args:
-        data: Dict from DailyRecapData.to_dict().
+        data: DailyRecapData instance or dict from .to_dict().
         output_dir: Directory to write HTML.
 
     Returns:
@@ -1327,6 +1329,9 @@ def generate_daily_recap_report(
     """
     if not data:
         return None
+    # Accept both DailyRecapData and dict
+    if hasattr(data, "to_dict"):
+        data = data.to_dict()
 
     html = render_daily_recap(data)
     out = Path(output_dir)
