@@ -85,6 +85,10 @@ subagent_pipeline/
 │   └── decision_labels.py   Node name → Chinese labels
 │
 │
+│  ── Web Enhancement ──
+├── web_collector.py       International macro web search layer (supplements akshare)
+│                          3 prompt generators + 3 parsers + merge/format/apply helpers
+│
 │  ── Tests ──
 ├── tests/
 │   ├── test_market_layer.py   78 tests — market layer + report rendering
@@ -92,7 +96,8 @@ subagent_pipeline/
 │   ├── test_debate.py         84 tests — debate + committee report
 │   ├── test_trade_plan.py     31 tests — trade plan parsing + views
 │   ├── test_dashboard.py     125 tests — dashboard views + routes
-│   └── test_opinion_tracker.py 61 tests — opinion drift analysis
+│   ├── test_opinion_tracker.py 61 tests — opinion drift analysis
+│   └── test_web_collector.py  31 tests — web collector parsers + integration
 │
 ├── requirements.txt       akshare>=1.10
 ```
@@ -113,6 +118,7 @@ agent_artifacts/results/
   macro_analyst_output.txt         ← batch_process reads these
   market_breadth_agent_output.txt
   sector_rotation_agent_output.txt
+  global_macro_output.txt          ← web search (optional, may not exist)
 
   # Per-ticker agent outputs
   {ticker}_market_report.txt
@@ -165,28 +171,37 @@ recap = collect_daily_recap(trade_date="2026-03-14")
 
 #### Layer 1: Market Agents (parallel, run once per day)
 
-Three agents run in parallel. Each receives `market_snapshot_md` from `snapshot.markdown_report` (attribute, NOT a method) after calling `akshare_collector.collect_market_snapshot(trade_date, watchlist=[...])`. The optional `watchlist` param (list of ticker strings) fetches spot data for those stocks alongside market breadth.
+Four agents run in parallel. The first three receive `market_snapshot_md` from `snapshot.markdown_report` (attribute, NOT a method) after calling `akshare_collector.collect_market_snapshot(trade_date, watchlist=[...])`. The optional `watchlist` param (list of ticker strings) fetches spot data for those stocks alongside market breadth.
+
+The 4th agent (Global Macro) uses WebSearch/WebFetch to gather international context that akshare cannot provide. It is optional — if it fails, the pipeline continues without it.
 
 | Agent | Prompt | Model | Output Key |
 |-------|--------|-------|------------|
 | macro_analyst | `prompts.macro_analyst(current_date, market_snapshot_md)` | sonnet | `MACRO_OUTPUT:` block |
 | market_breadth_agent | `prompts.market_breadth_agent(current_date, market_snapshot_md)` | sonnet | `BREADTH_OUTPUT:` block |
 | sector_rotation_agent | `prompts.sector_rotation_agent(current_date, market_snapshot_md)` | sonnet | `SECTOR_OUTPUT:` block |
+| global_macro (web) | `web_collector.global_macro_prompt(current_date, market_snapshot_md)` | sonnet | `GLOBAL_MACRO_OUTPUT:` block |
 
-After all 3 complete, assemble market context:
+After all 4 complete, assemble market context:
 
 ```python
 from subagent_pipeline.bridge import (
     parse_macro_output, parse_breadth_output, parse_sector_output,
     assemble_market_context, format_market_context_block,
 )
+from subagent_pipeline.web_collector import parse_global_macro_output
+
 macro = parse_macro_output(macro_text)
 breadth = parse_breadth_output(breadth_text)
 sector = parse_sector_output(sector_text)
-market_context = assemble_market_context(macro, breadth, sector, trade_date)
+global_macro = parse_global_macro_output(global_macro_text) if global_macro_text else None
+
+market_context = assemble_market_context(macro, breadth, sector, trade_date, global_macro=global_macro)
 market_context_block = format_market_context_block(market_context)
 # Save market_context.json and market_context_block.txt
 ```
+
+The `global_macro` parameter adds `market_context["global_macro"]` dict and appends geopolitical risks to `risk_alerts`. The `format_market_context_block()` automatically appends a "国际宏观情报:" section when `global_macro` is present.
 
 #### Layer 2: Individual Stock Analysis (per ticker)
 
@@ -485,6 +500,7 @@ All parsers use priority: exact JSON → `key=value` lines → regex fallback. D
 | 0.8a | Macro Analyst | `macro_analyst()` | sonnet | yes | MarketSnapshot | `MACRO_OUTPUT:` |
 | 0.8b | Market Breadth | `market_breadth_agent()` | sonnet | yes | MarketSnapshot | `BREADTH_OUTPUT:` |
 | 0.8c | Sector Rotation | `sector_rotation_agent()` | sonnet | yes | MarketSnapshot | `SECTOR_OUTPUT:` |
+| 0.8d | Global Macro (web) | `web_collector.global_macro_prompt()` | sonnet | yes | MarketSnapshot + WebSearch | `GLOBAL_MACRO_OUTPUT:` |
 | 1a | Technical Analyst | `market_analyst()` | sonnet | yes | AkshareBundle + market_context_block | `pillar_score` |
 | 1b | Fundamentals | `fundamentals_analyst()` | sonnet | yes | AkshareBundle | `pillar_score` |
 | 1c | News Analyst | `news_analyst()` | sonnet | yes | AkshareBundle | `pillar_score` |
@@ -566,7 +582,7 @@ Fallbacks degrade gracefully — some fields (e.g., limit counts from THS) may b
 
 ## Tests
 
-Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 475 tests total, no API keys needed:
+Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 506 tests total, no API keys needed:
 
 ```bash
 # All tests

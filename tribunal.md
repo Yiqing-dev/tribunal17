@@ -78,32 +78,42 @@ snapshot = collect_market_snapshot(trade_date=trade_date, watchlist=[f"{ticker}"
 market_snapshot_md = snapshot.markdown_report  # 属性，非方法
 ```
 
-**并行** 启动 3 个 Agent（model=sonnet）：
+**并行** 启动 4 个 Agent（model=sonnet）：
 
 | Agent | prompt 调用 | 输出文件 |
 |-------|------------|---------|
 | 太史令 | `prompts.macro_analyst(trade_date, market_snapshot_md)` | `macro_analyst_output.txt` |
 | 户部司 | `prompts.market_breadth_agent(trade_date, market_snapshot_md)` | `market_breadth_agent_output.txt` |
 | 舆图司 | `prompts.sector_rotation_agent(trade_date, market_snapshot_md)` | `sector_rotation_agent_output.txt` |
+| 全球宏观情报司 | `web_collector.global_macro_prompt(trade_date, market_snapshot_md)` | `global_macro_output.txt` |
 
-3 个 Agent 全部完成后，组装 market context：
+全球宏观情报司 使用 WebSearch/WebFetch 搜索国际宏观情报（隔夜外盘、地缘风险、跨市场催化剂、外资情绪）。
+该 Agent 即使失败也不阻塞流程——global_macro 为空时 pipeline 正常继续。
+
+4 个 Agent 全部完成后，组装 market context：
 
 ```python
 from subagent_pipeline.bridge import (
     parse_macro_output, parse_breadth_output, parse_sector_output,
     assemble_market_context, format_market_context_block,
 )
+from subagent_pipeline.web_collector import parse_global_macro_output
+
 macro = parse_macro_output(macro_text)
 breadth = parse_breadth_output(breadth_text)
 sector = parse_sector_output(sector_text)
-market_context = assemble_market_context(macro, breadth, sector, trade_date)
+
+# Global macro web agent (optional — may be empty if web search failed)
+global_macro = parse_global_macro_output(global_macro_text) if global_macro_text else None
+
+market_context = assemble_market_context(macro, breadth, sector, trade_date, global_macro=global_macro)
 market_context_block = format_market_context_block(market_context)
 
 Path(RESULTS / "market_context.json").write_text(json.dumps(market_context, ensure_ascii=False, indent=2))
 Path(RESULTS / "market_context_block.txt").write_text(market_context_block)
 ```
 
-打印：`[L1] 太史令、户部司、舆图司会同议事完毕`
+打印：`[L1] 太史令、户部司、舆图司、全球宏观情报司会同议事完毕`
 
 ---
 

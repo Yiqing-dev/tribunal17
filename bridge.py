@@ -515,8 +515,15 @@ def assemble_market_context(
     breadth: Dict[str, Any],
     sector: Dict[str, Any],
     trade_date: str = "",
+    global_macro: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    """Combine 3 market agent outputs into a canonical market_context dict."""
+    """Combine 3 market agent outputs into a canonical market_context dict.
+
+    Args:
+        global_macro: Parsed output from web_collector.parse_global_macro_output().
+            When provided, merged as ``market_context["global_macro"]`` and
+            geopolitical risks are appended to ``risk_alerts``.
+    """
     regime = str(macro.get("regime", "NEUTRAL")).upper()
     breadth_state = str(breadth.get("breadth_state", "NARROW")).upper()
 
@@ -542,7 +549,7 @@ def assemble_market_context(
         weather = str(macro.get("market_weather", ""))
         client_summary = f"市场状态: {regime}。{weather}" if weather else f"市场状态: {regime}"
 
-    return {
+    result = {
         "trade_date": trade_date,
         # Macro
         "regime": regime,
@@ -563,6 +570,15 @@ def assemble_market_context(
         "sector_momentum": sector.get("sector_momentum", []),
     }
 
+    # Merge global macro web data when available
+    if global_macro:
+        from .web_collector import merge_global_macro_into_context
+        result = merge_global_macro_into_context(result, global_macro)
+
+    return result
+
+    return result
+
 
 def format_market_context_block(ctx: Dict[str, Any]) -> str:
     """Format market_context dict as a text block for injection into per-ticker prompts."""
@@ -570,7 +586,7 @@ def format_market_context_block(ctx: Dict[str, Any]) -> str:
         return ""
     leaders = ", ".join(ctx.get("sector_leaders", [])) or "无"
     avoid = ", ".join(ctx.get("avoid_sectors", [])) or "无"
-    return (
+    block = (
         f"市场 Regime: {ctx.get('regime', 'NEUTRAL')}\n"
         f"市场天气: {ctx.get('market_weather', '')}\n"
         f"仓位乘数 (position_cap_multiplier): {ctx.get('position_cap_multiplier', 0.8)}\n"
@@ -583,6 +599,16 @@ def format_market_context_block(ctx: Dict[str, Any]) -> str:
         f"轮动阶段: {ctx.get('rotation_phase', '')}\n"
         f"风险警报: {ctx.get('risk_alerts', 'NONE')}\n"
     )
+
+    # Append global macro intel when present
+    global_macro = ctx.get("global_macro")
+    if global_macro:
+        from .web_collector import format_global_macro_block
+        gm_block = format_global_macro_block(global_macro)
+        if gm_block:
+            block += gm_block
+
+    return block
 
 
 def _extract_evidence_items(text: str, max_items: int = 8) -> List[str]:
