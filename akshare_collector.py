@@ -448,67 +448,154 @@ def _safe_float(val) -> Optional[float]:
 
 
 def _collect_basic_info(b: AkshareBundle):
-    """stock_individual_info_em — basic info (market cap, sector, etc.)."""
+    """stock_individual_info_em — basic info (market cap, sector, etc.).
+
+    Fallback: XQ individual spot for name/price when EM is down.
+    """
     ak = _get_ak()
-    df = ak.stock_individual_info_em(symbol=b.ticker)
-    info = {}
-    for _, row in df.iterrows():
-        info[str(row.iloc[0]).strip()] = row.iloc[1]
-    b.name = str(info.get("股票简称", b.name))
-    b.sector = str(info.get("行业", ""))
-    b.listing_date = str(info.get("上市时间", ""))
-    # akshare stock_individual_info_em returns 总市值/流通市值 in yuan
-    raw_cap = _safe_float(info.get("总市值"))
-    b.market_cap_yi = raw_cap / 1e8 if raw_cap and raw_cap > 0 else None  # → 亿
-    raw_fcap = _safe_float(info.get("流通市值"))
-    b.float_cap_yi = raw_fcap / 1e8 if raw_fcap and raw_fcap > 0 else None  # → 亿
+    try:
+        df = ak.stock_individual_info_em(symbol=b.ticker)
+        info = {}
+        for _, row in df.iterrows():
+            info[str(row.iloc[0]).strip()] = row.iloc[1]
+        b.name = str(info.get("股票简称", b.name))
+        b.sector = str(info.get("行业", ""))
+        b.listing_date = str(info.get("上市时间", ""))
+        # akshare stock_individual_info_em returns 总市值/流通市值 in yuan
+        raw_cap = _safe_float(info.get("总市值"))
+        b.market_cap_yi = raw_cap / 1e8 if raw_cap and raw_cap > 0 else None  # → 亿
+        raw_fcap = _safe_float(info.get("流通市值"))
+        b.float_cap_yi = raw_fcap / 1e8 if raw_fcap and raw_fcap > 0 else None  # → 亿
+        return
+    except Exception as e:
+        logger.warning(f"  [basic_info] EM failed ({e}), trying XQ fallback")
+
+    # Fallback: XQ individual spot — at least get name and price
+    try:
+        prefix = "SH" if b.ticker.startswith("6") else "SZ"
+        spot = ak.stock_individual_spot_xq(symbol=f"{prefix}{b.ticker}")
+        if spot is not None and not spot.empty:
+            vals = dict(zip(spot["item"], spot["value"]))
+            if not b.name:
+                b.name = str(vals.get("名称", ""))
+            mc = _safe_float(vals.get("总市值", 0))
+            if mc and mc > 1e8:
+                b.market_cap_yi = mc / 1e8
+            fc = _safe_float(vals.get("流通值", 0))
+            if fc and fc > 1e8:
+                b.float_cap_yi = fc / 1e8
+            logger.info(f"  [basic_info] XQ fallback OK: name={b.name}")
+            return
+    except Exception as e2:
+        logger.warning(f"  [basic_info] XQ fallback also failed: {e2}")
+    raise RuntimeError("basic_info: both EM and XQ failed")
 
 
 def _collect_spot(b: AkshareBundle):
-    """stock_zh_a_spot_em — real-time snapshot (PE, PB, price)."""
+    """stock_zh_a_spot_em — real-time snapshot (PE, PB, price).
+
+    Fallback: XQ individual spot when EM is down.
+    """
     ak = _get_ak()
-    df = ak.stock_zh_a_spot_em()
-    row = df[df["代码"] == b.ticker]
-    if row.empty:
-        raise ValueError(f"Ticker {b.ticker} not found in spot data")
-    r = row.iloc[0]
-    b.current_price = _safe_float(r.get("最新价"))
-    b.prev_close = _safe_float(r.get("昨收"))
-    b.pe_ttm = _safe_float(r.get("市盈率-动态"))
-    b.pb = _safe_float(r.get("市净率"))
-    b.turnover_rate = _safe_float(r.get("换手率"))
+    try:
+        df = ak.stock_zh_a_spot_em()
+        if df is None or df.empty:
+            raise ValueError("empty EM spot data")
+        row = df[df["代码"] == b.ticker]
+        if row.empty:
+            raise ValueError(f"Ticker {b.ticker} not found in spot data")
+        r = row.iloc[0]
+        b.current_price = _safe_float(r.get("最新价"))
+        b.prev_close = _safe_float(r.get("昨收"))
+        b.pe_ttm = _safe_float(r.get("市盈率-动态"))
+        b.pb = _safe_float(r.get("市净率"))
+        b.turnover_rate = _safe_float(r.get("换手率"))
+        if not b.name:
+            b.name = str(r.get("名称", ""))
+        # Market cap from spot (may override basic_info)
+        mc = _safe_float(r.get("总市值"))
+        if mc and mc > 1e8:
+            b.market_cap_yi = mc / 1e8
+        return
+    except Exception as e:
+        logger.warning(f"  [spot_quote] EM failed ({e}), trying XQ fallback")
+
+    # Fallback: XQ individual spot
+    prefix = "SH" if b.ticker.startswith("6") else "SZ"
+    spot = ak.stock_individual_spot_xq(symbol=f"{prefix}{b.ticker}")
+    if spot is None or spot.empty:
+        raise ValueError("spot_quote: both EM and XQ failed")
+    vals = dict(zip(spot["item"], spot["value"]))
+    b.current_price = _safe_float(vals.get("现价"))
+    b.prev_close = _safe_float(vals.get("昨收"))
+    b.pe_ttm = _safe_float(vals.get("市盈率(动)", 0))
+    b.turnover_rate = _safe_float(vals.get("周转率", 0))
     if not b.name:
-        b.name = str(r.get("名称", ""))
-    # Market cap from spot (may override basic_info)
-    mc = _safe_float(r.get("总市值"))
+        b.name = str(vals.get("名称", ""))
+    mc = _safe_float(vals.get("总市值", 0))
     if mc and mc > 1e8:
         b.market_cap_yi = mc / 1e8
+    logger.info(f"  [spot_quote] XQ fallback OK: price={b.current_price}")
 
 
 def _collect_price_history(b: AkshareBundle):
-    """stock_zh_a_hist — 30-day daily OHLCV."""
+    """stock_zh_a_hist — 30-day daily OHLCV.
+
+    Fallback: stock_zh_a_daily (Sina backend) when EM is down.
+    """
     ak = _get_ak()
     end = datetime.now()
     start = end - timedelta(days=60)  # fetch extra for MA calc
-    df = ak.stock_zh_a_hist(
-        symbol=b.ticker,
-        period="daily",
-        start_date=start.strftime("%Y%m%d"),
-        end_date=end.strftime("%Y%m%d"),
-        adjust="qfq",
-    )
+
+    df = None
+    # Primary: EM backend
+    try:
+        df = ak.stock_zh_a_hist(
+            symbol=b.ticker,
+            period="daily",
+            start_date=start.strftime("%Y%m%d"),
+            end_date=end.strftime("%Y%m%d"),
+            adjust="qfq",
+        )
+        if df is None or df.empty:
+            raise ValueError("empty EM hist data")
+    except Exception as e:
+        logger.warning(f"  [price_history] EM failed ({e}), trying Sina fallback")
+        df = None
+
+    # Fallback: Sina backend (stock_zh_a_daily)
+    if df is None or df.empty:
+        prefix = "sh" if b.ticker.startswith("6") else "sz"
+        sina_symbol = f"{prefix}{b.ticker}"
+        df = ak.stock_zh_a_daily(symbol=sina_symbol, adjust="qfq")
+        if df is not None and not df.empty:
+            # Sina returns full history — trim to last 60 days
+            df = df.tail(60)
+            logger.info(f"  [price_history] Sina fallback OK: {len(df)} rows")
+
+    if df is None or df.empty:
+        raise ValueError("price_history: both EM and Sina failed")
+
+    # Normalize column names — EM uses Chinese, Sina uses English
+    col_map = {
+        "日期": "date", "开盘": "open", "收盘": "close",
+        "最高": "high", "最低": "low", "成交量": "volume",
+        "成交额": "amount", "涨跌幅": "change_pct", "换手率": "turnover",
+    }
     rows = []
     for _, r in df.iterrows():
+        # Try Chinese column names (EM), fall back to English (Sina)
+        date_val = r.get("日期", r.get("date", str(r.name) if hasattr(r, "name") else ""))
         rows.append({
-            "date": str(r["日期"]),
-            "open": _safe_float(r["开盘"]),
-            "close": _safe_float(r["收盘"]),
-            "high": _safe_float(r["最高"]),
-            "low": _safe_float(r["最低"]),
-            "volume": _safe_float(r["成交量"]),
-            "amount": _safe_float(r["成交额"]),
-            "change_pct": _safe_float(r["涨跌幅"]),
-            "turnover": _safe_float(r["换手率"]),
+            "date": str(date_val),
+            "open": _safe_float(r.get("开盘", r.get("open"))),
+            "close": _safe_float(r.get("收盘", r.get("close"))),
+            "high": _safe_float(r.get("最高", r.get("high"))),
+            "low": _safe_float(r.get("最低", r.get("low"))),
+            "volume": _safe_float(r.get("成交量", r.get("volume"))),
+            "amount": _safe_float(r.get("成交额", r.get("amount"))),
+            "change_pct": _safe_float(r.get("涨跌幅", r.get("change_pct"))),
+            "turnover": _safe_float(r.get("换手率", r.get("turnover"))),
         })
     b.price_history = rows
     # Update current_price from latest history if spot failed
