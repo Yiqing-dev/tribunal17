@@ -1092,20 +1092,50 @@ def _collect_index_data(ms: MarketSnapshot):
 
 
 def _collect_sector_flow(ms: MarketSnapshot):
-    """Collect sector (industry) fund flow data."""
+    """Collect sector (industry) fund flow data.
+
+    Primary: EM stock_sector_fund_flow_rank (push2.eastmoney.com).
+    Fallback: THS stock_board_industry_summary_ths (10jqka.com) — has
+    涨跌幅 and 净流入 but no 主力净流入-净占比.
+    """
     ak = _get_ak()
-    with em_proxy_session():
-        df = ak.stock_sector_fund_flow_rank(indicator="今日")
+    df = None
+    source = "em"
+    try:
+        with em_proxy_session():
+            df = ak.stock_sector_fund_flow_rank(indicator="今日")
+    except Exception as e:
+        logger.warning("sector_flow EM failed: %s, trying THS", e)
+
+    if df is None or df.empty:
+        # Fallback: THS industry summary
+        try:
+            df = _retry_call(ak.stock_board_industry_summary_ths)
+            source = "ths"
+        except Exception as e2:
+            logger.warning("sector_flow THS fallback also failed: %s", e2)
+            return
+
     if df is None or df.empty:
         return
+
     rows = []
-    for _, r in df.head(20).iterrows():
-        rows.append({
-            "name": str(r.get("名称", "")),
-            "change_pct": _safe_float(r.get("今日涨跌幅")),
-            "net_inflow": _safe_float(r.get("今日主力净流入-净额")),
-            "net_pct": _safe_float(r.get("今日主力净流入-净占比")),
-        })
+    if source == "ths":
+        for _, r in df.head(20).iterrows():
+            rows.append({
+                "name": str(r.get("板块", "")),
+                "change_pct": _safe_float(r.get("涨跌幅")),
+                "net_inflow": _safe_float(r.get("净流入")),
+                "net_pct": 0,  # THS doesn't provide 净占比
+            })
+    else:
+        for _, r in df.head(20).iterrows():
+            rows.append({
+                "name": str(r.get("名称", "")),
+                "change_pct": _safe_float(r.get("今日涨跌幅")),
+                "net_inflow": _safe_float(r.get("今日主力净流入-净额")),
+                "net_pct": _safe_float(r.get("今日主力净流入-净占比")),
+            })
     ms.sector_fund_flow = rows
 
 
@@ -1505,6 +1535,93 @@ def collect(ticker: str, trade_date: str = "") -> AkshareBundle:
 # Sector constituent stocks (for treemap drill-down)
 # ──────────────────────────────────────────────────────────────────────
 
+def _build_ths_to_sw_map() -> dict:
+    """Build THS sector name -> SW second-level industry code mapping.
+
+    Returns ``{ths_name: sw_code}`` e.g. ``{"半导体": "801081"}``.
+    """
+    ak = _get_ak()
+    try:
+        sw2 = ak.sw_index_second_info()
+    except Exception:
+        return {}
+
+    sw_by_name: dict = {}
+    sw_stripped: dict = {}
+    for _, row in sw2.iterrows():
+        code = str(row["行业代码"]).replace(".SI", "")
+        name = str(row["行业名称"])
+        sw_by_name[name] = code
+        stripped = name.rstrip("Ⅱ").rstrip()
+        if stripped != name:
+            sw_stripped[stripped] = code
+
+    try:
+        ths = ak.stock_board_industry_name_ths()
+    except Exception:
+        return {}
+
+    mapping: dict = {}
+    for _, row in ths.iterrows():
+        ths_name = str(row["name"])
+        if ths_name in sw_by_name:
+            mapping[ths_name] = sw_by_name[ths_name]
+        elif ths_name in sw_stripped:
+            mapping[ths_name] = sw_stripped[ths_name]
+    return mapping
+
+
+def _collect_sector_stocks_sw(
+    sector_names: list,
+    ths_sw_map: dict,
+    top_n: int = 8,
+    max_sectors: int = 20,
+) -> dict:
+    """Fallback: fetch constituent stocks via SW index + XQ spot data."""
+    ak = _get_ak()
+    result: dict = {}
+    if not sector_names or not ths_sw_map:
+        return result
+
+    for name in sector_names[:max_sectors]:
+        if not name:
+            continue
+        sw_code = ths_sw_map.get(name)
+        if not sw_code:
+            continue
+        try:
+            cons = ak.index_component_sw(symbol=sw_code)
+            if cons is None or cons.empty:
+                continue
+            cons = cons.sort_values("最新权重", ascending=False).head(top_n)
+            stocks = []
+            for _, row in cons.iterrows():
+                ticker = str(row.get("证券代码", ""))
+                sname = str(row.get("证券名称", ""))
+                pct_change = 0.0
+                try:
+                    prefix = "SH" if ticker.startswith("6") else "SZ"
+                    spot = ak.stock_individual_spot_xq(symbol=f"{prefix}{ticker}")
+                    pct_row = spot[spot["item"] == "涨幅"]
+                    if not pct_row.empty:
+                        pct_change = float(pct_row["value"].values[0] or 0)
+                except Exception:
+                    pass
+                stocks.append({
+                    "ticker": ticker,
+                    "name": sname,
+                    "pct_change": pct_change,
+                    "market_cap_yi": 0,
+                    "amount_yi": 0,
+                })
+            if stocks:
+                result[name] = stocks
+            time.sleep(0.3)
+        except Exception:
+            continue
+    return result
+
+
 def collect_sector_leader_stocks(
     sector_names: list,
     top_n: int = 8,
@@ -1513,8 +1630,8 @@ def collect_sector_leader_stocks(
     """Fetch top constituent stocks per sector for treemap drill-down.
 
     Returns {sector_name: [{ticker, name, pct_change, market_cap_yi, amount_yi}]}.
-    Tries EM (stock_board_industry_cons_em) with retry.
-    Falls through gracefully — empty dict if all APIs fail.
+    Primary: EM (stock_board_industry_cons_em).
+    Fallback: SW index (index_component_sw) + XQ spot after 3 consecutive EM failures.
     """
     ak = _get_ak()
     result: dict = {}
@@ -1550,7 +1667,16 @@ def collect_sector_leader_stocks(
             consecutive_failures += 1
             logger.warning(f"sector_cons {name}: {e}")
             if consecutive_failures >= 3:
-                logger.warning("sector_cons: 3 consecutive failures, aborting")
+                logger.warning("sector_cons EM failed 3x, switching to SW+XQ fallback")
+                ths_sw_map = _build_ths_to_sw_map()
+                if ths_sw_map:
+                    remaining = [n2 for n2 in sector_names[:max_sectors]
+                                 if n2 and n2 not in result]
+                    sw_result = _collect_sector_stocks_sw(
+                        remaining, ths_sw_map, top_n=top_n, max_sectors=max_sectors,
+                    )
+                    result.update(sw_result)
+                    logger.info("SW+XQ fallback: %d sectors fetched", len(sw_result))
                 break
             time.sleep(0.5)
 

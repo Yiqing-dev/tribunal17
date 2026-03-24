@@ -431,12 +431,24 @@ def collect_sector_heatmap(trade_date: str = "", spot_df=None) -> SectorHeatmapD
 
     nodes = []
     try:
-        with em_proxy_session():
-            df = ak.stock_sector_fund_flow_rank(indicator="今日")
+        df = None
+        source = "em"
+        try:
+            with em_proxy_session():
+                df = ak.stock_sector_fund_flow_rank(indicator="今日")
+        except Exception:
+            pass
+        if df is None or df.empty:
+            # Fallback: THS industry summary
+            try:
+                df = _retry_call(ak.stock_board_industry_summary_ths)
+                source = "ths"
+            except Exception:
+                df = None
         if df is not None and not df.empty:
             for _, r in df.iterrows():
-                name = str(r.get("名称", ""))
-                pct = _safe_float(r.get("今日涨跌幅")) or 0
+                name = str(r.get("板块" if source == "ths" else "名称", ""))
+                pct = _safe_float(r.get("涨跌幅" if source == "ths" else "今日涨跌幅")) or 0
 
                 # Sector turnover and market cap from constituents
                 sector_turnover_yi = 0
@@ -447,8 +459,33 @@ def collect_sector_heatmap(trade_date: str = "", spot_df=None) -> SectorHeatmapD
                 laggards = []
                 resonance = []
                 try:
-                    with em_proxy_session():
-                        cons = ak.stock_board_industry_cons_em(symbol=name)
+                    cons = None
+                    try:
+                        with em_proxy_session():
+                            cons = ak.stock_board_industry_cons_em(symbol=name)
+                    except Exception:
+                        pass
+                    # Fallback: SW index constituents
+                    if (cons is None or cons.empty) and not hasattr(
+                        collect_sector_heatmap, "_sw_map_failed"
+                    ):
+                        if not hasattr(collect_sector_heatmap, "_sw_map"):
+                            try:
+                                from .akshare_collector import _build_ths_to_sw_map
+                                collect_sector_heatmap._sw_map = _build_ths_to_sw_map()
+                            except Exception:
+                                collect_sector_heatmap._sw_map = {}
+                                collect_sector_heatmap._sw_map_failed = True
+                        sw_code = collect_sector_heatmap._sw_map.get(name)
+                        if sw_code:
+                            try:
+                                sw_cons = ak.index_component_sw(symbol=sw_code)
+                                if sw_cons is not None and not sw_cons.empty:
+                                    # Rename to match EM columns
+                                    sw_cons = sw_cons.rename(columns={"证券代码": "代码"})
+                                    cons = sw_cons
+                            except Exception:
+                                pass
                     if cons is not None and not cons.empty and spot_df is not None:
                         codes = cons["代码"].astype(str).tolist() if "代码" in cons.columns else []
                         if codes:
