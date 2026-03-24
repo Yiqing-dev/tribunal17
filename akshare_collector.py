@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
+from .proxy_pool import em_proxy_session
+
 logger = logging.getLogger(__name__)
 
 # Lazy import akshare
@@ -454,7 +456,8 @@ def _collect_basic_info(b: AkshareBundle):
     """
     ak = _get_ak()
     try:
-        df = ak.stock_individual_info_em(symbol=b.ticker)
+        with em_proxy_session():
+            df = ak.stock_individual_info_em(symbol=b.ticker)
         info = {}
         for _, row in df.iterrows():
             info[str(row.iloc[0]).strip()] = row.iloc[1]
@@ -498,7 +501,8 @@ def _collect_spot(b: AkshareBundle):
     """
     ak = _get_ak()
     try:
-        df = ak.stock_zh_a_spot_em()
+        with em_proxy_session():
+            df = ak.stock_zh_a_spot_em()
         if df is None or df.empty:
             raise ValueError("empty EM spot data")
         row = df[df["代码"] == b.ticker]
@@ -550,13 +554,14 @@ def _collect_price_history(b: AkshareBundle):
     df = None
     # Primary: EM backend
     try:
-        df = ak.stock_zh_a_hist(
-            symbol=b.ticker,
-            period="daily",
-            start_date=start.strftime("%Y%m%d"),
-            end_date=end.strftime("%Y%m%d"),
-            adjust="qfq",
-        )
+        with em_proxy_session():
+            df = ak.stock_zh_a_hist(
+                symbol=b.ticker,
+                period="daily",
+                start_date=start.strftime("%Y%m%d"),
+                end_date=end.strftime("%Y%m%d"),
+                adjust="qfq",
+            )
         if df is None or df.empty:
             raise ValueError("empty EM hist data")
     except Exception as e:
@@ -727,7 +732,8 @@ def _collect_top10_shareholders(b: AkshareBundle):
             quarters.append(f"{year}{q}")
     for qdate in quarters:
         try:
-            df = ak.stock_gdfx_free_top_10_em(symbol=b.ticker, date=qdate)
+            with em_proxy_session():
+                df = ak.stock_gdfx_free_top_10_em(symbol=b.ticker, date=qdate)
             if df is not None and not df.empty:
                 rows = []
                 for _, r in df.iterrows():
@@ -1088,7 +1094,8 @@ def _collect_index_data(ms: MarketSnapshot):
 def _collect_sector_flow(ms: MarketSnapshot):
     """Collect sector (industry) fund flow data."""
     ak = _get_ak()
-    df = ak.stock_sector_fund_flow_rank(indicator="今日")
+    with em_proxy_session():
+        df = ak.stock_sector_fund_flow_rank(indicator="今日")
     if df is None or df.empty:
         return
     rows = []
@@ -1106,7 +1113,8 @@ def _collect_concept_flow(ms: MarketSnapshot):
     """Collect concept theme fund flow data."""
     ak = _get_ak()
     try:
-        df = ak.stock_board_concept_name_em()
+        with em_proxy_session():
+            df = ak.stock_board_concept_name_em()
         if df is None or df.empty:
             return
         rows = []
@@ -1221,7 +1229,8 @@ def _collect_breadth(ms: MarketSnapshot, watchlist: list = None):
     """
     ak = _get_ak()
     try:
-        df = ak.stock_zh_a_spot_em()
+        with em_proxy_session():
+            df = ak.stock_zh_a_spot_em()
         if df is None or df.empty:
             raise ValueError("empty EM spot data")
     except Exception as e:
@@ -1517,7 +1526,8 @@ def collect_sector_leader_stocks(
         if not name:
             continue
         try:
-            df = _retry_call(ak.stock_board_industry_cons_em, symbol=name)
+            with em_proxy_session():
+                df = _retry_call(ak.stock_board_industry_cons_em, symbol=name)
             if df is None or df.empty:
                 continue
             if "总市值" in df.columns:

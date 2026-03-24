@@ -60,6 +60,7 @@ subagent_pipeline/
 │  ── Transform Layer ──
 ├── bridge.py              Text → RunTrace: 17 parsers + evidence block builder + 3-tier report gen
 ├── heatmap.py             HeatmapNode / HeatmapData: pure data aggregation for treemap
+├── proxy_pool.py          EM API proxy rotation: em_proxy_session() context manager, build_rotating_get()
 ├── backtest.py            Signal accuracy verification: forward bar eval, win rate, direction accuracy
 ├── signal_ledger.py       Append-only JSONL signal log for daily accumulation + backfill
 ├── opinion_tracker.py     Cross-ticker opinion drift: DailySnapshot, OpinionDrift, WatchlistReport
@@ -543,6 +544,27 @@ Used in:
 - `akshare_collector.collect()` — all per-ticker API calls
 - `akshare_collector.collect_market_snapshot()` — all market-level API calls
 - `recap_collector.collect_daily_recap()` — all recap collector calls (imports `_retry_call` from akshare_collector)
+
+### Proxy Rotation for East Money APIs
+
+`proxy_pool.py` provides `em_proxy_session()` — a context manager that routes East Money (EM) domain requests through a rotating proxy pool. Non-EM requests (Sina, XQ, THS, Baidu) pass through unchanged. **No-op when `PROXY_API_URL` env var is unset.**
+
+```bash
+export PROXY_API_URL="https://your-proxy-api.com/get?num=5&format=txt"
+export PROXY_TIMEOUT=20   # optional, default 20s
+```
+
+Usage in collector code:
+```python
+from .proxy_pool import em_proxy_session
+with em_proxy_session():
+    df = ak.stock_zh_a_spot_em()  # proxied
+df2 = ak.stock_zh_a_daily(...)    # not proxied (outside context)
+```
+
+Key mechanics: URL-selective patching (only `*.eastmoney.com`), multi-proxy rotation with pool refresh, per-proxy urllib3 retry, direct-connection fallback, recursion prevention for proxy fetching.
+
+Integrated in: `akshare_collector.py` (8 sites), `recap_collector.py` (~10 sites), `batch_process.py` (3 sites).
 
 ### Multi-Source Fallback Chains
 

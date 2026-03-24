@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from .akshare_collector import _retry_call
+from .proxy_pool import em_proxy_session
 
 logger = logging.getLogger(__name__)
 
@@ -358,7 +359,8 @@ def collect_index_summary(trade_date: str = "") -> IndexSummary:
     advancers = decliners = flat = 0
     turnover_total = 0
     try:
-        spot_df = ak.stock_zh_a_spot_em()
+        with em_proxy_session():
+            spot_df = ak.stock_zh_a_spot_em()
         pct_col = "涨跌幅"
         if pct_col in spot_df.columns:
             advancers = int((spot_df[pct_col] > 0).sum())
@@ -393,7 +395,8 @@ def collect_index_summary(trade_date: str = "") -> IndexSummary:
     # Northbound
     nb_flow = 0
     try:
-        df = ak.stock_hsgt_north_net_flow_in_em(symbol="北上")
+        with em_proxy_session():
+            df = ak.stock_hsgt_north_net_flow_in_em(symbol="北上")
         if df is not None and not df.empty:
             latest = df.iloc[-1]
             nb_flow = (_safe_float(latest.get("当日净流入", latest.get("value", 0))) or 0) / 1e8
@@ -421,13 +424,15 @@ def collect_sector_heatmap(trade_date: str = "", spot_df=None) -> SectorHeatmapD
     # Get spot data if not provided
     if spot_df is None:
         try:
-            spot_df = ak.stock_zh_a_spot_em()
+            with em_proxy_session():
+                spot_df = ak.stock_zh_a_spot_em()
         except Exception:
             spot_df = None
 
     nodes = []
     try:
-        df = ak.stock_sector_fund_flow_rank(indicator="今日")
+        with em_proxy_session():
+            df = ak.stock_sector_fund_flow_rank(indicator="今日")
         if df is not None and not df.empty:
             for _, r in df.iterrows():
                 name = str(r.get("名称", ""))
@@ -442,7 +447,8 @@ def collect_sector_heatmap(trade_date: str = "", spot_df=None) -> SectorHeatmapD
                 laggards = []
                 resonance = []
                 try:
-                    cons = ak.stock_board_industry_cons_em(symbol=name)
+                    with em_proxy_session():
+                        cons = ak.stock_board_industry_cons_em(symbol=name)
                     if cons is not None and not cons.empty and spot_df is not None:
                         codes = cons["代码"].astype(str).tolist() if "代码" in cons.columns else []
                         if codes:
@@ -499,7 +505,8 @@ def collect_limit_board(trade_date: str = "", spot_df=None) -> LimitBoardSummary
 
     if spot_df is None:
         try:
-            spot_df = ak.stock_zh_a_spot_em()
+            with em_proxy_session():
+                spot_df = ak.stock_zh_a_spot_em()
         except Exception:
             return LimitBoardSummary()
 
@@ -537,7 +544,8 @@ def collect_limit_board(trade_date: str = "", spot_df=None) -> LimitBoardSummary
     # Try to get consecutive board data from akshare
     try:
         date_str = (trade_date or datetime.now().strftime("%Y-%m-%d")).replace("-", "")
-        zt_df = ak.stock_zt_pool_em(date=date_str)
+        with em_proxy_session():
+            zt_df = ak.stock_zt_pool_em(date=date_str)
         if zt_df is not None and not zt_df.empty:
             board_col = None
             for c in ("连板数", "连续涨停天数", "连板天数"):
@@ -580,7 +588,8 @@ def _fetch_prev_day_board_dist(trade_date: str = "") -> Dict[int, int]:
         prev = base - timedelta(days=offset)
         prev_str = prev.strftime("%Y%m%d")
         try:
-            df = ak.stock_zt_pool_em(date=prev_str)
+            with em_proxy_session():
+                df = ak.stock_zt_pool_em(date=prev_str)
             if df is None or df.empty:
                 continue
             board_col = None
@@ -666,7 +675,8 @@ def collect_red_close_screen(
 
     if spot_df is None:
         try:
-            spot_df = ak.stock_zh_a_spot_em()
+            with em_proxy_session():
+                spot_df = ak.stock_zh_a_spot_em()
         except Exception:
             return RedCloseScreen(window_natural_days=window)
 
@@ -789,7 +799,8 @@ def collect_daily_recap(trade_date: str = "") -> DailyRecapData:
     ak = _get_ak()
     spot_df = None
     try:
-        spot_df = ak.stock_zh_a_spot_em()
+        with em_proxy_session():
+            spot_df = ak.stock_zh_a_spot_em()
         logger.info(f"  [OK] spot data: {len(spot_df)} stocks")
     except Exception as e:
         logger.warning(f"  [FAIL] spot data: {e}")

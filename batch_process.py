@@ -224,7 +224,9 @@ def _collect_sector_stocks(sectors: list, max_sectors: int = 20,
         if not sector_name:
             continue
         try:
-            df = _retry_call(ak.stock_board_industry_cons_em, symbol=sector_name)
+            from .proxy_pool import em_proxy_session
+            with em_proxy_session():
+                df = _retry_call(ak.stock_board_industry_cons_em, symbol=sector_name)
             if df is None or df.empty:
                 continue
 
@@ -336,7 +338,9 @@ def process_all(trade_date: str = ""):
             # Limit-up stocks
             date_fmt = today.replace("-", "")
             try:
-                df_zt = _retry_call(ak.stock_zt_pool_em, date=date_fmt)
+                from .proxy_pool import em_proxy_session
+                with em_proxy_session():
+                    df_zt = _retry_call(ak.stock_zt_pool_em, date=date_fmt)
                 limit_ups = []
                 for _, row in df_zt.iterrows():
                     limit_ups.append({
@@ -356,7 +360,9 @@ def process_all(trade_date: str = ""):
 
             # Limit-down stocks
             try:
-                df_dt = _retry_call(ak.stock_zt_pool_dtgc_em, date=date_fmt)
+                from .proxy_pool import em_proxy_session
+                with em_proxy_session():
+                    df_dt = _retry_call(ak.stock_zt_pool_dtgc_em, date=date_fmt)
                 limit_downs = []
                 for _, row in df_dt.iterrows():
                     limit_downs.append({
