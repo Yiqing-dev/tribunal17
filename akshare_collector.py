@@ -47,7 +47,7 @@ def _retry_call(fn, *args, max_retries=2, base_delay=1.0, **kwargs):
             is_transient = any(kw in err_str for kw in (
                 "timeout", "timed out", "connection", "rate limit",
                 "too many requests", "503", "429", "retry",
-                "reset by peer", "broken pipe",
+                "reset by peer", "broken pipe", "no tables found",
             ))
             if not is_transient or attempt == max_retries:
                 raise
@@ -481,12 +481,19 @@ def _collect_basic_info(b: AkshareBundle):
             vals = dict(zip(spot["item"], spot["value"]))
             if not b.name:
                 b.name = str(vals.get("名称", ""))
-            mc = _safe_float(vals.get("总市值", 0))
+            # XQ uses "资产净值/总市值" (not "总市值") and "流通值" (not "流通市值")
+            mc = _safe_float(vals.get("资产净值/总市值", 0))
+            if not mc:
+                mc = _safe_float(vals.get("总市值", 0))
             if mc and mc > 1e8:
                 b.market_cap_yi = mc / 1e8
             fc = _safe_float(vals.get("流通值", 0))
             if fc and fc > 1e8:
                 b.float_cap_yi = fc / 1e8
+            # XQ provides listing date as "发行日期"
+            ld = str(vals.get("发行日期", "") or "")
+            if ld and not b.listing_date:
+                b.listing_date = ld[:10]  # "2017-07-13 12:00:00" → "2017-07-13"
             logger.info(f"  [basic_info] XQ fallback OK: name={b.name}")
             return
     except Exception as e2:
@@ -685,17 +692,19 @@ def _collect_financial_ratios(b: AkshareBundle):
     ak = _get_ak()
     prefix = "sh" if b.ticker.startswith("6") else "sz"
     stock_code = f"{prefix}{b.ticker}"
-    for report_type in ("lrb", "zcfzb", "xjllb"):
+    # akshare >=1.10 uses Chinese names; map to internal keys
+    _REPORT_MAP = {"利润表": "lrb", "资产负债表": "zcfzb", "现金流量表": "xjllb"}
+    for symbol, key in _REPORT_MAP.items():
         try:
-            df = ak.stock_financial_report_sina(stock=stock_code, symbol=report_type)
+            df = ak.stock_financial_report_sina(stock=stock_code, symbol=symbol)
             if df is not None and not df.empty:
-                b.financial_ratios[report_type] = {
+                b.financial_ratios[key] = {
                     "columns": df.columns.tolist()[:15],
                     "latest": {str(c): _safe_float(df.iloc[0].get(c))
                                for c in df.columns[:15]} if len(df) > 0 else {},
                 }
         except Exception as e:
-            logger.debug(f"  financial_ratios {report_type}: {e}")
+            logger.debug(f"  financial_ratios {symbol}: {e}")
 
 
 def _collect_fund_flow(b: AkshareBundle):
