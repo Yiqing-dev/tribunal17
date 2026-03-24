@@ -51,6 +51,7 @@ _RECAP_CSS = """
   --glow-green: rgba(0, 255, 136, 0.15);
   --glow-red: rgba(255, 71, 87, 0.15);
   --glow-blue: rgba(0, 212, 255, 0.12);
+  --mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -598,7 +599,8 @@ def _render_index_chart_panel(data: dict) -> str:
     for i, ix in enumerate(indices[:5]):
         name = _esc(ix.get("name", ix.get("code", "")))
         active = " active" if i == 0 else ""
-        tabs += f'<div class="idx-tab{active}" data-idx="{i}">{name}</div>'
+        aria_sel = "true" if i == 0 else "false"
+        tabs += f'<div class="idx-tab{active}" data-idx="{i}" role="tab" aria-selected="{aria_sel}">{name}</div>'
 
         points = ix.get("points", [])
         svg = _render_index_svg(points, ix.get("code", ""))
@@ -608,9 +610,9 @@ def _render_index_chart_panel(data: dict) -> str:
     # Toggle bar for MA / sub-chart
     toggles = """
     <div class="toggle-bar">
-      <span class="toggle-btn on" data-toggle="ma">MA</span>
-      <span class="toggle-btn" data-toggle="macd">MACD</span>
-      <span class="toggle-btn" data-toggle="rsi">RSI</span>
+      <span class="toggle-btn on" data-toggle="ma" role="button" tabindex="0" aria-pressed="true">MA</span>
+      <span class="toggle-btn" data-toggle="macd" role="button" tabindex="0" aria-pressed="false">MACD</span>
+      <span class="toggle-btn" data-toggle="rsi" role="button" tabindex="0" aria-pressed="false">RSI</span>
     </div>"""
 
     # Embed K-line point data as JSON for crosshair JS
@@ -717,14 +719,14 @@ def _render_index_svg(points: list, code: str = "") -> str:
         bar_h_px = max(abs(y0 - yv), 1)
         macd_bars.append(
             f'<rect class="macd-el" x="{cx - bar_w/2}" y="{bar_top}" '
-            f'width="{bar_w}" height="{bar_h_px}" fill="{color}" opacity=".6" rx="1"/>'
+            f'width="{bar_w}" height="{bar_h_px}" fill="{color}" opacity=".6" rx="1" style="display:none"/>'
         )
 
     # DIF/DEA lines
     dif_pts = " ".join(f"{x_pos(i):.1f},{y_sub(v):.1f}" for i, v in enumerate(dif_vals))
     dea_pts = " ".join(f"{x_pos(i):.1f},{y_sub(v):.1f}" for i, v in enumerate(dea_vals))
-    dif_line = f'<polyline class="macd-el" points="{dif_pts}" fill="none" stroke="#ffd32a" stroke-width="1" opacity=".8"/>' if dif_pts.strip() else ""
-    dea_line = f'<polyline class="macd-el" points="{dea_pts}" fill="none" stroke="#ff6b9d" stroke-width="1" opacity=".8"/>' if dea_pts.strip() else ""
+    dif_line = f'<polyline class="macd-el" points="{dif_pts}" fill="none" stroke="#ffd32a" stroke-width="1" opacity=".8" style="display:none"/>' if dif_pts.strip() else ""
+    dea_line = f'<polyline class="macd-el" points="{dea_pts}" fill="none" stroke="#ff6b9d" stroke-width="1" opacity=".8" style="display:none"/>' if dea_pts.strip() else ""
 
     # RSI sub-chart (hidden by default, same position as MACD)
     rsi_vals = [p.get("rsi", 50) for p in points]
@@ -1018,8 +1020,8 @@ def _render_red_close_panel(data: dict) -> str:
         <div class="sec-sub">{window}自然日窗口 · {trade_days}个交易日</div>
       </div>
       <div class="rc-tabs">
-        <div class="rc-tab active" data-rc="6">{tab6}</div>
-        <div class="rc-tab" data-rc="8">{tab8}</div>
+        <div class="rc-tab active" data-rc="6" role="tab" aria-selected="true">{tab6}</div>
+        <div class="rc-tab" data-rc="8" role="tab" aria-selected="false">{tab8}</div>
         <button class="csv-btn" id="csv-copy-btn">复制CSV</button>
       </div>
       <div class="rc-panel active" data-rc-panel="6">{_table(red_6, "rc-table-6")}</div>
@@ -1037,13 +1039,17 @@ def _render_recap_js(data: dict) -> str:
     return f"""
     <script>
     (function() {{
+      // ── HTML escape helper ──
+      function escHtml(t){{return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}}
+
       // ── Index tab switching ──
       document.querySelectorAll('.idx-tab').forEach(function(tab) {{
         tab.addEventListener('click', function() {{
           var idx = tab.getAttribute('data-idx');
-          document.querySelectorAll('.idx-tab').forEach(function(t) {{ t.classList.remove('active'); }});
+          document.querySelectorAll('.idx-tab').forEach(function(t) {{ t.classList.remove('active'); t.setAttribute('aria-selected','false'); }});
           document.querySelectorAll('.chart-panel').forEach(function(p) {{ p.classList.remove('active'); }});
           tab.classList.add('active');
+          tab.setAttribute('aria-selected','true');
           var panel = document.querySelector('.chart-panel[data-panel="' + idx + '"]');
           if (panel) panel.classList.add('active');
         }});
@@ -1056,31 +1062,34 @@ def _render_recap_js(data: dict) -> str:
           if (t === 'ma') {{
             btn.classList.toggle('on');
             var show = btn.classList.contains('on');
+            btn.setAttribute('aria-pressed', show ? 'true' : 'false');
             document.querySelectorAll('.ma-line').forEach(function(el) {{
               el.style.display = show ? '' : 'none';
             }});
           }} else if (t === 'macd') {{
             btn.classList.toggle('on');
             var show = btn.classList.contains('on');
+            btn.setAttribute('aria-pressed', show ? 'true' : 'false');
             document.querySelectorAll('.macd-el').forEach(function(el) {{
               el.style.display = show ? '' : 'none';
             }});
             // hide RSI when showing MACD
             if (show) {{
               var rsiBtn = document.querySelector('.toggle-btn[data-toggle="rsi"]');
-              if (rsiBtn) rsiBtn.classList.remove('on');
+              if (rsiBtn) {{ rsiBtn.classList.remove('on'); rsiBtn.setAttribute('aria-pressed','false'); }}
               document.querySelectorAll('.rsi-group').forEach(function(el) {{ el.style.display = 'none'; }});
             }}
           }} else if (t === 'rsi') {{
             btn.classList.toggle('on');
             var show = btn.classList.contains('on');
+            btn.setAttribute('aria-pressed', show ? 'true' : 'false');
             document.querySelectorAll('.rsi-group').forEach(function(el) {{
               el.style.display = show ? '' : 'none';
             }});
             // hide MACD when showing RSI
             if (show) {{
               var macdBtn = document.querySelector('.toggle-btn[data-toggle="macd"]');
-              if (macdBtn) macdBtn.classList.remove('on');
+              if (macdBtn) {{ macdBtn.classList.remove('on'); macdBtn.setAttribute('aria-pressed','false'); }}
               document.querySelectorAll('.macd-el').forEach(function(el) {{ el.style.display = 'none'; }});
             }}
           }}
@@ -1109,7 +1118,7 @@ def _render_recap_js(data: dict) -> str:
           stocks.forEach(function(s) {{
             var pc = s.pct_change || 0;
             var cls = pc > 0 ? 'up' : pc < 0 ? 'dn' : '';
-            html += '<div class="sd-stock"><span class="nm">' + (s.name || s.ticker) +
+            html += '<div class="sd-stock"><span class="nm">' + escHtml(s.name || s.ticker) +
               '</span><span class="pc ' + cls + ' mono">' + (pc > 0 ? '+' : '') + pc.toFixed(2) + '%</span></div>';
           }});
           el.innerHTML = html;
@@ -1148,13 +1157,23 @@ def _render_recap_js(data: dict) -> str:
           var n = sNodes[idx];
           sTipTimer = setTimeout(function() {{
             var pct = n.pct_change || 0;
-            sTooltip.innerHTML = '<b>' + (n.sector || '') + '</b> ' +
+            sTooltip.innerHTML = '<b>' + escHtml(n.sector || '') + '</b> ' +
               (pct > 0 ? '+' : '') + pct.toFixed(2) + '%';
             sTooltip.style.display = 'block';
           }}, 100);
         }});
         el.addEventListener('mousemove', function(e) {{
-          if (sTooltip) {{ sTooltip.style.left = (e.clientX + 12) + 'px'; sTooltip.style.top = (e.clientY + 12) + 'px'; }}
+          if (sTooltip) {{
+            var tw = sTooltip.offsetWidth || 150;
+            var th = sTooltip.offsetHeight || 30;
+            var tx = e.clientX + 12;
+            var ty = e.clientY + 12;
+            if (tx + tw > window.innerWidth - 8) tx = e.clientX - tw - 8;
+            if (ty + th > window.innerHeight - 8) ty = window.innerHeight - th - 8;
+            if (ty < 8) ty = 8;
+            sTooltip.style.left = tx + 'px';
+            sTooltip.style.top = ty + 'px';
+          }}
         }});
         el.addEventListener('mouseleave', function() {{
           clearTimeout(sTipTimer);
@@ -1176,9 +1195,10 @@ def _render_recap_js(data: dict) -> str:
         tab.addEventListener('click', function() {{
           var rc = tab.getAttribute('data-rc');
           if (!rc) return;
-          document.querySelectorAll('.rc-tab').forEach(function(t) {{ t.classList.remove('active'); }});
+          document.querySelectorAll('.rc-tab').forEach(function(t) {{ t.classList.remove('active'); t.setAttribute('aria-selected','false'); }});
           document.querySelectorAll('.rc-panel').forEach(function(p) {{ p.classList.remove('active'); }});
           tab.classList.add('active');
+          tab.setAttribute('aria-selected','true');
           var panel = document.querySelector('.rc-panel[data-rc-panel="' + rc + '"]');
           if (panel) panel.classList.add('active');
         }});
@@ -1198,15 +1218,25 @@ def _render_recap_js(data: dict) -> str:
             tr.querySelectorAll('th, td').forEach(function(td) {{ cols.push(td.textContent.trim()); }});
             csv += cols.join(',') + '\\n';
           }});
+          function showCopied() {{
+            csvBtn.textContent = '已复制!';
+            csvBtn.classList.add('csv-copied');
+            setTimeout(function() {{
+              csvBtn.textContent = '复制CSV';
+              csvBtn.classList.remove('csv-copied');
+            }}, 1500);
+          }}
           if (navigator.clipboard) {{
-            navigator.clipboard.writeText(csv).then(function() {{
-              csvBtn.textContent = '已复制!';
-              csvBtn.classList.add('csv-copied');
-              setTimeout(function() {{
-                csvBtn.textContent = '复制CSV';
-                csvBtn.classList.remove('csv-copied');
-              }}, 1500);
-            }});
+            navigator.clipboard.writeText(csv).then(function() {{ showCopied(); }});
+          }} else {{
+            var ta = document.createElement('textarea');
+            ta.value = csv;
+            ta.style.cssText = 'position:fixed;left:-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            try {{ document.execCommand('copy'); showCopied(); }}
+            catch(err) {{ csvBtn.textContent = '复制失败'; setTimeout(function(){{ csvBtn.textContent = '复制CSV'; }}, 1500); }}
+            document.body.removeChild(ta);
           }}
         }});
       }}
@@ -1214,6 +1244,13 @@ def _render_recap_js(data: dict) -> str:
       // ── ESC close ──
       document.addEventListener('keydown', function(e) {{
         if (e.key === 'Escape') closeSectorDrawer();
+      }});
+
+      // ── Keyboard a11y for toggle buttons ──
+      document.querySelectorAll('[role="button"][tabindex]').forEach(function(el){{
+        el.addEventListener('keydown',function(e){{
+          if(e.key==='Enter'||e.key===' '){{e.preventDefault();el.click();}}
+        }});
       }});
 
       // ── K-line crosshair (desktop only) ──

@@ -805,13 +805,15 @@ def _render_verdict(v: DebateView) -> str:
         html += '  </div>\n'
 
     # Risk flags
+    VALID_SEV = {"high", "medium", "low"}
     if vd.risk_flags:
         html += '  <div class="verdict-flags">\n'
         for fl in vd.risk_flags:
             sev = fl.get("severity", "medium")
-            cat = fl.get("category", "")
+            sev = sev if sev in VALID_SEV else "medium"
+            cat = fl.get("category", "") or "未分类"
             desc = fl.get("description", "")
-            html += f'    <span class="risk-flag {sev}" title="{_esc(desc)}">{_esc(cat)}</span>\n'
+            html += f'    <span class="risk-flag {sev}" title="{_esc(desc)}" aria-label="{_esc(cat)}: {_esc(desc)}">{_esc(cat)}</span>\n'
         html += '  </div>\n'
 
     html += '</div>\n'

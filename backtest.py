@@ -21,15 +21,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Circuit breaker: skip akshare after first failure to avoid blocking
-_SKIP_AKSHARE = False
-
-
-def _mark_akshare_down():
-    global _SKIP_AKSHARE
-    _SKIP_AKSHARE = True
-    logger.info("Akshare marked as down — skipping akshare fallback for remaining requests")
-
 # Per-ticker Sina kline cache (avoids repeated API calls for same ticker)
 _sina_cache: Dict[str, List[Dict]] = {}
 
@@ -61,7 +52,7 @@ class BacktestResult:
     was_vetoed: bool = False
 
     # Direction inference
-    direction_expected: str = ""        # up / down / flat / not_down
+    direction_expected: str = ""        # up / down / flat / abstain
 
     # Forward price data
     eval_window_days: int = 10
@@ -181,13 +172,15 @@ class BacktestReport:
 def infer_direction(action: str, confidence: float = -1.0) -> str:
     """Map action to expected price direction.
 
-    Returns: 'up', 'down', 'flat', or 'not_down'.
+    Returns: 'up', 'down', 'flat', or 'abstain'.
     """
     action = action.upper().strip()
     if action in ("BUY",):
         return "up"
-    elif action in ("SELL", "VETO"):
+    elif action in ("SELL",):
         return "down"
+    elif action in ("VETO",):
+        return "abstain"
     elif action in ("HOLD",):
         return "flat"
     return "flat"
@@ -251,7 +244,7 @@ def fetch_forward_bars(
     """Fetch daily bars for `window_days` trading days after signal_date.
 
     Returns list of dicts with keys: date, open, high, low, close, volume.
-    Primary: Sina Finance API. Fallback: akshare.
+    Source: Sina Finance API (no fallback — akshare typically co-fails).
     """
     try:
         sig_dt = datetime.strptime(signal_date, "%Y-%m-%d")
@@ -261,8 +254,11 @@ def fetch_forward_bars(
 
     # Primary: Sina (cached per ticker)
     bare_key = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
-    if bare_key not in _sina_cache:
-        _sina_cache[bare_key] = _fetch_sina_klines(ticker, datalen=60)
+    # Calculate datalen large enough to cover from signal_date to today + window
+    approx_trading_days = int((datetime.now() - sig_dt).days * 5 / 7) + window_days + 10
+    datalen = max(60, approx_trading_days)
+    if bare_key not in _sina_cache or len(_sina_cache[bare_key]) < datalen:
+        _sina_cache[bare_key] = _fetch_sina_klines(ticker, datalen=datalen)
     all_bars = _sina_cache[bare_key]
     if all_bars:
         forward = [b for b in all_bars if b["date"] > signal_date]
@@ -277,7 +273,7 @@ def fetch_forward_bars(
 def fetch_signal_day_close(ticker: str, signal_date: str) -> float:
     """Fetch the closing price on the signal date.
 
-    Primary: Sina Finance API. Fallback: akshare.
+    Source: Sina Finance API (no fallback — akshare typically co-fails).
     """
     try:
         sig_dt = datetime.strptime(signal_date, "%Y-%m-%d")
@@ -286,8 +282,11 @@ def fetch_signal_day_close(ticker: str, signal_date: str) -> float:
 
     # Primary: Sina (cached per ticker)
     bare_key = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
-    if bare_key not in _sina_cache:
-        _sina_cache[bare_key] = _fetch_sina_klines(ticker, datalen=60)
+    # Calculate datalen large enough to cover back to signal_date
+    approx_trading_days = int((datetime.now() - sig_dt).days * 5 / 7) + 10
+    datalen = max(60, approx_trading_days)
+    if bare_key not in _sina_cache or len(_sina_cache[bare_key]) < datalen:
+        _sina_cache[bare_key] = _fetch_sina_klines(ticker, datalen=datalen)
     all_bars = _sina_cache[bare_key]
     if all_bars:
         # Find exact date or closest before
@@ -412,6 +411,10 @@ def evaluate_signal(
         else:
             result.direction_correct = False
             result.outcome = "neutral"
+    elif result.direction_expected == "abstain":
+        # VETO signals: refuse to trade, not a directional bet
+        result.direction_correct = None
+        result.outcome = "neutral"
     else:
         result.outcome = "neutral"
 
@@ -502,7 +505,7 @@ def compute_summary(
     if buy_returns:
         summary.avg_buy_return_pct = round(sum(buy_returns) / len(buy_returns), 2)
 
-    sell_returns = [-r.stock_return_pct for r in completed if r.action.upper() in ("SELL", "VETO")]
+    sell_returns = [-r.stock_return_pct for r in completed if r.action.upper() == "SELL"]
     if sell_returns:
         summary.avg_sell_return_pct = round(sum(sell_returns) / len(sell_returns), 2)
 
@@ -590,6 +593,8 @@ def run_backtest(
 
     today = datetime.now()
     results = []
+    # Track trace timestamps for dedup (run_id -> started_at)
+    _run_timestamps: Dict[str, datetime] = {}
 
     for entry in runs:
         run_id = entry.get("run_id", "")
@@ -615,6 +620,9 @@ def run_backtest(
         trace = store.load(run_id)
         if trace is None:
             continue
+
+        # Store timestamp for dedup ordering
+        _run_timestamps[run_id] = trace.started_at
 
         trace_dict = trace.to_dict()
         sl, tgt = _extract_trade_plan_prices(trace_dict)
@@ -661,15 +669,20 @@ def run_backtest(
             elif bare.startswith(("8", "4", "9")):
                 r.ticker = f"{bare}.BJ"
 
-    # Deduplicate: keep latest run per ticker+date
+    # Deduplicate: keep latest run per ticker+date (by trace timestamp)
     seen = {}
     for r in results:
         key = (r.ticker, r.trade_date)
         if key not in seen:
             seen[key] = r
         else:
-            # Keep the one with more recent run_id (lexicographic)
-            if r.run_id > seen[key].run_id:
+            # Prefer generated_at timestamp; fall back to run_id lexicographic
+            cur_ts = _run_timestamps.get(r.run_id)
+            prev_ts = _run_timestamps.get(seen[key].run_id)
+            if cur_ts and prev_ts:
+                if cur_ts > prev_ts:
+                    seen[key] = r
+            elif r.run_id > seen[key].run_id:
                 seen[key] = r
     results = list(seen.values())
     results.sort(key=lambda r: r.trade_date, reverse=True)
@@ -836,7 +849,8 @@ def _fetch_benchmark_return(signal_date: str, window_days: int) -> Optional[floa
         data = r.json()
         if not isinstance(data, list):
             return None
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Benchmark fetch failed for {signal_date}/{window_days}: {e}", exc_info=True)
         return None
 
     # Find signal date close and forward close

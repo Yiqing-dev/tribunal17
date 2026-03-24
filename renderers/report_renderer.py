@@ -10,8 +10,11 @@ All renderers consume view models from views.py, never raw traces.
 All user-facing text is in Chinese (A-share product).
 """
 
+import logging
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from .views import (
     SnapshotView, ResearchView, AuditView, DivergencePoolView,
@@ -561,10 +564,10 @@ def _evidence_strength_label(level: str) -> str:
 
 def _direction_badge(direction: str) -> str:
     """Render a small direction badge for catalysts."""
-    colors = {"bullish": "green", "bearish": "red", "neutral": "yellow"}
+    cls_map = {"bullish": "buy", "bearish": "sell", "neutral": "hold"}
     labels = {"bullish": "看多", "bearish": "看空", "neutral": "中性"}
-    color = colors.get(direction, "yellow")
-    return f'<span class="badge badge-{colors.get(direction, "hold")}">{_esc(labels.get(direction, direction))}</span>'
+    badge_cls = cls_map.get(direction, "hold")
+    return f'<span class="badge badge-{badge_cls}">{_esc(labels.get(direction, direction))}</span>'
 
 
 def _degraded_banner(reasons: list, audit_link: str = "") -> str:
@@ -2948,7 +2951,7 @@ def render_divergence_pool(
       </div>
     </section>"""
         heatmap_drawer = _render_detail_drawer()
-        heatmap_js = _render_heatmap_js(hd)
+        heatmap_js = _render_heatmap_js()
 
     hero = f"""
     <section class="hero reveal" id="top">
@@ -3581,19 +3584,19 @@ def _squarify(values, x, y, w, h):
 
     rects = []
 
-    def _layout_row(row, rx, ry, rw, rh, horizontal):
+    def _layout_row(row, rx, ry, rw, rh, horizontal, base_total):
         row_sum = sum(v for _, v in row)
         if row_sum <= 0:
             return
         if horizontal:
-            row_h = rh * (row_sum / total) if total > 0 else rh
+            row_h = rh * (row_sum / base_total) if base_total > 0 else rh
             cx = rx
             for idx, val in row:
                 cw = rw * (val / row_sum) if row_sum > 0 else rw / max(len(row), 1)
                 rects.append((idx, cx, ry, max(cw, 1), max(row_h, 1)))
                 cx += cw
         else:
-            row_w = rw * (row_sum / total) if total > 0 else rw
+            row_w = rw * (row_sum / base_total) if base_total > 0 else rw
             cy = ry
             for idx, val in row:
                 ch = rh * (val / row_sum) if row_sum > 0 else rh / max(len(row), 1)
@@ -3607,7 +3610,7 @@ def _squarify(values, x, y, w, h):
     while remaining:
         horizontal = cw < ch
         if len(remaining) <= 2:
-            _layout_row(remaining, cx, cy, cw, ch, horizontal)
+            _layout_row(remaining, cx, cy, cw, ch, horizontal, remaining_total)
             break
 
         best_row = [remaining[0]]
@@ -3641,12 +3644,12 @@ def _squarify(values, x, y, w, h):
 
         if horizontal:
             row_h = ch * frac
-            _layout_row(best_row, cx, cy, cw, ch, True)
+            _layout_row(best_row, cx, cy, cw, ch, True, remaining_total)
             cy += row_h
             ch -= row_h
         else:
             row_w = cw * frac
-            _layout_row(best_row, cx, cy, cw, ch, False)
+            _layout_row(best_row, cx, cy, cw, ch, False, remaining_total)
             cx += row_w
             cw -= row_w
 
@@ -3780,7 +3783,7 @@ def _render_detail_drawer():
     </div>"""
 
 
-def _render_heatmap_js(heatmap_data):
+def _render_heatmap_js():
     """Render JavaScript for heatmap interactivity."""
     return """
     <div class="hm-tooltip" id="hmTooltip"></div>
@@ -3805,7 +3808,12 @@ def _render_heatmap_js(heatmap_data):
       }
 
       document.querySelectorAll('.hm-node, .hm-list-row').forEach(function(el){
+        el.setAttribute('tabindex', '0');
+        el.setAttribute('role', 'button');
         el.addEventListener('click', function(){ openDrawer(el); });
+        el.addEventListener('keydown', function(evt) {
+          if (evt.key === 'Enter' || evt.key === ' ') { evt.preventDefault(); openDrawer(el); }
+        });
       });
 
       function closeDrawer() { drawer.classList.remove('open'); overlay.classList.remove('open'); }
@@ -3818,12 +3826,30 @@ def _render_heatmap_js(heatmap_data):
           var p = parseFloat(el.dataset.pct || 0);
           tooltip.textContent = n + ' ' + (p>0?'+':'') + p.toFixed(2) + '%';
           tooltip.style.display = 'block';
-          tooltip.style.left = e.clientX + 12 + 'px';
-          tooltip.style.top = e.clientY - 8 + 'px';
+          var tw = tooltip.offsetWidth || 150;
+          var th = tooltip.offsetHeight || 30;
+          var vw = window.innerWidth;
+          var vh = window.innerHeight;
+          var tx = e.clientX + 12;
+          var ty = e.clientY - 8;
+          if (tx + tw > vw - 8) tx = e.clientX - tw - 8;
+          if (ty + th > vh - 8) ty = vh - th - 8;
+          if (ty < 8) ty = 8;
+          tooltip.style.left = tx + 'px';
+          tooltip.style.top = ty + 'px';
         });
         el.addEventListener('mousemove', function(e){
-          tooltip.style.left = e.clientX + 12 + 'px';
-          tooltip.style.top = e.clientY - 8 + 'px';
+          var tw = tooltip.offsetWidth || 150;
+          var th = tooltip.offsetHeight || 30;
+          var vw = window.innerWidth;
+          var vh = window.innerHeight;
+          var tx = e.clientX + 12;
+          var ty = e.clientY - 8;
+          if (tx + tw > vw - 8) tx = e.clientX - tw - 8;
+          if (ty + th > vh - 8) ty = vh - th - 8;
+          if (ty < 8) ty = 8;
+          tooltip.style.left = tx + 'px';
+          tooltip.style.top = ty + 'px';
         });
         el.addEventListener('mouseleave', function(){ tooltip.style.display = 'none'; });
       });
@@ -5133,6 +5159,7 @@ def generate_market_report(
     trade_date: str = "",
     heatmap_data=None,
     board_data: dict = None,
+    allow_live_fetch: bool = True,
 ) -> Optional[str]:
     """Generate standalone market overview HTML report.
 
@@ -5172,14 +5199,14 @@ def generate_market_report(
         momentum = market_context.get("sector_momentum", []) if market_context else []
         sector_names = [m.get("name", "") for m in momentum
                         if isinstance(m, dict) and m.get("name")]
-        if sector_names:
+        if sector_names and allow_live_fetch:
             try:
                 from ..akshare_collector import collect_sector_leader_stocks
                 fetched = collect_sector_leader_stocks(sector_names)
                 if fetched:
                     board_data["sector_stocks"] = fetched
             except Exception:
-                pass  # graceful — treemap shows sectors without drill-down
+                logger.warning("Sector drill-down fetch failed, rendering without constituent stocks", exc_info=True)
 
     view = MarketView.build(
         market_context=market_context,

@@ -594,16 +594,7 @@ class TestDrawer:
 
     def test_heatmap_js_structure(self):
         from subagent_pipeline.renderers.report_renderer import _render_heatmap_js
-        data = {
-            "nodes": [
-                {"id": "601985.SS", "name": "中国核电", "action": "BUY",
-                 "confidence": 0.72, "pct_change": 2.31, "action_label": "建议关注",
-                 "market_wind": "顺风", "sector_status": "主线板块",
-                 "bull_claims_top3": [{"text": "核电审批", "confidence": 0.85}],
-                 "bear_claims_top3": [], "risk_flags": [], "detail_ref": "run-001"},
-            ],
-        }
-        js = _render_heatmap_js(data)
+        js = _render_heatmap_js()
         assert "openDrawer" in js
         assert "closeDrawer" in js
         assert "mouseenter" in js  # tooltip
