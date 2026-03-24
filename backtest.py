@@ -954,6 +954,16 @@ def generate_multi_window_report(
 
     html = [_BT_HTML_HEAD.replace("回测验证报告", "回测验证报告（多窗口）")]
 
+    # Hero
+    html.append(
+        '<div class="hero reveal"><div>'
+        '<div class="eyebrow">MULTI-WINDOW BACKTEST</div>'
+        '<h1>回测验证报告（多窗口）</h1>'
+        f'<div class="subtitle">窗口: '
+        f'{"/".join(str(w) for w in multi.windows)} 交易日</div>'
+        '</div></div>'
+    )
+
     # ── Section 1: Multi-window comparison table ──
     html.append('<h2>多窗口对比</h2>')
     html.append('<table class="bt-table"><thead><tr>')
@@ -1128,6 +1138,7 @@ def generate_multi_window_report(
         f'<em>AI 多智能体系统回测验证，仅供研究参考</em>'
         f'</div>'
     )
+    html.append(_BT_JS)
     html.append('</div></body></html>')
 
     path = out_dir / f"backtest-multi-{datetime.now().strftime('%Y%m%d')}.html"
@@ -1159,23 +1170,55 @@ def generate_backtest_report(
     # Build HTML
     html_parts = [_BT_HTML_HEAD]
 
-    # Summary cards
-    html_parts.append('<div class="summary-row">')
-    html_parts.append(_card("总信号数", str(s.total_signals)))
-    html_parts.append(_card("已评估", str(s.completed)))
-    html_parts.append(_card("方向准确率",
-        f"{s.direction_accuracy_pct}%" if s.completed else "—"))
-    html_parts.append(_card("胜率",
-        f"{s.win_rate_pct}%" if s.completed else "—"))
-    html_parts.append(_card("平均收益",
-        f"{s.avg_stock_return_pct:+.2f}%" if s.completed else "—"))
-    html_parts.append('</div>')
+    # ── Hero section ──
+    gen_date = report.generated_at[:10] if report.generated_at else ""
+    html_parts.append(
+        f'<div class="hero reveal">'
+        f'<div class="hero-grid"><div>'
+        f'<div class="eyebrow">BACKTEST VERIFICATION</div>'
+        f'<h1>回测验证报告</h1>'
+        f'<div class="subtitle">'
+        f'评估窗口 {report.config.eval_window_days} 交易日 · '
+        f'中性区间 ±{report.config.neutral_band_pct}% · {gen_date}</div>'
+        f'</div><div>'
+        f'<div class="summary-row">'
+        + _card("总信号数", str(s.total_signals))
+        + _card("已评估", str(s.completed))
+        + _card("平均收益",
+                f"{s.avg_stock_return_pct:+.2f}%" if s.completed else "—")
+        + '</div></div></div></div>'
+    )
 
-    # Action breakdown table
+    # ── Donut gauges ──
+    if s.completed:
+        dir_color = "var(--green)" if s.direction_accuracy_pct >= 50 else "var(--red)"
+        wr_color = "var(--green)" if s.win_rate_pct >= 50 else "var(--red)"
+        html_parts.append(
+            '<div class="donut-row reveal reveal-d1">'
+            + _donut_gauge(s.direction_accuracy_pct, "方向准确率", dir_color)
+            + _donut_gauge(s.win_rate_pct, "胜率", wr_color)
+            + '</div>'
+        )
+
+    # ── Cumulative return curve ──
+    if completed:
+        html_parts.append(
+            '<div class="reveal reveal-d2">'
+            + _cumulative_return_svg(completed)
+            + '</div>'
+        )
+
+    # ── Action distribution + breakdown table ──
+    dist_bar = _action_distribution_bar(s)
+    if dist_bar:
+        html_parts.append(f'<div class="reveal reveal-d3">{dist_bar}</div>')
+
     if s.action_breakdown:
         html_parts.append('<h2>分类统计</h2>')
         html_parts.append('<table class="bt-table"><thead><tr>')
-        html_parts.append('<th>信号</th><th>次数</th><th>平均收益</th><th>胜率</th>')
+        html_parts.append('<th>信号</th><th class="sortable">次数</th>'
+                         '<th class="sortable">平均收益</th>'
+                         '<th class="sortable">胜率</th>')
         html_parts.append('</tr></thead><tbody>')
         for action in ("BUY", "HOLD", "SELL", "VETO"):
             bd = s.action_breakdown.get(action)
@@ -1191,12 +1234,16 @@ def generate_backtest_report(
             )
         html_parts.append('</tbody></table>')
 
-    # Per-ticker summary
+    # ── Per-ticker summary ──
     if report.per_ticker_summaries:
         html_parts.append('<h2>个股统计</h2>')
         html_parts.append('<table class="bt-table"><thead><tr>')
-        html_parts.append('<th>股票</th><th>信号数</th><th>方向准确率</th>'
-                         '<th>胜率</th><th>平均收益</th></tr></thead><tbody>')
+        html_parts.append(
+            '<th class="sortable">股票</th><th class="sortable">信号数</th>'
+            '<th class="sortable">方向准确率</th>'
+            '<th class="sortable">胜率</th>'
+            '<th class="sortable">平均收益</th></tr></thead><tbody>'
+        )
         for tk, ts in sorted(report.per_ticker_summaries.items()):
             name = ""
             for r in report.results:
@@ -1213,14 +1260,17 @@ def generate_backtest_report(
             )
         html_parts.append('</tbody></table>')
 
-    # Detail table
+    # ── Detail table ──
     if completed:
         html_parts.append('<h2>信号明细</h2>')
         html_parts.append('<table class="bt-table detail"><thead><tr>')
         html_parts.append(
-            '<th>日期</th><th>股票</th><th>信号</th>'
-            '<th>入场价</th><th>出场价</th><th>收益</th>'
-            '<th>最大回撤</th><th>最大浮盈</th><th>结果</th>'
+            '<th class="sortable">日期</th><th class="sortable">股票</th>'
+            '<th>信号</th>'
+            '<th class="sortable">入场价</th><th class="sortable">出场价</th>'
+            '<th class="sortable">收益</th>'
+            '<th class="sortable">最大回撤</th><th class="sortable">最大浮盈</th>'
+            '<th>走势</th><th class="sortable">结果</th>'
         )
         html_parts.append('</tr></thead><tbody>')
         for r in completed:
@@ -1231,6 +1281,7 @@ def generate_backtest_report(
             outcome_label = {"win": "盈利", "loss": "亏损", "neutral": "持平"}.get(
                 r.outcome, "—"
             )
+            spark = _signal_sparkline(r)
             html_parts.append(
                 f'<tr>'
                 f'<td>{_esc(r.trade_date)}</td>'
@@ -1241,6 +1292,7 @@ def generate_backtest_report(
                 f'<td class="{outcome_cls}">{r.stock_return_pct:+.2f}%</td>'
                 f'<td class="sell">{r.max_drawdown_pct:+.2f}%</td>'
                 f'<td class="buy">{r.max_gain_pct:+.2f}%</td>'
+                f'<td class="sparkline-cell">{spark}</td>'
                 f'<td class="{outcome_cls}">{outcome_label}</td>'
                 f'</tr>'
             )
@@ -1256,6 +1308,7 @@ def generate_backtest_report(
         f'</div>'
     )
 
+    html_parts.append(_BT_JS)
     html_parts.append('</div></body></html>')
     html = "\n".join(html_parts)
 
@@ -1280,36 +1333,355 @@ def _card(title: str, value: str) -> str:
     return f'<div class="card"><div class="card-title">{_esc(title)}</div><div class="card-value">{value}</div></div>'
 
 
+# ── SVG Helpers ─────────────────────────────────────────────────────────
+
+import math as _math
+
+
+def _donut_gauge(value_pct: float, label: str, color: str = "var(--green)",
+                 size: int = 120) -> str:
+    """SVG donut gauge with percentage in center."""
+    r = size * 0.38
+    circ = 2 * _math.pi * r
+    dash = circ * min(max(value_pct, 0), 100) / 100
+    cx = cy = size / 2
+    txt = f"{value_pct:.1f}%" if value_pct > 0 else "—"
+    return (
+        f'<div class="donut-wrap">'
+        f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}">'
+        f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" '
+        f'stroke="rgba(255,255,255,0.06)" stroke-width="10"/>'
+        f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" '
+        f'stroke="{color}" stroke-width="10" '
+        f'stroke-dasharray="{dash:.1f} {circ:.1f}" '
+        f'stroke-linecap="round" '
+        f'transform="rotate(-90 {cx} {cy})" '
+        f'class="donut-fill"/>'
+        f'<text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central" '
+        f'fill="var(--white)" font-size="{size * 0.18:.0f}px" font-weight="800" '
+        f'font-family="var(--mono)">{txt}</text>'
+        f'</svg>'
+        f'<div class="donut-label">{_esc(label)}</div>'
+        f'</div>'
+    )
+
+
+def _cumulative_return_svg(results: list, w: int = 660, h: int = 160) -> str:
+    """SVG cumulative return curve from completed BacktestResults."""
+    sorted_r = sorted(results, key=lambda r: r.trade_date)
+    if not sorted_r:
+        return ""
+    cum = []
+    running = 0.0
+    for r in sorted_r:
+        running += r.stock_return_pct
+        cum.append((r.trade_date, running))
+
+    pad_x, pad_y = 50, 20
+    plot_w = w - pad_x - 10
+    plot_h = h - pad_y * 2
+    vals = [c[1] for c in cum]
+    v_min = min(min(vals), 0)
+    v_max = max(max(vals), 0)
+    v_range = v_max - v_min or 1
+
+    def sx(i: int) -> float:
+        return pad_x + (i / max(len(cum) - 1, 1)) * plot_w
+
+    def sy(v: float) -> float:
+        return pad_y + (1 - (v - v_min) / v_range) * plot_h
+
+    zero_y = sy(0)
+    pts = " ".join(f"{sx(i):.1f},{sy(v):.1f}" for i, (_, v) in enumerate(cum))
+    # Area fill: close polygon along zero line
+    area = pts + f" {sx(len(cum) - 1):.1f},{zero_y:.1f} {sx(0):.1f},{zero_y:.1f}"
+    final_color = "var(--green)" if cum[-1][1] >= 0 else "var(--red)"
+
+    # Date labels (first and last)
+    d_first = cum[0][0][-5:] if cum[0][0] else ""
+    d_last = cum[-1][0][-5:] if cum[-1][0] else ""
+
+    return (
+        f'<div class="cum-chart card">'
+        f'<h3>累计收益曲线</h3>'
+        f'<svg viewBox="0 0 {w} {h}" width="100%" height="auto" '
+        f'style="max-height:{h}px">'
+        f'<defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0%" stop-color="{final_color}" stop-opacity="0.25"/>'
+        f'<stop offset="100%" stop-color="{final_color}" stop-opacity="0.02"/>'
+        f'</linearGradient></defs>'
+        f'<line x1="{pad_x}" y1="{zero_y:.1f}" x2="{w - 10}" y2="{zero_y:.1f}" '
+        f'stroke="rgba(255,255,255,0.1)" stroke-dasharray="4 3"/>'
+        f'<polygon points="{area}" fill="url(#cg)"/>'
+        f'<polyline points="{pts}" fill="none" stroke="{final_color}" '
+        f'stroke-width="2" stroke-linejoin="round"/>'
+        # Y-axis labels
+        f'<text x="{pad_x - 4}" y="{sy(v_max):.1f}" text-anchor="end" '
+        f'fill="var(--muted)" font-size="9" font-family="var(--mono)">'
+        f'{v_max:+.1f}%</text>'
+        f'<text x="{pad_x - 4}" y="{sy(v_min):.1f}" text-anchor="end" '
+        f'fill="var(--muted)" font-size="9" font-family="var(--mono)">'
+        f'{v_min:+.1f}%</text>'
+        f'<text x="{pad_x - 4}" y="{zero_y:.1f}" text-anchor="end" '
+        f'fill="var(--muted)" font-size="9" font-family="var(--mono)">0%</text>'
+        # X-axis date labels
+        f'<text x="{sx(0):.1f}" y="{h - 2}" text-anchor="start" '
+        f'fill="var(--muted)" font-size="9">{_esc(d_first)}</text>'
+        f'<text x="{sx(len(cum) - 1):.1f}" y="{h - 2}" text-anchor="end" '
+        f'fill="var(--muted)" font-size="9">{_esc(d_last)}</text>'
+        f'</svg></div>'
+    )
+
+
+def _action_distribution_bar(summary) -> str:
+    """Horizontal stacked bar showing BUY/HOLD/SELL/VETO distribution."""
+    bd = summary.action_breakdown
+    if not bd:
+        return ""
+    total = sum(bd[a]["count"] for a in bd)
+    if total == 0:
+        return ""
+
+    colors = {"BUY": "var(--green)", "HOLD": "var(--yellow)",
+              "SELL": "var(--red)", "VETO": "#8b4049"}
+    labels = {"BUY": "买入", "HOLD": "持有", "SELL": "卖出", "VETO": "否决"}
+    segs = []
+    for action in ("BUY", "HOLD", "SELL", "VETO"):
+        if action not in bd:
+            continue
+        cnt = bd[action]["count"]
+        pct = cnt / total * 100
+        if pct < 1:
+            continue
+        lbl = f"{labels[action]} {cnt}" if pct > 15 else ""
+        segs.append(
+            f'<div style="width:{pct:.1f}%;background:{colors[action]};'
+            f'color:#fff;font-size:.72rem;font-weight:600;'
+            f'display:flex;align-items:center;justify-content:center;'
+            f'white-space:nowrap;padding:0 .3rem;min-width:2px">{lbl}</div>'
+        )
+    return (
+        '<div class="card" style="margin:1rem 0">'
+        '<h3>信号分布</h3>'
+        '<div style="display:flex;height:28px;border-radius:999px;overflow:hidden;'
+        'background:rgba(255,255,255,0.04);margin-top:.6rem">'
+        + "".join(segs)
+        + '</div></div>'
+    )
+
+
+def _signal_sparkline(r, w: int = 80, h: int = 20) -> str:
+    """Mini SVG bar showing entry→exit with stop/take markers."""
+    if r.start_price <= 0:
+        return ""
+    prices = [r.start_price, r.end_close]
+    if r.max_high > 0:
+        prices.append(r.max_high)
+    if r.min_low > 0:
+        prices.append(r.min_low)
+    if r.stop_loss > 0:
+        prices.append(r.stop_loss)
+    if r.take_profit > 0:
+        prices.append(r.take_profit)
+    p_min = min(prices)
+    p_max = max(prices)
+    p_range = p_max - p_min or 1
+
+    def sx(p: float) -> float:
+        return 4 + (p - p_min) / p_range * (w - 8)
+
+    color = "var(--green)" if r.stock_return_pct >= 0 else "var(--red)"
+    x1, x2 = sx(r.start_price), sx(r.end_close)
+    left = min(x1, x2)
+    bar_w = max(abs(x2 - x1), 1)
+
+    parts = [
+        f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}">',
+        f'<rect x="2" y="{h // 2 - 1}" width="{w - 4}" height="2" '
+        f'fill="rgba(255,255,255,0.06)" rx="1"/>',
+        f'<rect x="{left:.1f}" y="{h // 2 - 4}" width="{bar_w:.1f}" height="8" '
+        f'fill="{color}" rx="2" opacity="0.7"/>',
+    ]
+    if r.stop_loss > 0:
+        sl_x = sx(r.stop_loss)
+        parts.append(
+            f'<line x1="{sl_x:.1f}" y1="2" x2="{sl_x:.1f}" y2="{h - 2}" '
+            f'stroke="var(--red)" stroke-width="1" stroke-dasharray="2 1"/>'
+        )
+    if r.take_profit > 0:
+        tp_x = sx(r.take_profit)
+        parts.append(
+            f'<line x1="{tp_x:.1f}" y1="2" x2="{tp_x:.1f}" y2="{h - 2}" '
+            f'stroke="var(--green)" stroke-width="1" stroke-dasharray="2 1"/>'
+        )
+    # Entry marker
+    parts.append(
+        f'<circle cx="{x1:.1f}" cy="{h // 2}" r="2.5" fill="var(--white)"/>'
+    )
+    parts.append('</svg>')
+    return "".join(parts)
+
+
+# ── Table Sort JS ────────────────────────────────────────────────────────
+
+_BT_JS = """<script>
+document.querySelectorAll('th.sortable').forEach(function(th){
+  th.addEventListener('click',function(){
+    var table=th.closest('table'), tbody=table.querySelector('tbody');
+    if(!tbody) return;
+    var idx=Array.from(th.parentNode.children).indexOf(th);
+    var dir=th.getAttribute('data-sort-dir')==='asc'?'desc':'asc';
+    th.parentNode.querySelectorAll('th').forEach(function(t){t.removeAttribute('data-sort-dir');});
+    th.setAttribute('data-sort-dir',dir);
+    var rows=Array.from(tbody.querySelectorAll('tr'));
+    rows.sort(function(a,b){
+      var av=a.children[idx]?a.children[idx].textContent.trim():'';
+      var bv=b.children[idx]?b.children[idx].textContent.trim():'';
+      var an=parseFloat(av.replace(/[^\\d.\\-+]/g,'')), bn=parseFloat(bv.replace(/[^\\d.\\-+]/g,''));
+      if(!isNaN(an)&&!isNaN(bn)) return dir==='asc'?an-bn:bn-an;
+      return dir==='asc'?av.localeCompare(bv):bv.localeCompare(av);
+    });
+    rows.forEach(function(r){tbody.appendChild(r);});
+  });
+});
+</script>"""
+
+
+# ── HTML Template ────────────────────────────────────────────────────────
+
 _BT_HTML_HEAD = """<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>回测验证报告</title>
 <style>
-:root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3;
-        --muted: #8b949e; --green: #3fb950; --red: #da3633; --yellow: #d29922; }
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif;
-       font-size: 14px; line-height: 1.6; }
-.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
-h1 { font-size: 22px; margin-bottom: 8px; }
-h2 { font-size: 17px; margin: 24px 0 12px; color: var(--muted); }
-.summary-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
-.card { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-        padding: 16px; min-width: 140px; flex: 1; text-align: center; }
-.card-title { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-.card-value { font-size: 24px; font-weight: 600; }
-.bt-table { width: 100%; border-collapse: collapse; background: var(--card);
-            border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-.bt-table th { background: #1c2128; padding: 10px 12px; text-align: left;
-               font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
-.bt-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
-.bt-table tr:last-child td { border-bottom: none; }
-.bt-table tr:hover { background: #1c2128; }
-.buy { color: var(--green); }
-.sell { color: var(--red); }
-.hold { color: var(--yellow); }
-.footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border);
-          color: var(--muted); font-size: 12px; text-align: center; }
+:root {
+  --bg: #06101a; --fg: #dce9ef; --card: rgba(10, 22, 34, 0.82);
+  --border: rgba(110, 148, 171, 0.22); --green: #52d6a7; --red: #ff7e6b;
+  --yellow: #f6c66d; --blue: #69c8ff; --muted: #91a8b8; --white: #f5fbff;
+  --surface: rgba(18, 34, 49, 0.92); --accent: #ffb16d;
+  --mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC",-apple-system,
+               BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(246,198,109,0.12), transparent 28%),
+    radial-gradient(circle at 85% 18%, rgba(105,200,255,0.10), transparent 26%),
+    radial-gradient(circle at 50% 110%, rgba(82,214,167,0.10), transparent 36%),
+    linear-gradient(180deg, #08131f 0%, #06101a 55%, #050d16 100%);
+  color: var(--fg); line-height:1.7;
+  -webkit-font-smoothing: antialiased;
+}
+.container { max-width:1100px; margin:0 auto; padding:2.2rem 1.5rem 4rem; }
+
+h1 { color:var(--white); margin-bottom:.3rem;
+     font-size:clamp(1.6rem,3vw,2.2rem); font-weight:800; letter-spacing:-0.03em; }
+h2 { color:var(--accent); margin:2rem 0 1rem; font-size:1rem; font-weight:700;
+     letter-spacing:0.1em; text-transform:uppercase; }
+h3 { color:var(--white); margin:.6rem 0 .5rem; font-size:.92rem; font-weight:700; }
+.subtitle { color:var(--muted); margin-bottom:1.2rem; font-size:.85rem; }
+
+.card {
+  background: linear-gradient(180deg, rgba(12,23,35,0.94), rgba(8,16,25,0.92));
+  border: 1px solid rgba(255,255,255,0.06); border-radius:20px;
+  padding:1.25rem 1.3rem; margin-bottom:1rem;
+  box-shadow: 0 14px 34px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.04);
+  backdrop-filter: blur(12px);
+  transition: transform 280ms ease, box-shadow 280ms ease;
+}
+.card:hover {
+  transform:translateY(-2px);
+  box-shadow: 0 18px 44px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.card-title { font-size:.72rem; color:var(--muted); margin-bottom:.25rem;
+              text-transform:uppercase; letter-spacing:.06em; }
+.card-value { font-size:1.8rem; font-weight:800; font-family:var(--mono); }
+
+.hero {
+  position:relative; overflow:hidden; border-radius:28px;
+  border:1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(135deg, rgba(12,29,45,0.96), rgba(12,21,31,0.88), rgba(20,30,38,0.9));
+  box-shadow:0 22px 54px rgba(0,0,0,0.26); padding:2rem; margin-bottom:1.2rem;
+}
+.hero::after {
+  content:""; position:absolute; inset:-20% auto auto 56%;
+  width:340px; height:340px; border-radius:50%;
+  background:radial-gradient(circle, rgba(105,200,255,0.12), transparent 64%);
+  pointer-events:none;
+}
+.hero-grid {
+  position:relative; z-index:1; display:grid;
+  grid-template-columns:minmax(0,1.2fr) minmax(260px,0.8fr);
+  gap:1.2rem; align-items:start;
+}
+.eyebrow {
+  display:inline-flex; align-items:center; gap:.5rem;
+  text-transform:uppercase; letter-spacing:.18em;
+  font-size:.72rem; color:var(--accent); margin-bottom:.6rem;
+}
+
+.summary-row { display:flex; gap:.75rem; flex-wrap:wrap; margin:1rem 0; }
+.summary-row .card { flex:1; min-width:130px; text-align:center; padding:1rem; }
+
+.donut-wrap { display:flex; flex-direction:column; align-items:center; gap:.3rem; }
+.donut-label { font-size:.72rem; color:var(--muted); text-transform:uppercase;
+               letter-spacing:.06em; text-align:center; }
+.donut-fill { transition: stroke-dasharray 800ms cubic-bezier(0.22,1,0.36,1); }
+.donut-row { display:flex; gap:1.5rem; justify-content:center;
+             flex-wrap:wrap; margin:1.2rem 0; }
+
+.cum-chart { padding:1rem 1.3rem; }
+.cum-chart h3 { margin-bottom:.4rem; }
+
+.bt-table { width:100%; border-collapse:collapse;
+  background: linear-gradient(180deg, rgba(12,23,35,0.94), rgba(8,16,25,0.92));
+  border:1px solid rgba(255,255,255,0.06); border-radius:16px; overflow:hidden; }
+.bt-table th {
+  background:rgba(255,255,255,0.03); padding:.6rem .75rem; text-align:left;
+  font-size:.72rem; color:var(--muted); border-bottom:1px solid rgba(255,255,255,0.06);
+  text-transform:uppercase; letter-spacing:.06em; font-weight:600;
+}
+.bt-table td { padding:.55rem .75rem; border-bottom:1px solid rgba(255,255,255,0.04);
+               font-size:.82rem; }
+.bt-table tr:last-child td { border-bottom:none; }
+.bt-table tr:hover { background:rgba(255,255,255,0.02); }
+
+th.sortable { cursor:pointer; user-select:none; position:relative; padding-right:1.2rem; }
+th.sortable::after { content:"⇅"; position:absolute; right:.3rem; opacity:.3; font-size:.7rem; }
+th.sortable[data-sort-dir="asc"]::after { content:"↑"; opacity:.7; color:var(--blue); }
+th.sortable[data-sort-dir="desc"]::after { content:"↓"; opacity:.7; color:var(--blue); }
+
+.buy { color:var(--green); } .sell { color:var(--red); } .hold { color:var(--yellow); }
+.badge { display:inline-flex; align-items:center; padding:2px 10px; border-radius:999px;
+         font-size:.72rem; font-weight:600; backdrop-filter:blur(8px); }
+.badge-buy { background:rgba(82,214,167,0.12); color:var(--green); }
+.badge-sell { background:rgba(255,126,107,0.12); color:var(--red); }
+.badge-hold { background:rgba(246,198,109,0.12); color:var(--yellow); }
+
+.footer { margin-top:2rem; padding-top:1rem; border-top:1px solid rgba(255,255,255,0.06);
+          color:var(--muted); font-size:.72rem; text-align:center; }
+
+@keyframes card-rise { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+.reveal { animation: card-rise 520ms ease both; }
+.reveal-d1{animation-delay:60ms} .reveal-d2{animation-delay:120ms}
+.reveal-d3{animation-delay:180ms} .reveal-d4{animation-delay:240ms}
+
+@media(max-width:767px){
+  .hero-grid{grid-template-columns:1fr}
+  .donut-row{flex-direction:column;align-items:center}
+  .container{padding:.8rem}
+  .reveal{animation:none!important}
+}
+@media print {
+  :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666;--white:#111;--accent:#333}
+  body{background:#fff!important;color:#111!important}
+  .card,.hero{background:#fff!important;box-shadow:none!important;backdrop-filter:none!important;
+    border:1px solid #ddd!important;border-radius:4px!important}
+  .hero::after{display:none} .reveal{animation:none!important}
+  .container{max-width:100%;padding:0}
+  .card{page-break-inside:avoid}
+  th.sortable::after{display:none}
+}
 </style></head>
-<body><div class="container">
-<h1>回测验证报告</h1>"""
+<body><div class="container">"""

@@ -214,6 +214,13 @@ h3 {
 /* ── Probability bar ── */
 .prob-bar { display: flex; height: 32px; border-radius: 999px; overflow: hidden; margin: .5rem 0; background: rgba(255,255,255,0.04); }
 .prob-bar > div { display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 600; }
+.prob-seg { position:relative; transition: width 800ms cubic-bezier(0.22,1,0.36,1); }
+.prob-seg[data-tip]:hover::after {
+  content:attr(data-tip); position:absolute; bottom:110%; left:50%;
+  transform:translateX(-50%); background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:.3rem .6rem; font-size:.72rem; white-space:nowrap; z-index:10;
+  pointer-events:none;
+}
 
 /* ── Claim card grid ── */
 .claim-grid { display: grid; gap: .75rem; margin: .75rem 0; }
@@ -380,6 +387,12 @@ li { margin-bottom: .3rem; font-size: .9rem; }
   from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: translateY(0); }
 }
+@keyframes bar-grow { from { width: 0; } }
+.conf-fill, .bb-bull, .bb-bear { animation: bar-grow 600ms cubic-bezier(0.22,1,0.36,1) both; }
+details>summary{cursor:pointer;list-style:none}
+details>summary::-webkit-details-marker{display:none}
+details>summary h2::after{content:" \u25be";font-size:.7em;opacity:.5}
+details:not([open])>summary h2::after{content:" \u25b8"}
 
 /* ── Footer ── */
 .footer {
@@ -426,7 +439,44 @@ li { margin-bottom: .3rem; font-size: .9rem; }
     }
   }
 }
+@media print {
+  :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666;--white:#111;--accent:#333}
+  body{background:#fff!important;color:#111!important}
+  .card,.hero{background:#fff!important;box-shadow:none!important;backdrop-filter:none!important;
+    border:1px solid #ddd!important;border-radius:4px!important}
+  .hero::after,body::before{display:none}
+  .reveal{animation:none!important}
+  .conf-fill,.bb-bull,.bb-bear{animation:none!important}
+  .container{max-width:100%;padding:0}
+  details[open]>div{display:block!important}
+  .toggle-btn,.csv-btn{display:none!important}
+  h2{color:#333!important}
+  .card{page-break-inside:avoid}
+}
 """
+
+_COUNTUP_JS = """<script>
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('.kpi-val').forEach(function(el){
+    var raw=el.textContent.trim();
+    var m=raw.match(/([+-]?[\\d.]+)/);
+    if(!m)return;
+    var target=parseFloat(m[1]),suffix=raw.replace(m[1],''),
+        neg=raw.startsWith('-')||raw.startsWith('+'),
+        dec=m[1].indexOf('.')>=0?m[1].split('.')[1].length:0,
+        dur=600,start=performance.now();
+    function step(ts){
+      var p=Math.min((ts-start)/dur,1);
+      p=1-Math.pow(1-p,3);
+      var v=(target*p).toFixed(dec);
+      if(neg&&target>=0) v='+'+v;
+      el.textContent=v+suffix;
+      if(p<1)requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  });
+});
+</script>"""
 
 
 def _html_wrap(title: str, body: str, tier_label: str, extra_css: str = "",
@@ -536,6 +586,56 @@ def _degraded_banner(reasons: list, audit_link: str = "") -> str:
 
 # ── Feature 2: Checklist + Risk Debate Summary ──────────────────────────
 
+
+def _radar_svg(pillars, action_class, size=180):
+    """SVG radar chart for 4-pillar scores (0-2 scale)."""
+    import math
+    cx = cy = size / 2
+    max_r = size * 0.38
+    axes = [(-math.pi / 2 + i * math.pi / 2) for i in range(4)]  # top, right, bottom, left
+    labels = ["\u6280\u672f\u9762", "\u57fa\u672c\u9762", "\u65b0\u95fb\u9762", "\u60c5\u7eea\u9762"]
+    color_map = {"buy": "#52d6a7", "hold": "#f6c66d", "sell": "#ff7e6b", "veto": "#ff7e6b"}
+    fill_color = color_map.get(action_class, "#69c8ff")
+
+    def polar(angle, r):
+        return (cx + r * math.cos(angle), cy + r * math.sin(angle))
+
+    svg = [f'<svg viewBox="0 0 {size} {size}" width="{size}" height="{size}">']
+    # Grid polygons at r=max_r/2 (score 1) and r=max_r (score 2)
+    for frac in (0.5, 1.0):
+        pts = " ".join(f"{polar(a, max_r * frac)[0]:.1f},{polar(a, max_r * frac)[1]:.1f}" for a in axes)
+        svg.append(f'<polygon points="{pts}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>')
+    # Axis lines
+    for a in axes:
+        ex, ey = polar(a, max_r)
+        svg.append(f'<line x1="{cx}" y1="{cy}" x2="{ex:.1f}" y2="{ey:.1f}" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>')
+    # Data polygon
+    scores = []
+    for i, p in enumerate(pillars[:4]):
+        s = p.get("score", 0)
+        scores.append(s)
+    if scores:
+        data_pts = " ".join(
+            f"{polar(axes[i], max_r * s / 2)[0]:.1f},{polar(axes[i], max_r * s / 2)[1]:.1f}"
+            for i, s in enumerate(scores)
+        )
+        svg.append(f'<polygon points="{data_pts}" fill="{fill_color}" fill-opacity="0.18" '
+                   f'stroke="{fill_color}" stroke-width="1.5"/>')
+        for i, s in enumerate(scores):
+            dx, dy = polar(axes[i], max_r * s / 2)
+            svg.append(f'<circle cx="{dx:.1f}" cy="{dy:.1f}" r="3" fill="{fill_color}"/>')
+    # Labels
+    offsets = [(0, -12), (12, 0), (0, 14), (-12, 0)]  # top, right, bottom, left
+    anchors = ["middle", "start", "middle", "end"]
+    for i, lbl in enumerate(labels[:len(axes)]):
+        lx, ly = polar(axes[i], max_r + 16)
+        svg.append(f'<text x="{lx + offsets[i][0]:.1f}" y="{ly + offsets[i][1]:.1f}" '
+                   f'text-anchor="{anchors[i]}" fill="var(--muted)" '
+                   f'font-size="10" font-weight="600">{lbl}</text>')
+    svg.append('</svg>')
+    return "\n".join(svg)
+
+
 def _render_checklist(view: SnapshotView) -> str:
     """Render pillar score checklist card."""
     if not view.pillar_checklist:
@@ -554,10 +654,14 @@ def _render_checklist(view: SnapshotView) -> str:
             f'<span class="ck-score">{score}/2</span>'
             f'</div>'
         )
+    radar = _radar_svg(view.pillar_checklist, view.action_class)
     return f"""
     <div class="card">
       <h3>\u5206\u6790\u7ef4\u5ea6\u6838\u67e5</h3>
-      <div class="checklist">{items}</div>
+      <div style="display:flex;gap:1.2rem;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px"><div class="checklist">{items}</div></div>
+        <div style="flex-shrink:0">{radar}</div>
+      </div>
     </div>"""
 
 
@@ -828,7 +932,7 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     {degraded_chart}
     {risks_html}"""
 
-        return _html_wrap(f"{_ticker_display(view)} 研究快照 — {view.trade_date}", body, "研究快照")
+        return _html_wrap(f"{_ticker_display(view)} 研究快照 — {view.trade_date}", body, "研究快照", extra_head=_COUNTUP_JS)
 
     # ── Normal Mode ──
     _sig_emoji = get_signal_emoji(view.research_action)
@@ -1031,7 +1135,7 @@ def _render_research_degraded(view: ResearchView) -> str:
     {synth_html}
     {risk_html}"""
 
-    return _html_wrap(f"{_ticker_display(view)} 深度研究 — {view.trade_date}", body, "深度研究报告")
+    return _html_wrap(f"{_ticker_display(view)} 深度研究 — {view.trade_date}", body, "深度研究报告", extra_head=_COUNTUP_JS)
 
 
 def _render_trade_plan_card(tp: dict) -> str:
@@ -1287,13 +1391,22 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
         base_pct = int(sp.get("base_prob", 0) * 100)
         bull_pct = int(sp.get("bull_prob", 0) * 100)
         bear_pct = int(sp.get("bear_prob", 0) * 100)
+        base_arrow = "" if abs(base_pct - 33) < 5 else ("▲" if base_pct > 33 else "▼")
+        bull_arrow = "" if abs(bull_pct - 33) < 5 else ("▲" if bull_pct > 33 else "▼")
+        bear_arrow = "" if abs(bear_pct - 33) < 5 else ("▲" if bear_pct > 33 else "▼")
+        base_tip = _esc(sp.get("base_trigger", "")[:80])
+        bull_tip = _esc(sp.get("bull_trigger", "")[:80])
+        bear_tip = _esc(sp.get("bear_trigger", "")[:80])
+        base_lbl = f"基准 {base_pct}%{base_arrow}" if base_pct > 18 else ""
+        bull_lbl = f"乐观 {bull_pct}%{bull_arrow}" if bull_pct > 18 else ""
+        bear_lbl = f"悲观 {bear_pct}%{bear_arrow}" if bear_pct > 18 else ""
         scenario_html = f"""
     <div class="card">
       <h3>情景分析</h3>
       <div class="prob-bar">
-        <div style="width:{base_pct}%;background:var(--blue);color:var(--white);">基准 {base_pct}%</div>
-        <div style="width:{bull_pct}%;background:var(--green);color:var(--white);">乐观 {bull_pct}%</div>
-        <div style="width:{bear_pct}%;background:var(--red);color:var(--white);">悲观 {bear_pct}%</div>
+        <div class="prob-seg" style="width:{base_pct}%;background:var(--blue);color:var(--white);" data-tip="{base_tip}">{base_lbl}</div>
+        <div class="prob-seg" style="width:{bull_pct}%;background:var(--green);color:var(--white);" data-tip="{bull_tip}">{bull_lbl}</div>
+        <div class="prob-seg" style="width:{bear_pct}%;background:var(--red);color:var(--white);" data-tip="{bear_tip}">{bear_lbl}</div>
       </div>
       <div style="font-size:.85rem; margin-top:.5rem;">
         <div><strong>基准触发:</strong> {_esc(sp.get("base_trigger", "")[:150])}</div>
@@ -1430,19 +1543,24 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     <div class="banner">本报告由 AI 多智能体系统自动生成，仅供研究参考，不构成投资建议。使用前请结合人工判断。</div>
     {exec_summary}
     {research_chart_html}
-    <h2>多空分析</h2>
+    <details open><summary><h2>多空分析</h2></summary>
     <div class="cols reveal reveal-d1">{bull_html}{bear_html}</div>
-    <h2>综合研判</h2>
+    </details>
+    <details open><summary><h2>综合研判</h2></summary>
     <div class="reveal reveal-d2">{synthesis_html}</div>
     <div class="reveal reveal-d3">{scenario_html}</div>
-    <h2>风险评估</h2>
+    </details>
+    <details open><summary><h2>风险评估</h2></summary>
     <div class="reveal reveal-d4">{risk_html}</div>
     <div class="reveal reveal-d5">{trade_plan_html}</div>
     <div class="reveal reveal-d5">{catalyst_html}</div>
+    </details>
+    <details open><summary><h2>决策链路</h2></summary>
     <div class="reveal reveal-d6">{inval_html}</div>
-    <div class="reveal reveal-d6">{lineage_html}</div>"""
+    <div class="reveal reveal-d6">{lineage_html}</div>
+    </details>"""
 
-    return _html_wrap(f"{_ticker_display(view)} 深度研究 — {view.trade_date}", body, "深度研究报告")
+    return _html_wrap(f"{_ticker_display(view)} 深度研究 — {view.trade_date}", body, "深度研究报告", extra_head=_COUNTUP_JS)
 
 
 # ── Tier 3: Audit Report ────────────────────────────────────────────────

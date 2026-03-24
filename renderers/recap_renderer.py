@@ -438,6 +438,23 @@ body::before {
 .mkt-chip.leader { color: var(--green); background: rgba(0,255,136,.08); border: 1px solid rgba(0,255,136,.15); }
 .mkt-chip.avoid  { color: var(--red);   background: rgba(255,71,87,.08); border: 1px solid rgba(255,71,87,.15); }
 .mkt-summary { font-size: .82rem; color: var(--fg); grid-column: 1 / -1; padding-top: .4rem; border-top: 1px solid var(--border); }
+.kline-crosshair{pointer-events:none}
+.kline-xline{stroke:rgba(255,255,255,0.3);stroke-width:1;stroke-dasharray:3 2}
+.kline-label-bg{fill:var(--card);stroke:var(--border);rx:4}
+.kline-label-text{fill:var(--fg);font-size:9px;font-family:var(--mono)}
+@media print {
+  :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666}
+  body{background:#fff!important;color:#111!important}
+  .glass{background:#fff!important;box-shadow:none!important;backdrop-filter:none!important;
+    border:1px solid #ddd!important;border-radius:4px!important}
+  .animate-in{animation:none!important}
+  .container{max-width:100%;padding:0}
+  .chart-panel{display:block!important}
+  .rc-panel{display:block!important}
+  .sector-drawer,.sector-overlay,.shm-tooltip{display:none!important}
+  .toggle-btn,.csv-btn,.sd-close,.idx-tabs,.rc-tabs{display:none!important}
+  .glass{page-break-inside:avoid}
+}
 """
 
 
@@ -596,6 +613,17 @@ def _render_index_chart_panel(data: dict) -> str:
       <span class="toggle-btn" data-toggle="rsi">RSI</span>
     </div>"""
 
+    # Embed K-line point data as JSON for crosshair JS
+    kline_json = {}
+    for i, ix in enumerate(indices[:5]):
+        pts = ix.get("points", [])
+        kline_json[str(i)] = [
+            {"date": p.get("date", ""), "open": p.get("open", 0), "high": p.get("high", 0),
+             "low": p.get("low", 0), "close": p.get("close", 0), "vol": p.get("volume", 0)}
+            for p in pts
+        ]
+    kline_data_script = f'<script>var KLINE_DATA = {_json.dumps(kline_json, ensure_ascii=False)};</script>'
+
     return f"""
     <section class="glass animate-in delay-2">
       <div class="sec-head">
@@ -605,6 +633,7 @@ def _render_index_chart_panel(data: dict) -> str:
       <div class="idx-tabs">{tabs}</div>
       {toggles}
       <div class="chart-wrap">{panels}</div>
+      {kline_data_script}
     </section>"""
 
 
@@ -1186,6 +1215,59 @@ def _render_recap_js(data: dict) -> str:
       document.addEventListener('keydown', function(e) {{
         if (e.key === 'Escape') closeSectorDrawer();
       }});
+
+      // ── K-line crosshair (desktop only) ──
+      if(window.innerWidth>=768 && typeof KLINE_DATA!=='undefined'){{
+        document.querySelectorAll('.chart-panel').forEach(function(panel){{
+          var svg=panel.querySelector('svg');
+          if(!svg) return;
+          var idx=panel.getAttribute('data-panel');
+          var pts=KLINE_DATA[idx]||[];
+          if(!pts.length) return;
+          var ns='http://www.w3.org/2000/svg';
+          var xline=document.createElementNS(ns,'line');
+          xline.setAttribute('class','kline-xline kline-crosshair');
+          xline.setAttribute('y1','0'); xline.setAttribute('y2',svg.viewBox.baseVal.height.toString());
+          xline.style.display='none';
+          svg.appendChild(xline);
+          var label=document.createElementNS(ns,'g');
+          label.setAttribute('class','kline-crosshair');
+          label.style.display='none';
+          var lbg=document.createElementNS(ns,'rect');
+          lbg.setAttribute('class','kline-label-bg');
+          lbg.setAttribute('width','120'); lbg.setAttribute('height','52');
+          label.appendChild(lbg);
+          var ltxt=document.createElementNS(ns,'text');
+          ltxt.setAttribute('class','kline-label-text');
+          label.appendChild(ltxt);
+          svg.appendChild(label);
+
+          svg.addEventListener('mousemove',function(e){{
+            var rect=svg.getBoundingClientRect();
+            var scaleX=svg.viewBox.baseVal.width/rect.width;
+            var svgX=(e.clientX-rect.left)*scaleX;
+            var pad=40, gap=(svg.viewBox.baseVal.width-80)/pts.length;
+            var ci=Math.round((svgX-pad-gap/2)/gap);
+            ci=Math.max(0,Math.min(ci,pts.length-1));
+            var px=pad+ci*gap+gap/2;
+            xline.setAttribute('x1',px.toString()); xline.setAttribute('x2',px.toString());
+            xline.style.display='';
+            var p=pts[ci];
+            ltxt.innerHTML='';
+            var lines=['O:'+p.open.toFixed(2),'H:'+p.high.toFixed(2),'L:'+p.low.toFixed(2),'C:'+p.close.toFixed(2)];
+            lines.forEach(function(ln,j){{
+              var ts=document.createElementNS(ns,'tspan');
+              ts.setAttribute('x',(px+8).toString()); ts.setAttribute('dy',j===0?'12':'11');
+              ts.textContent=ln; ltxt.appendChild(ts);
+            }});
+            lbg.setAttribute('x',(px+4).toString()); lbg.setAttribute('y','2');
+            label.style.display='';
+          }});
+          svg.addEventListener('mouseleave',function(){{
+            xline.style.display='none'; label.style.display='none';
+          }});
+        }});
+      }}
     }})();
     </script>"""
 
