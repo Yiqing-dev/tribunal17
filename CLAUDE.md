@@ -87,8 +87,10 @@ subagent_pipeline/
 │
 │
 │  ── Web Enhancement ──
-├── web_collector.py       International macro web search layer (supplements akshare)
-│                          3 prompt generators + 3 parsers + merge/format/apply helpers
+├── web_collector.py       Web search layer (supplements akshare when APIs fail)
+│                          5 prompt generators + 5 parsers + merge/format/apply helpers
+│                          Covers: global macro, snapshot recovery, ticker enhancement,
+│                          concept board fallback, top-10 shareholders fallback
 │
 │  ── Tests ──
 ├── tests/
@@ -98,7 +100,7 @@ subagent_pipeline/
 │   ├── test_trade_plan.py     31 tests — trade plan parsing + views
 │   ├── test_dashboard.py     125 tests — dashboard views + routes
 │   ├── test_opinion_tracker.py 61 tests — opinion drift analysis
-│   └── test_web_collector.py  31 tests — web collector parsers + integration
+│   └── test_web_collector.py  46 tests — web collector parsers + integration
 │
 ├── requirements.txt       akshare>=1.10
 ```
@@ -571,9 +573,12 @@ Integrated in: `akshare_collector.py` (8 sites), `recap_collector.py` (~10 sites
 Market data collection uses fallback chains when primary APIs are down:
 - **Breadth**: EM spot (`stock_zh_a_spot_em`) → THS industry summary (`stock_board_industry_summary_ths`) for advance/decline counts
 - **Watchlist spots**: EM spot → XQ individual spot (`stock_individual_spot_xq`) per ticker
-- **Sector stocks**: EM sector constituents → SW index constituents (`index_component_sw`) + XQ spot for price data
+- **Sector flow**: EM fund flow (`stock_sector_fund_flow_rank`) → THS industry summary (`stock_board_industry_summary_ths`) with column mapping (`板块→名称`, `涨跌幅→今日涨跌幅`)
+- **Sector stocks**: EM sector constituents (`stock_board_industry_cons_em`) → SW index (`index_component_sw`) + XQ spot for price data. Uses cached THS→SW mapping (`_build_ths_to_sw_map`).
+- **Concept boards**: EM concept names (`stock_board_concept_name_em`) → Web search fallback via `web_collector.concept_board_web_prompt()` (Agent tool with WebSearch/WebFetch)
+- **Top 10 shareholders**: EM top-10 (`stock_gdfx_free_top_10_em`, akshare bug) → Web search fallback via `web_collector.top10_shareholders_web_prompt()` (Agent tool with WebSearch/WebFetch)
 
-Fallbacks degrade gracefully — some fields (e.g., limit counts from THS) may be zero but the pipeline continues.
+Fallbacks degrade gracefully — some fields (e.g., limit counts from THS, net_pct from THS sector flow) may be zero but the pipeline continues. Web search fallbacks require the Agent tool and are slower than API fallbacks.
 
 ### Atomic File Writes
 

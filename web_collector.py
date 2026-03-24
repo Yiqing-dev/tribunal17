@@ -368,3 +368,212 @@ def apply_snapshot_recovery(
         v = _safe_int(recovery.get("limit_down_count", ""))
         if v:
             market_snapshot.limit_down_count = v
+
+
+# ── Prompt: Concept Board Web Fallback ─────────────────────────────
+
+def concept_board_web_prompt(trade_date: str) -> str:
+    """Prompt for fetching concept board rankings when EM API is down.
+
+    Targets structured data: top concepts with % change and market cap.
+    """
+    return f"""**ROLE**: You are the Concept Board Recovery Agent (概念板块修复司).
+**OBJECTIVE**: Fetch today's A-share concept board (概念板块) ranking data for {trade_date}.
+
+**SEARCH TASKS (try each until you get structured data):**
+
+1. Search "A股概念板块涨跌幅排名 {trade_date}" — look for tables on:
+   - 东方财富 (eastmoney.com)
+   - 同花顺 (10jqka.com)
+   - 新浪财经 (finance.sina.com.cn)
+
+2. If search finds a page with rankings, use WebFetch to load it and extract:
+   - Top 15 concept boards by % change (涨幅最大)
+   - For each: name, % change, total market cap if available
+
+3. Fallback: search "概念板块 今日 热门" and extract whatever ranking is available
+
+**OUTPUT FORMAT — end with this exact block:**
+```
+CONCEPT_BOARD_OUTPUT:
+concept_count = <number of concepts extracted>
+concepts = <JSON array, each element: {{"name": "概念名", "change_pct": 3.5, "market_cap_yi": 12000}}>
+source = <URL or site name where data came from>
+```
+
+**RULES:**
+- Output `market_cap_yi` in 亿元. If market cap unavailable, use 0.
+- Sort by change_pct descending.
+- Include at least 10 concepts if possible, max 20.
+- If no data found at all, set concept_count = 0 and concepts = [].
+"""
+
+
+def concept_board_web_prompt_fetch(trade_date: str) -> str:
+    """Direct-fetch prompt — tries known URLs before falling back to search."""
+    return f"""**ROLE**: You are the Concept Board Recovery Agent (概念板块修复司).
+**OBJECTIVE**: Fetch today's A-share concept board ranking for {trade_date}.
+
+**STEP 1 — Try direct fetch (WebFetch):**
+Try fetching this URL: https://data.eastmoney.com/bkzj/gn.html
+Extract the concept board table (概念板块涨跌排名).
+
+**STEP 2 — If Step 1 fails, try search:**
+Search "同花顺 概念板块 涨跌幅" and find a page with tabular data.
+
+**STEP 3 — Extract and format:**
+For each concept board, extract: name (板块名称), change_pct (涨跌幅), market_cap (总市值).
+
+**OUTPUT FORMAT:**
+```
+CONCEPT_BOARD_OUTPUT:
+concept_count = <number>
+concepts = <JSON array: [{{"name": "...", "change_pct": 3.5, "market_cap_yi": 12000}}, ...]>
+source = <URL>
+```
+"""
+
+
+# ── Prompt: Top 10 Shareholders Web Fallback ───────────────────────
+
+def top10_shareholders_web_prompt(ticker: str, name: str) -> str:
+    """Prompt for fetching top 10 circulating shareholders when EM API bugs out.
+
+    This is quarterly data — not time-sensitive, very well published online.
+    """
+    return f"""**ROLE**: You are the Shareholder Data Agent (股东数据修复司).
+**OBJECTIVE**: Fetch the latest top 10 circulating shareholders (十大流通股东) for {ticker} ({name}).
+
+**SEARCH TASKS:**
+
+1. Search "{name} 十大流通股东" or "{ticker} 十大流通股东 最新"
+   - Look for data on: eastmoney.com, cninfo.com.cn, sina finance
+
+2. Use WebFetch to load the page and extract the shareholder table:
+   - Shareholder name (股东名称)
+   - Shares held (持股数量, in 万股)
+   - Holding ratio (持股比例, as %)
+   - Change vs previous quarter (增减, in 万股; positive=increase, negative=decrease)
+
+3. Also note the report date (报告期, e.g. 2025-12-31) — this indicates data freshness.
+
+**OUTPUT FORMAT:**
+```
+TOP10_SHAREHOLDERS_OUTPUT:
+report_date = <YYYY-MM-DD, the financial report period>
+ticker = {ticker}
+shareholder_count = <number of shareholders extracted>
+shareholders = <JSON array: [{{"name": "股东名", "shares_wan": 5000, "pct": 3.5, "change_wan": 200}}, ...]>
+source = <URL>
+```
+
+**RULES:**
+- 持股数量 in 万股 (10,000 shares). Convert if displayed in 股.
+- If change data is unavailable, use 0 for change_wan.
+- Include all 10 shareholders if possible.
+- If the page shows multiple quarters, extract only the LATEST quarter.
+"""
+
+
+# ── Parsers for new prompts ────────────────────────────────────────
+
+def parse_concept_board_output(text: str) -> List[Dict]:
+    """Parse CONCEPT_BOARD_OUTPUT: block → list of concept dicts."""
+    import json as _json
+
+    block_match = re.search(
+        r"CONCEPT_BOARD_OUTPUT:\s*\n(.*?)(?:\n```|\Z)",
+        text, re.DOTALL,
+    )
+    block_text = block_match.group(1) if block_match else text
+
+    # Extract concepts JSON array
+    m = re.search(r"concepts\s*=\s*(\[.*?\])", block_text, re.DOTALL)
+    if not m:
+        return []
+    try:
+        concepts = _json.loads(m.group(1))
+        return [
+            {
+                "name": str(c.get("name", "")),
+                "change_pct": float(c.get("change_pct", 0)),
+                "total_market_cap": float(c.get("market_cap_yi", 0)) * 1e8,
+            }
+            for c in concepts
+            if c.get("name")
+        ]
+    except (_json.JSONDecodeError, TypeError, ValueError):
+        return []
+
+
+def parse_top10_shareholders_output(text: str) -> Dict:
+    """Parse TOP10_SHAREHOLDERS_OUTPUT: block → dict with shareholders list."""
+    import json as _json
+
+    block_match = re.search(
+        r"TOP10_SHAREHOLDERS_OUTPUT:\s*\n(.*?)(?:\n```|\Z)",
+        text, re.DOTALL,
+    )
+    block_text = block_match.group(1) if block_match else text
+
+    result: Dict = {"report_date": "", "shareholders": []}
+
+    # Report date
+    m = re.search(r"report_date\s*=\s*(.+?)$", block_text, re.MULTILINE)
+    if m:
+        result["report_date"] = m.group(1).strip()
+
+    # Shareholders JSON array
+    m = re.search(r"shareholders\s*=\s*(\[.*?\])", block_text, re.DOTALL)
+    if not m:
+        return result
+    try:
+        shareholders = _json.loads(m.group(1))
+        result["shareholders"] = [
+            {
+                "name": str(s.get("name", "")),
+                "shares_wan": float(s.get("shares_wan", 0)),
+                "pct": float(s.get("pct", 0)),
+                "change_wan": float(s.get("change_wan", 0)),
+            }
+            for s in shareholders
+            if s.get("name")
+        ]
+    except (_json.JSONDecodeError, TypeError, ValueError):
+        pass
+
+    return result
+
+
+# ── Integration: apply concept board to market snapshot ────────────
+
+def apply_concept_board_recovery(
+    market_snapshot,
+    concepts: List[Dict],
+) -> None:
+    """Apply web-recovered concept board data to MarketSnapshot.
+
+    Only fills if concept_fund_flow is empty.
+    """
+    if not concepts:
+        return
+    if getattr(market_snapshot, "concept_fund_flow", None):
+        return  # already has data, don't overwrite
+    market_snapshot.concept_fund_flow = concepts[:15]
+
+
+def format_top10_shareholders_md(data: Dict) -> str:
+    """Format parsed top-10 shareholders as markdown for AkshareBundle injection."""
+    if not data or not data.get("shareholders"):
+        return ""
+
+    lines = [f"### 十大流通股东 (报告期: {data.get('report_date', '未知')})"]
+    lines.append("| 股东名称 | 持股(万股) | 占比(%) | 增减(万股) |")
+    lines.append("|---------|----------|--------|----------|")
+    for s in data["shareholders"]:
+        change = s.get("change_wan", 0)
+        change_str = f"+{change:.0f}" if change > 0 else f"{change:.0f}"
+        lines.append(
+            f"| {s['name']} | {s['shares_wan']:.0f} | {s['pct']:.2f} | {change_str} |"
+        )
+    return "\n".join(lines)

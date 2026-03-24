@@ -6,12 +6,18 @@ from subagent_pipeline.web_collector import (
     global_macro_prompt,
     market_snapshot_web_fallback_prompt,
     ticker_web_enhancement_prompt,
+    concept_board_web_prompt,
+    top10_shareholders_web_prompt,
     parse_global_macro_output,
     parse_snapshot_recovery,
     parse_ticker_web_output,
+    parse_concept_board_output,
+    parse_top10_shareholders_output,
     merge_global_macro_into_context,
     format_global_macro_block,
     apply_snapshot_recovery,
+    apply_concept_board_recovery,
+    format_top10_shareholders_md,
 )
 
 
@@ -350,3 +356,133 @@ class TestFormatContextBlockWithGlobalMacro:
         }
         block = format_market_context_block(ctx)
         assert "国际宏观情报" not in block
+
+
+# ── Concept board web fallback ────────────────────────────────────
+
+
+class TestConceptBoardWebFallback:
+    def test_prompt_generation(self):
+        p = concept_board_web_prompt("2026-03-24")
+        assert "概念板块" in p
+        assert "2026-03-24" in p
+        assert "CONCEPT_BOARD_OUTPUT:" in p
+
+    def test_parse_valid_output(self):
+        text = """Here are the results.
+
+```
+CONCEPT_BOARD_OUTPUT:
+concept_count = 3
+concepts = [{"name": "AI算力", "change_pct": 5.2, "market_cap_yi": 15000}, {"name": "光伏", "change_pct": 3.1, "market_cap_yi": 8000}, {"name": "锂电池", "change_pct": -1.5, "market_cap_yi": 20000}]
+source = https://data.eastmoney.com/bkzj/gn.html
+```"""
+        concepts = parse_concept_board_output(text)
+        assert len(concepts) == 3
+        assert concepts[0]["name"] == "AI算力"
+        assert concepts[0]["change_pct"] == 5.2
+        # market_cap_yi * 1e8 = total_market_cap
+        assert concepts[0]["total_market_cap"] == 15000 * 1e8
+
+    def test_parse_empty(self):
+        assert parse_concept_board_output("no data found") == []
+
+    def test_parse_invalid_json(self):
+        text = "CONCEPT_BOARD_OUTPUT:\nconcepts = not json at all"
+        assert parse_concept_board_output(text) == []
+
+    def test_parse_zero_concepts(self):
+        text = "CONCEPT_BOARD_OUTPUT:\nconcept_count = 0\nconcepts = []"
+        assert parse_concept_board_output(text) == []
+
+    def test_apply_to_snapshot_fills_empty(self):
+        class FakeSnapshot:
+            concept_fund_flow = None
+        snap = FakeSnapshot()
+        concepts = [{"name": "AI", "change_pct": 3.0, "total_market_cap": 1e12}]
+        apply_concept_board_recovery(snap, concepts)
+        assert snap.concept_fund_flow == concepts
+
+    def test_apply_to_snapshot_no_overwrite(self):
+        class FakeSnapshot:
+            concept_fund_flow = [{"name": "existing"}]
+        snap = FakeSnapshot()
+        apply_concept_board_recovery(snap, [{"name": "new"}])
+        assert snap.concept_fund_flow == [{"name": "existing"}]
+
+    def test_apply_empty_list(self):
+        class FakeSnapshot:
+            concept_fund_flow = None
+        snap = FakeSnapshot()
+        apply_concept_board_recovery(snap, [])
+        assert snap.concept_fund_flow is None
+
+
+# ── Top 10 shareholders web fallback ──────────────────────────────
+
+
+class TestTop10ShareholdersWebFallback:
+    def test_prompt_generation(self):
+        p = top10_shareholders_web_prompt("601985", "中国核电")
+        assert "十大流通股东" in p
+        assert "601985" in p
+        assert "中国核电" in p
+        assert "TOP10_SHAREHOLDERS_OUTPUT:" in p
+
+    def test_parse_valid_output(self):
+        text = """Found the data.
+
+```
+TOP10_SHAREHOLDERS_OUTPUT:
+report_date = 2025-12-31
+ticker = 601985
+shareholder_count = 3
+shareholders = [{"name": "中核集团", "shares_wan": 120000, "pct": 62.5, "change_wan": 0}, {"name": "社保基金", "shares_wan": 5000, "pct": 2.6, "change_wan": 200}, {"name": "某私募", "shares_wan": 3000, "pct": 1.56, "change_wan": -100}]
+source = https://emweb.securities.eastmoney.com
+```"""
+        data = parse_top10_shareholders_output(text)
+        assert data["report_date"] == "2025-12-31"
+        assert len(data["shareholders"]) == 3
+        assert data["shareholders"][0]["name"] == "中核集团"
+        assert data["shareholders"][0]["shares_wan"] == 120000
+        assert data["shareholders"][1]["change_wan"] == 200
+        assert data["shareholders"][2]["change_wan"] == -100
+
+    def test_parse_empty(self):
+        data = parse_top10_shareholders_output("no data")
+        assert data["shareholders"] == []
+        assert data["report_date"] == ""
+
+    def test_parse_invalid_json(self):
+        text = "TOP10_SHAREHOLDERS_OUTPUT:\nshareholders = broken json"
+        data = parse_top10_shareholders_output(text)
+        assert data["shareholders"] == []
+
+    def test_format_markdown(self):
+        data = {
+            "report_date": "2025-12-31",
+            "shareholders": [
+                {"name": "中核集团", "shares_wan": 120000, "pct": 62.5, "change_wan": 0},
+                {"name": "社保基金", "shares_wan": 5000, "pct": 2.6, "change_wan": 200},
+            ],
+        }
+        md = format_top10_shareholders_md(data)
+        assert "十大流通股东" in md
+        assert "2025-12-31" in md
+        assert "中核集团" in md
+        assert "+200" in md
+        assert "62.50" in md
+
+    def test_format_empty(self):
+        assert format_top10_shareholders_md({}) == ""
+        assert format_top10_shareholders_md({"shareholders": []}) == ""
+
+    def test_format_negative_change(self):
+        data = {
+            "report_date": "2025-12-31",
+            "shareholders": [
+                {"name": "减持方", "shares_wan": 1000, "pct": 0.5, "change_wan": -500},
+            ],
+        }
+        md = format_top10_shareholders_md(data)
+        assert "-500" in md
