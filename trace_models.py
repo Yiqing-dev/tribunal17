@@ -206,12 +206,15 @@ class RunTrace:
     @classmethod
     def from_dict(cls, d: dict) -> "RunTrace":
         node_dicts = d.pop("node_traces", [])
+        had_started_at = "started_at" in d
         for ts_field in ("started_at", "completed_at"):
             if ts_field in d and isinstance(d[ts_field], str):
                 d[ts_field] = datetime.fromisoformat(d[ts_field])
             elif ts_field in d and d[ts_field] is None:
                 pass  # keep None
         rt = cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        if not had_started_at:
+            rt.started_at = None  # don't let default_factory mask missing data
         rt.node_traces = [NodeTrace.from_dict(nd) for nd in node_dicts]
         return rt
 

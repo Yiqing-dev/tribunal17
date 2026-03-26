@@ -145,6 +145,20 @@ SEVERITY_CSS = {
     "low":      "muted",
 }
 
+# ── CSS Class Whitelist ────────────────────────────────────────────────────
+
+_BADGE_WHITELIST = frozenset({
+    "buy", "hold", "sell", "veto",
+    "high", "medium", "low", "muted",
+    "ok", "good", "warn", "bad",
+})
+
+
+def safe_badge_class(value: str, default: str = "hold") -> str:
+    """Whitelist-validate a value before interpolating into a CSS class attribute."""
+    v = (value or "").strip().lower()
+    return v if v in _BADGE_WHITELIST else default
+
 
 # ── Node Name Chinese Labels ────────────────────────────────────────────
 

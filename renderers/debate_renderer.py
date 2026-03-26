@@ -52,6 +52,10 @@ _DEBATE_CSS = """
   --glow-purple: rgba(167, 139, 250, 0.12);
   --white: #f1f7fd;
   --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
+  --signal-buy: var(--green);
+  --signal-sell: var(--red);
+  --signal-hold: var(--yellow);
+  --signal-veto: var(--red);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 ::selection { background: rgba(96, 165, 250, 0.25); color: var(--white); }
@@ -548,6 +552,23 @@ body::before {
     }
   }
 }
+
+/* ── V5: Touch feedback ── */
+@media (hover: none) and (pointer: coarse) {
+  .glass:active, .debate-hero:active, .roster-card:active {
+    transform: scale(0.97); transition: transform 60ms ease;
+  }
+}
+
+/* ── V8: Empty state ── */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 2rem 1rem; text-align: center; color: var(--muted);
+}
+.empty-state-icon { font-size: 2rem; margin-bottom: .6rem; opacity: .5; }
+.empty-state-title { font-size: .88rem; font-weight: 600; margin-bottom: .25rem; }
+.empty-state-hint { font-size: .78rem; opacity: .7; }
+
 @media print {
   :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666;--white:#111}
   body{background:#fff!important;color:#111!important}

@@ -1,6 +1,6 @@
 """Backtest module — evaluate historical signal accuracy against forward price data.
 
-Reads RunTrace records from ReplayStore, fetches forward daily bars via akshare,
+Reads RunTrace records from ReplayStore, fetches forward daily bars via Sina Finance API,
 and computes direction accuracy, win rate, and simulated P&L.
 
 Usage:
@@ -244,7 +244,7 @@ def fetch_forward_bars(
     """Fetch daily bars for `window_days` trading days after signal_date.
 
     Returns list of dicts with keys: date, open, high, low, close, volume.
-    Source: Sina Finance API (no fallback — akshare typically co-fails).
+    Source: Sina Finance API (no fallback).
     """
     try:
         sig_dt = datetime.strptime(signal_date, "%Y-%m-%d")
@@ -265,7 +265,7 @@ def fetch_forward_bars(
         if forward:
             return forward[:window_days]
 
-    # Sina couldn't find data — give up (akshare is typically also down when Sina fails)
+    # Sina couldn't find data — give up
     logger.info(f"No Sina data for {ticker} after {signal_date}")
     return []
 
@@ -273,7 +273,7 @@ def fetch_forward_bars(
 def fetch_signal_day_close(ticker: str, signal_date: str) -> float:
     """Fetch the closing price on the signal date.
 
-    Source: Sina Finance API (no fallback — akshare typically co-fails).
+    Source: Sina Finance API (no fallback).
     """
     try:
         sig_dt = datetime.strptime(signal_date, "%Y-%m-%d")
@@ -317,8 +317,8 @@ def evaluate_signal(
 ) -> BacktestResult:
     """Evaluate a single signal against forward price data.
 
-    If forward_bars is None, fetches from akshare.
-    If signal_close is 0, fetches from akshare.
+    If forward_bars is None, fetches from Sina.
+    If signal_close is 0, fetches from Sina.
     """
     config = config or BacktestConfig()
 
@@ -579,7 +579,7 @@ def run_backtest(
         storage_dir: Path to replay JSON files.
         ticker: Optional ticker filter.
         config: Backtest configuration.
-        fetch_prices: If True, fetch forward bars from akshare.
+        fetch_prices: If True, fetch forward bars via Sina Finance API.
                       If False, skip price fetching (results will be 'insufficient').
 
     Returns:
@@ -621,8 +621,9 @@ def run_backtest(
         if trace is None:
             continue
 
-        # Store timestamp for dedup ordering
-        _run_timestamps[run_id] = trace.started_at
+        # Store timestamp for dedup ordering (skip if missing to avoid false recency)
+        if trace.started_at is not None:
+            _run_timestamps[run_id] = trace.started_at
 
         trace_dict = trace.to_dict()
         sl, tgt = _extract_trade_plan_prices(trace_dict)
@@ -834,9 +835,15 @@ def _fetch_benchmark_return(signal_date: str, window_days: int) -> Optional[floa
     import requests as _requests
     import time as _time
 
-    # Use Sina's sh000300 (CSI 300 index)
+    # Use Sina's sh000300 (CSI 300 index) — adaptive datalen like individual stocks
     url = "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
-    params = {"symbol": "sh000300", "scale": "240", "ma": "no", "datalen": "60"}
+    try:
+        sig_dt = datetime.strptime(signal_date, "%Y-%m-%d")
+        approx_days = int((datetime.now() - sig_dt).days * 5 / 7) + window_days + 10
+    except ValueError:
+        approx_days = 60
+    datalen = max(60, approx_days)
+    params = {"symbol": "sh000300", "scale": "240", "ma": "no", "datalen": str(datalen)}
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Referer": "https://finance.sina.com.cn/",
@@ -1046,10 +1053,10 @@ def generate_multi_window_report(
                 continue
             html.append(
                 f'<tr><td>{labels[level]}</td>'
-                f'<td>{s.completed}</td>'
-                f'<td>{s.direction_accuracy_pct:.1f}%</td>'
-                f'<td>{s.win_rate_pct:.1f}%</td>'
-                f'<td>{s.avg_stock_return_pct:+.2f}%</td></tr>'
+                f'<td class="num">{s.completed}</td>'
+                f'<td class="num">{s.direction_accuracy_pct:.1f}%</td>'
+                f'<td class="num">{s.win_rate_pct:.1f}%</td>'
+                f'<td class="num">{s.avg_stock_return_pct:+.2f}%</td></tr>'
             )
         html.append('</tbody></table>')
 
@@ -1069,9 +1076,9 @@ def generate_multi_window_report(
             label = get_action_label(action)
             html.append(
                 f'<tr><td>{emoji} {_esc(label)}</td>'
-                f'<td>{bd["count"]}</td>'
-                f'<td>{bd["avg_return_pct"]:+.2f}%</td>'
-                f'<td>{bd["win_rate_pct"]:.1f}%</td></tr>'
+                f'<td class="num">{bd["count"]}</td>'
+                f'<td class="num">{bd["avg_return_pct"]:+.2f}%</td>'
+                f'<td class="num">{bd["win_rate_pct"]:.1f}%</td></tr>'
             )
         html.append('</tbody></table>')
 
@@ -1131,11 +1138,11 @@ def generate_multi_window_report(
                     f'<td>{_esc(r.trade_date)}</td>'
                     f'<td>{_esc(r.ticker_name or r.ticker)}</td>'
                     f'<td>{emoji} {_esc(r.action)}</td>'
-                    f'<td>{conf}</td>'
-                    f'<td>{r.start_price:.2f}</td>'
-                    f'<td>{r.end_close:.2f}</td>'
-                    f'<td class="{outcome_cls}">{r.stock_return_pct:+.2f}%</td>'
-                    f'<td class="sell">{r.max_drawdown_pct:+.2f}%</td>'
+                    f'<td class="num">{conf}</td>'
+                    f'<td class="num">{r.start_price:.2f}</td>'
+                    f'<td class="num">{r.end_close:.2f}</td>'
+                    f'<td class="num {outcome_cls}">{r.stock_return_pct:+.2f}%</td>'
+                    f'<td class="num sell">{r.max_drawdown_pct:+.2f}%</td>'
                     f'<td class="{outcome_cls}">{outcome_label}</td>'
                     f'</tr>'
                 )
@@ -1242,9 +1249,9 @@ def generate_backtest_report(
             label = get_action_label(action)
             html_parts.append(
                 f'<tr><td>{emoji} {_esc(label)}</td>'
-                f'<td>{bd["count"]}</td>'
-                f'<td>{bd["avg_return_pct"]:+.2f}%</td>'
-                f'<td>{bd["win_rate_pct"]:.1f}%</td></tr>'
+                f'<td class="num">{bd["count"]}</td>'
+                f'<td class="num">{bd["avg_return_pct"]:+.2f}%</td>'
+                f'<td class="num">{bd["win_rate_pct"]:.1f}%</td></tr>'
             )
         html_parts.append('</tbody></table>')
 
@@ -1267,10 +1274,10 @@ def generate_backtest_report(
             display = f"{_esc(name or tk)}"
             html_parts.append(
                 f'<tr><td>{display}</td>'
-                f'<td>{ts.completed}</td>'
-                f'<td>{ts.direction_accuracy_pct:.1f}%</td>'
-                f'<td>{ts.win_rate_pct:.1f}%</td>'
-                f'<td>{ts.avg_stock_return_pct:+.2f}%</td></tr>'
+                f'<td class="num">{ts.completed}</td>'
+                f'<td class="num">{ts.direction_accuracy_pct:.1f}%</td>'
+                f'<td class="num">{ts.win_rate_pct:.1f}%</td>'
+                f'<td class="num">{ts.avg_stock_return_pct:+.2f}%</td></tr>'
             )
         html_parts.append('</tbody></table>')
 
@@ -1301,11 +1308,11 @@ def generate_backtest_report(
                 f'<td>{_esc(r.trade_date)}</td>'
                 f'<td>{_esc(r.ticker_name or r.ticker)}</td>'
                 f'<td>{emoji} {_esc(r.action)}</td>'
-                f'<td>{r.start_price:.2f}</td>'
-                f'<td>{r.end_close:.2f}</td>'
-                f'<td class="{outcome_cls}">{r.stock_return_pct:+.2f}%</td>'
-                f'<td class="sell">{r.max_drawdown_pct:+.2f}%</td>'
-                f'<td class="buy">{r.max_gain_pct:+.2f}%</td>'
+                f'<td class="num">{r.start_price:.2f}</td>'
+                f'<td class="num">{r.end_close:.2f}</td>'
+                f'<td class="num {outcome_cls}">{r.stock_return_pct:+.2f}%</td>'
+                f'<td class="num sell">{r.max_drawdown_pct:+.2f}%</td>'
+                f'<td class="num buy">{r.max_gain_pct:+.2f}%</td>'
                 f'<td class="sparkline-cell">{spark}</td>'
                 f'<td class="{outcome_cls}">{outcome_label}</td>'
                 f'</tr>'
@@ -1574,6 +1581,10 @@ _BT_HTML_HEAD = """<!DOCTYPE html>
   --yellow: #fbbf24; --blue: #60a5fa; --purple: #a78bfa; --muted: #7e91a7; --white: #f1f7fd;
   --surface: rgba(14, 24, 40, 0.92); --accent: #f59e0b;
   --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
+  --signal-buy: var(--green);
+  --signal-sell: var(--red);
+  --signal-hold: var(--yellow);
+  --signal-veto: var(--red);
 }
 * { margin:0; padding:0; box-sizing:border-box; }
 ::selection { background: rgba(96, 165, 250, 0.25); color: var(--white); }
@@ -1691,6 +1702,29 @@ th.sortable[data-sort-dir="desc"]::after { content:"↓"; opacity:.7; color:var(
   .container{padding:.8rem}
   .reveal{animation:none!important}
 }
+
+/* ── V1: Card hierarchy ── */
+.card {
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.03);
+}
+.card:hover {
+  box-shadow: 0 12px 28px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.hero { box-shadow: 0 22px 54px rgba(0,0,0,0.26), 0 0 0 1px rgba(255,255,255,0.06); }
+
+/* ── V3: Numeric alignment ── */
+td.num, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.card-value { font-variant-numeric: tabular-nums; }
+
+/* ── V5: Touch feedback ── */
+@media (hover: none) and (pointer: coarse) {
+  .card:active { transform: scale(0.97); transition: transform 60ms ease; }
+}
+
+/* ── V7: Table scan ── */
+.bt-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.015); }
+.bt-table th { position: sticky; top: 0; z-index: 1; }
+
 @media print {
   :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666;--white:#111;--accent:#333}
   body{background:#fff!important;color:#111!important}

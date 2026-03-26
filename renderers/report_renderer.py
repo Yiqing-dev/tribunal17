@@ -29,6 +29,7 @@ from .decision_labels import (
     NODE_STATUS_LABELS, PARSE_STATUS_LABELS, COMPLIANCE_STATUS_LABELS,
     FRESHNESS_STATUS_LABELS, NO_COMPLIANCE_LABEL,
     get_regime_label, get_regime_class, get_breadth_label, get_breadth_class,
+    safe_badge_class,
 )
 
 # ── Shared CSS ────────────────────────────────────────────────────────────
@@ -53,6 +54,10 @@ _BASE_CSS = """
   --surface: rgba(14, 24, 40, 0.92);
   --accent: #f59e0b;
   --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
+  --signal-buy: var(--green);
+  --signal-sell: var(--red);
+  --signal-hold: var(--yellow);
+  --signal-veto: var(--red);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 ::selection { background: rgba(96, 165, 250, 0.25); color: var(--white); }
@@ -453,6 +458,65 @@ details:not([open])>summary h2::after{content:" \u25b8"}
     }
   }
 }
+
+/* ── V1: Card hierarchy ── */
+.card {
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.03);
+}
+.card:hover {
+  box-shadow: 0 12px 28px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.hero { box-shadow: 0 22px 54px rgba(0,0,0,0.26), 0 0 0 1px rgba(255,255,255,0.06); }
+
+/* ── V3: Numeric alignment ── */
+td.num, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.kpi-val, .card-value, .trust-card .tv { font-variant-numeric: tabular-nums; }
+
+/* ── V4: Staggered animation ── */
+.bb-bull { animation-delay: 80ms; }
+.bb-bear { animation-delay: 220ms; }
+.prob-seg:nth-child(1) { animation: bar-grow 600ms cubic-bezier(0.22,1,0.36,1) 0ms both; }
+.prob-seg:nth-child(2) { animation: bar-grow 600ms cubic-bezier(0.22,1,0.36,1) 100ms both; }
+.prob-seg:nth-child(3) { animation: bar-grow 600ms cubic-bezier(0.22,1,0.36,1) 200ms both; }
+.prob-seg:nth-child(4) { animation: bar-grow 600ms cubic-bezier(0.22,1,0.36,1) 300ms both; }
+
+/* ── V5: Touch feedback ── */
+@media (hover: none) and (pointer: coarse) {
+  .card:active, .kpi:active, .claim-card:active, .trust-card:active {
+    transform: scale(0.97); transition: transform 60ms ease;
+  }
+  .toggle-btn:active, .csv-btn:active { opacity: 0.7; transition: opacity 60ms ease; }
+}
+
+/* ── V6: Tooltip/drawer consistency ── */
+.hm-tooltip {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,0.3);
+  backdrop-filter: blur(14px); font-size: .78rem;
+}
+.detail-drawer {
+  background: var(--surface); border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0,0,0,0.3); backdrop-filter: blur(16px);
+}
+.drawer-header {
+  position: sticky; top: 0; z-index: 2;
+  background: inherit; padding-bottom: .8rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── V7: Table scan ── */
+tbody tr:nth-child(even) { background: rgba(255,255,255,0.015); }
+thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); }
+
+/* ── V8: Empty state ── */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 2rem 1rem; text-align: center; color: var(--muted);
+}
+.empty-state-icon { font-size: 2rem; margin-bottom: .6rem; opacity: .5; }
+.empty-state-title { font-size: .88rem; font-weight: 600; margin-bottom: .25rem; }
+.empty-state-hint { font-size: .78rem; opacity: .7; }
+
 @media print {
   :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666;--white:#111;--accent:#333}
   body{background:#fff!important;color:#111!important}
@@ -549,6 +613,15 @@ def _esc(text: str) -> str:
     """Escape HTML special characters."""
     return (text.replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def _empty_state(icon: str, title: str, hint: str = "") -> str:
+    """Render a polished empty-state placeholder."""
+    hint_html = f'<div class="empty-state-hint">{_esc(hint)}</div>' if hint else ""
+    return (f'<div class="empty-state">'
+            f'<div class="empty-state-icon">{icon}</div>'
+            f'<div class="empty-state-title">{_esc(title)}</div>'
+            f'{hint_html}</div>')
 
 
 def _format_price_zone(zone: list) -> str:
@@ -665,7 +738,7 @@ def _render_checklist(view: SnapshotView) -> str:
             f'<span class="ck-emoji">{emoji}</span>'
             f'<span class="ck-pillar">{pillar}</span>'
             f'<span class="ck-label">{label}</span>'
-            f'<span class="ck-score">{score}/2</span>'
+            f'<span class="ck-score num">{score}/2</span>'
             f'</div>'
         )
     radar = _radar_svg(view.pillar_checklist, view.action_class)
@@ -777,7 +850,7 @@ def _render_battle_plan(view: SnapshotView) -> str:
                 zone = []
             zone_str = _format_price_zone(zone) if len(zone) >= 2 else "\u2014"
             condition = _esc(s.get("condition", ""))
-            rows += f"<tr><td>{label}</td><td class='mono'>{zone_str}</td><td>{condition}</td></tr>"
+            rows += f"<tr><td>{label}</td><td class='mono num'>{zone_str}</td><td>{condition}</td></tr>"
         setup_html = f"""
         <div class="tp-section-title">\u4e70\u5165\u8bbe\u7f6e</div>
         <table class="tp-table">
@@ -800,7 +873,7 @@ def _render_battle_plan(view: SnapshotView) -> str:
     except (ValueError, TypeError):
         sl_price = 0
     if sl_price > 0:
-        sl_html = f'<div class="tp-row tp-stop"><span class="tp-label">\u6b62\u635f\u4f4d</span><span class="mono" style="color:var(--red)">{sl_price:.2f}</span></div>'
+        sl_html = f'<div class="tp-row tp-stop"><span class="tp-label">\u6b62\u635f\u4f4d</span><span class="mono num" style="color:var(--red)">{sl_price:.2f}</span></div>'
 
     # Take profit (may be list of dicts, list of strings, float, or scalar)
     targets_raw = tp.get("take_profit", [])
@@ -822,7 +895,7 @@ def _render_battle_plan(view: SnapshotView) -> str:
             t_label = ""
         else:
             continue
-        tp_html += f'<div class="tp-row tp-target"><span class="tp-label">{t_label}</span><span class="mono" style="color:var(--green)">{t_str}</span></div>'
+        tp_html += f'<div class="tp-row tp-target"><span class="tp-label">{t_label}</span><span class="mono num" style="color:var(--green)">{t_str}</span></div>'
 
     # Invalidation
     invalidators_raw = tp.get("invalidators", [])
@@ -911,7 +984,7 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
             items = ""
             for r in view.main_risks:
                 if isinstance(r, dict):
-                    sev_cls = r.get("severity_class", "hold")
+                    sev_cls = safe_badge_class(r.get("severity_class", ""))
                     cat = r.get("category", "")
                     desc = r.get("description", "")
                     sev = r.get("severity", "")
@@ -1022,7 +1095,7 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
         items = ""
         for r in view.main_risks:
             if isinstance(r, dict):
-                sev_cls = r.get("severity_class", "hold")
+                sev_cls = safe_badge_class(r.get("severity_class", ""))
                 cat = r.get("category", "")
                 desc = r.get("description", "")
                 sev = r.get("severity", "")
@@ -1197,7 +1270,7 @@ def _render_trade_plan_card(tp: dict) -> str:
         setup_rows += f"""
         <tr>
           <td><span style="color:{s_color};font-weight:600">{label}</span></td>
-          <td class="mono">{zone_str}</td>
+          <td class="mono num">{zone_str}</td>
           <td>{condition}</td>
         </tr>"""
 
@@ -1219,7 +1292,7 @@ def _render_trade_plan_card(tp: dict) -> str:
         sl_html = f"""
         <div class="tp-row tp-stop">
           <span class="tp-label">止损位</span>
-          <span class="mono" style="color:var(--red)">{sl_price:.2f}</span>{pct_badge}
+          <span class="mono num" style="color:var(--red)">{sl_price:.2f}</span>{pct_badge}
           <span class="tp-detail">{sl_rule}</span>
         </div>"""
 
@@ -1245,7 +1318,7 @@ def _render_trade_plan_card(tp: dict) -> str:
         target_rows += f"""
         <div class="tp-row tp-target">
           <span class="tp-label">{t_label}</span>
-          <span class="mono" style="color:var(--green)">{t_str}</span>
+          <span class="mono num" style="color:var(--green)">{t_str}</span>
         </div>"""
 
     # Invalidation
@@ -1439,7 +1512,7 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     risk_content = ""
     if view.risk_flags_detail:
         for f in view.risk_flags_detail:
-            sev_cls = f.get("severity_class", "hold")
+            sev_cls = safe_badge_class(f.get("severity_class", ""))
             sev_label = f.get("severity", "")
             ev_count = len(f.get("evidence_ids", []))
             ev_label = f"{ev_count}条证据" if ev_count else "无引用"
@@ -1904,6 +1977,10 @@ _POOL_CSS = """
   --surface: rgba(14, 24, 40, 0.92);
   --accent: #f59e0b;
   --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
+  --signal-buy: var(--green);
+  --signal-sell: var(--red);
+  --signal-hold: var(--yellow);
+  --signal-veto: var(--red);
 }
 body {
   background:
@@ -2605,6 +2682,24 @@ body {
   font-size: 0.76rem;
   white-space: nowrap;
 }
+
+/* ── V5: Touch feedback ── */
+@media (hover: none) and (pointer: coarse) {
+  .stock-card:active, .card:active { transform: scale(0.97); transition: transform 60ms ease; }
+}
+
+/* ── V7: Table scan ── */
+.priority-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.015); }
+
+/* ── V8: Empty state ── */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 2rem 1rem; text-align: center; color: var(--muted);
+}
+.empty-state-icon { font-size: 2rem; margin-bottom: .6rem; opacity: .5; }
+.empty-state-title { font-size: .88rem; font-weight: 600; margin-bottom: .25rem; }
+.empty-state-hint { font-size: .78rem; opacity: .7; }
+
 /* ── Print / Export ─────────────────────────────────────────── */
 @media print {
   @page { size: A3 landscape; margin: 12mm; }
@@ -2838,7 +2933,8 @@ def _render_pool_table(view: DivergencePoolView) -> str:
 
 def _render_claim_panel(title: str, side: str, claims: list, empty_text: str) -> str:
     if not claims:
-        claims_html = f'<div class="claim-item"><div class="mini-note">{_esc(empty_text)}</div></div>'
+        icon = "\U0001f4cb" if side == "bull" else "\U0001f4cb"
+        claims_html = _empty_state(icon, empty_text)
     else:
         parts = []
         for claim in claims:
@@ -3044,7 +3140,7 @@ def render_divergence_pool(
                 _pool_severity_class(rf.get("severity", "")),
             )
             for rf in row.risk_flags
-        ) or '<span class="risk-tag low">暂无显式风险标签</span>'
+        ) or _empty_state("\U0001f50d", "暂无显式风险标签")
 
         signal_bull = int(round(row.bull_ratio * 100))
         signal_bear = 100 - signal_bull
@@ -3846,6 +3942,7 @@ def _render_heatmap_js():
           var tx = e.clientX + 12;
           var ty = e.clientY - 8;
           if (tx + tw > vw - 8) tx = e.clientX - tw - 8;
+          if (tx < 8) tx = 8;
           if (ty + th > vh - 8) ty = vh - th - 8;
           if (ty < 8) ty = 8;
           tooltip.style.left = tx + 'px';
@@ -3859,6 +3956,7 @@ def _render_heatmap_js():
           var tx = e.clientX + 12;
           var ty = e.clientY - 8;
           if (tx + tw > vw - 8) tx = e.clientX - tw - 8;
+          if (tx < 8) tx = 8;
           if (ty + th > vh - 8) ty = vh - th - 8;
           if (ty < 8) ty = 8;
           tooltip.style.left = tx + 'px';
@@ -4008,7 +4106,9 @@ _TREEMAP_ENGINE_JS = r"""
         t.addEventListener('mousemove', function(e) {
           var tx = e.clientX + 14, ty = e.clientY + 14;
           if (tx + 320 > window.innerWidth) tx = e.clientX - 320;
+          if (tx < 8) tx = 8;
           if (ty + 200 > window.innerHeight) ty = e.clientY - 200;
+          if (ty < 8) ty = 8;
           tip.style.left = tx+'px';
           tip.style.top = ty+'px';
         });

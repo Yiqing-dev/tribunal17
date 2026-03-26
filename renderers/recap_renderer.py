@@ -56,6 +56,10 @@ _RECAP_CSS = """
   --glow-yellow: rgba(251, 191, 36, 0.12);
   --accent: #f59e0b;
   --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
+  --signal-buy: var(--green);
+  --signal-sell: var(--red);
+  --signal-hold: var(--yellow);
+  --signal-veto: var(--red);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 ::selection { background: rgba(96, 165, 250, 0.25); color: var(--white); }
@@ -458,6 +462,42 @@ body::before {
 .kline-xline{stroke:rgba(255,255,255,0.3);stroke-width:1;stroke-dasharray:3 2}
 .kline-label-bg{fill:var(--card);stroke:var(--border);rx:4}
 .kline-label-text{fill:var(--fg);font-size:9px;font-family:var(--mono)}
+
+/* ── V5: Touch feedback ── */
+@media (hover: none) and (pointer: coarse) {
+  .glass:active, .idx-tab:active, .rc-tab:active {
+    transform: scale(0.97); transition: transform 60ms ease;
+  }
+  .toggle-btn:active, .csv-btn:active, .sd-close:active {
+    opacity: 0.7; transition: opacity 60ms ease;
+  }
+}
+
+/* ── V6: Tooltip/drawer consistency ── */
+.shm-tooltip {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,0.3);
+  backdrop-filter: blur(14px); font-size: .78rem;
+}
+.sector-drawer {
+  background: var(--surface); border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0,0,0,0.3); backdrop-filter: blur(16px);
+}
+.sd-header {
+  position: sticky; top: 0; z-index: 2;
+  background: inherit; padding-bottom: .8rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── V8: Empty state ── */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 2rem 1rem; text-align: center; color: var(--muted);
+}
+.empty-state-icon { font-size: 2rem; margin-bottom: .6rem; opacity: .5; }
+.empty-state-title { font-size: .88rem; font-weight: 600; margin-bottom: .25rem; }
+.empty-state-hint { font-size: .78rem; opacity: .7; }
+
 @media print {
   :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666}
   body{background:#fff!important;color:#111!important}
@@ -615,7 +655,7 @@ def _render_index_chart_panel(data: dict) -> str:
         name = _esc(ix.get("name", ix.get("code", "")))
         active = " active" if i == 0 else ""
         aria_sel = "true" if i == 0 else "false"
-        tabs += f'<div class="idx-tab{active}" data-idx="{i}" role="tab" aria-selected="{aria_sel}">{name}</div>'
+        tabs += f'<div class="idx-tab{active}" data-idx="{i}" role="tab" tabindex="0" aria-selected="{aria_sel}">{name}</div>'
 
         points = ix.get("points", [])
         svg = _render_index_svg(points, ix.get("code", ""))
@@ -1035,8 +1075,8 @@ def _render_red_close_panel(data: dict) -> str:
         <div class="sec-sub">{window}自然日窗口 · {trade_days}个交易日</div>
       </div>
       <div class="rc-tabs">
-        <div class="rc-tab active" data-rc="6" role="tab" aria-selected="true">{tab6}</div>
-        <div class="rc-tab" data-rc="8" role="tab" aria-selected="false">{tab8}</div>
+        <div class="rc-tab active" data-rc="6" role="tab" tabindex="0" aria-selected="true">{tab6}</div>
+        <div class="rc-tab" data-rc="8" role="tab" tabindex="0" aria-selected="false">{tab8}</div>
         <button class="csv-btn" id="csv-copy-btn">复制CSV</button>
       </div>
       <div class="rc-panel active" data-rc-panel="6">{_table(red_6, "rc-table-6")}</div>
@@ -1184,6 +1224,7 @@ def _render_recap_js(data: dict) -> str:
             var tx = e.clientX + 12;
             var ty = e.clientY + 12;
             if (tx + tw > window.innerWidth - 8) tx = e.clientX - tw - 8;
+            if (tx < 8) tx = 8;
             if (ty + th > window.innerHeight - 8) ty = window.innerHeight - th - 8;
             if (ty < 8) ty = 8;
             sTooltip.style.left = tx + 'px';
@@ -1265,6 +1306,19 @@ def _render_recap_js(data: dict) -> str:
       document.querySelectorAll('[role="button"][tabindex]').forEach(function(el){{
         el.addEventListener('keydown',function(e){{
           if(e.key==='Enter'||e.key===' '){{e.preventDefault();el.click();}}
+        }});
+      }});
+
+      // ── Keyboard a11y for tabs (idx-tab, rc-tab) ──
+      document.querySelectorAll('[role="tab"][tabindex]').forEach(function(el){{
+        el.addEventListener('keydown',function(e){{
+          if(e.key==='Enter'||e.key===' '){{e.preventDefault();el.click();return;}}
+          if(e.key==='ArrowRight'||e.key==='ArrowLeft'){{
+            var tabs=Array.from(el.parentElement.querySelectorAll('[role="tab"]'));
+            var idx=tabs.indexOf(el);
+            var next=e.key==='ArrowRight'?(idx+1)%tabs.length:(idx-1+tabs.length)%tabs.length;
+            tabs[next].focus();tabs[next].click();
+          }}
         }});
       }});
 
