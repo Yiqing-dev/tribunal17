@@ -614,11 +614,11 @@ class TestRecapRenderer:
 
     def test_neon_css_theme(self):
         from dashboard.recap_renderer import _RECAP_CSS
-        assert "#0a0e1a" in _RECAP_CSS  # deep navy
-        assert "#00ff88" in _RECAP_CSS  # fluorescent green
-        assert "#ff4757" in _RECAP_CSS  # lava red
-        assert "#ffd32a" in _RECAP_CSS  # amber
-        assert "#00d4ff" in _RECAP_CSS  # ice blue
+        assert "#070e1b" in _RECAP_CSS  # deep navy
+        assert "#34d399" in _RECAP_CSS  # emerald green
+        assert "#f87171" in _RECAP_CSS  # rose red
+        assert "#fbbf24" in _RECAP_CSS  # amber gold
+        assert "#60a5fa" in _RECAP_CSS  # sky blue
         assert "backdrop-filter" in _RECAP_CSS  # glass effect
         assert "fadeSlideUp" in _RECAP_CSS  # entry animation
         assert "monospace" in _RECAP_CSS  # mono numbers
@@ -634,27 +634,27 @@ class TestRecapRenderer:
 class TestSectorColor:
     def test_strong_up(self):
         from dashboard.recap_renderer import _sector_color
-        assert _sector_color(5.0) == "#00ff88"
+        assert _sector_color(5.0) == "#34d399"
 
     def test_moderate_up(self):
         from dashboard.recap_renderer import _sector_color
-        assert _sector_color(2.0) == "#1ac975"
+        assert _sector_color(2.0) == "#2aac7e"
 
     def test_mild_up(self):
         from dashboard.recap_renderer import _sector_color
-        assert _sector_color(0.5) == "#2a9d5e"
+        assert _sector_color(0.5) == "#1d7a5a"
 
     def test_flat(self):
         from dashboard.recap_renderer import _sector_color
-        assert _sector_color(0.0) == "#3d5a6e"
+        assert _sector_color(0.0) == "#3d5068"
 
     def test_mild_down(self):
         from dashboard.recap_renderer import _sector_color
-        assert _sector_color(-1.0) == "#b8423a"
+        assert _sector_color(-1.0) == "#b04040"
 
     def test_strong_down(self):
         from dashboard.recap_renderer import _sector_color
-        assert _sector_color(-5.0) == "#ff4757"
+        assert _sector_color(-5.0) == "#f87171"
 
 
 class TestPctHelpers:

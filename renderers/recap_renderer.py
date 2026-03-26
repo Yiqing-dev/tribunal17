@@ -36,42 +36,56 @@ def _esc(text: str) -> str:
 # ── Neon Trading Cockpit CSS ─────────────────────────────────────────
 
 _RECAP_CSS = """
-/* ── Neon Trading Cockpit ── */
+/* ── Trading Cockpit — Unified Theme v3 ── */
 :root {
-  --bg: #0a0e1a;
-  --fg: #c8d6e5;
-  --card: rgba(14, 21, 38, 0.88);
-  --border: rgba(0, 212, 255, 0.12);
-  --green: #00ff88;
-  --red: #ff4757;
-  --yellow: #ffd32a;
-  --blue: #00d4ff;
-  --muted: #5a6f82;
-  --surface: rgba(12, 18, 32, 0.92);
-  --glow-green: rgba(0, 255, 136, 0.15);
-  --glow-red: rgba(255, 71, 87, 0.15);
-  --glow-blue: rgba(0, 212, 255, 0.12);
-  --mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+  --bg: #070e1b;
+  --fg: #dde6f0;
+  --card: rgba(11, 20, 35, 0.85);
+  --border: rgba(100, 150, 180, 0.14);
+  --green: #34d399;
+  --red: #f87171;
+  --yellow: #fbbf24;
+  --blue: #60a5fa;
+  --purple: #a78bfa;
+  --muted: #7e91a7;
+  --white: #f1f7fd;
+  --surface: rgba(14, 24, 40, 0.92);
+  --glow-green: rgba(52, 211, 153, 0.15);
+  --glow-red: rgba(248, 113, 113, 0.15);
+  --glow-blue: rgba(96, 165, 250, 0.12);
+  --glow-yellow: rgba(251, 191, 36, 0.12);
+  --accent: #f59e0b;
+  --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+::selection { background: rgba(96, 165, 250, 0.25); color: var(--white); }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(100, 150, 180, 0.2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(100, 150, 180, 0.35); }
 body {
   font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", -apple-system,
                BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
   background:
-    linear-gradient(180deg, #0a0e1a 0%, #0d1220 40%, #080c16 100%);
+    radial-gradient(ellipse at 15% 20%, rgba(251,191,36,0.08), transparent 32%),
+    radial-gradient(ellipse at 85% 18%, rgba(96,165,250,0.06), transparent 30%),
+    radial-gradient(ellipse at 50% 110%, rgba(52,211,153,0.06), transparent 38%),
+    linear-gradient(180deg, #091420 0%, #070e1b 50%, #050c17 100%);
   background-attachment: fixed;
   color: var(--fg);
-  line-height: 1.7;
+  line-height: 1.75;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 /* Grid background */
 body::before {
   content: "";
   position: fixed; inset: 0;
   background-image:
-    linear-gradient(rgba(0,212,255,.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0,212,255,.03) 1px, transparent 1px);
-  background-size: 60px 60px;
+    linear-gradient(rgba(96,165,250,.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(96,165,250,.012) 1px, transparent 1px);
+  background-size: 64px 64px;
   pointer-events: none;
   z-index: 0;
 }
@@ -81,30 +95,31 @@ body::before {
 .glass {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 1.25rem;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255,255,255,0.03);
   transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
 }
 .glass:hover {
   transform: translateY(-1px);
-  border-color: rgba(0, 212, 255, 0.18);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255,255,255,0.04);
+  border-color: rgba(96, 165, 250, 0.18);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255,255,255,0.04);
 }
-.glass-glow-green { box-shadow: 0 0 20px var(--glow-green), inset 0 1px 0 rgba(0,255,136,.06); }
-.glass-glow-red   { box-shadow: 0 0 20px var(--glow-red),   inset 0 1px 0 rgba(255,71,87,.06); }
-.glass-glow-blue  { box-shadow: 0 0 20px var(--glow-blue),  inset 0 1px 0 rgba(0,212,255,.06); }
+.glass-glow-green { box-shadow: 0 0 24px var(--glow-green), inset 0 1px 0 rgba(52,211,153,.06); }
+.glass-glow-red   { box-shadow: 0 0 24px var(--glow-red),   inset 0 1px 0 rgba(248,113,113,.06); }
+.glass-glow-blue  { box-shadow: 0 0 24px var(--glow-blue),  inset 0 1px 0 rgba(96,165,250,.06); }
 
 /* Monospace numbers */
-.mono { font-family: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Consolas, monospace; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
 /* ── Hero ── */
 .recap-hero {
   position: relative; overflow: hidden;
   border-radius: 20px;
   background: linear-gradient(135deg, rgba(10,14,26,.96), rgba(14,24,42,.92));
-  border: 1px solid rgba(0,212,255,.1);
+  border: 1px solid rgba(96,165,250,.1);
   padding: 2rem 2.2rem;
   box-shadow: 0 12px 40px rgba(0,0,0,.3);
 }
@@ -112,7 +127,7 @@ body::before {
   content: ""; position: absolute;
   width: 300px; height: 300px; border-radius: 50%;
   top: -30%; right: -5%;
-  background: radial-gradient(circle, rgba(0,255,136,.08), transparent 60%);
+  background: radial-gradient(circle, rgba(52,211,153,.08), transparent 60%);
   pointer-events: none;
 }
 .hero-eyebrow {
@@ -126,7 +141,7 @@ body::before {
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   background-clip: text;
 }
-.hero-summary { color: #9ab; font-size: 1rem; margin-bottom: .8rem; }
+.hero-summary { color: var(--muted); font-size: 1rem; margin-bottom: .8rem; }
 .hero-chips { display: flex; flex-wrap: wrap; gap: .5rem; }
 .hero-chip {
   display: inline-flex; align-items: center; gap: .35rem;
@@ -135,9 +150,9 @@ body::before {
   background: rgba(255,255,255,.04);
   border: 1px solid rgba(255,255,255,.08);
 }
-.hero-chip.up   { color: var(--green); border-color: rgba(0,255,136,.2); }
-.hero-chip.down { color: var(--red);   border-color: rgba(255,71,87,.2); }
-.hero-chip.neu  { color: var(--yellow); border-color: rgba(255,211,42,.2); }
+.hero-chip.up   { color: var(--green); border-color: rgba(52,211,153,.2); }
+.hero-chip.down { color: var(--red);   border-color: rgba(248,113,113,.2); }
+.hero-chip.neu  { color: var(--yellow); border-color: rgba(251,191,36,.2); }
 
 /* ── Section head ── */
 .sec-head {
@@ -182,7 +197,7 @@ body::before {
 }
 .idx-tab:hover { color: var(--fg); }
 .idx-tab.active {
-  color: var(--blue); background: rgba(0,212,255,.06);
+  color: var(--blue); background: rgba(96,165,250,.06);
   border-color: var(--border);
 }
 
@@ -202,8 +217,8 @@ body::before {
   color: var(--muted); transition: all .2s;
 }
 .toggle-btn.on {
-  color: var(--blue); background: rgba(0,212,255,.08);
-  border-color: rgba(0,212,255,.3);
+  color: var(--blue); background: rgba(96,165,250,.08);
+  border-color: rgba(96,165,250,.3);
 }
 
 /* ── Sector heatmap ── */
@@ -240,7 +255,7 @@ body::before {
 .sd-stock .pc.dn { color: var(--red); }
 .sd-resonance-badge {
   display: inline-block; padding: .15rem .45rem; border-radius: 4px;
-  font-size: .7rem; background: rgba(0,255,136,.1); color: var(--green);
+  font-size: .7rem; background: rgba(52,211,153,.1); color: var(--green);
   margin-left: .4rem;
 }
 
@@ -262,10 +277,10 @@ body::before {
 .limit-stock .boards-badge {
   display: inline-block; padding: .1rem .35rem; border-radius: 4px;
   font-size: .68rem; font-weight: 700; margin-left: .4rem;
-  background: rgba(0,255,136,.12); color: var(--green);
+  background: rgba(52,211,153,.12); color: var(--green);
 }
 .limit-stock .boards-badge.dn {
-  background: rgba(255,71,87,.12); color: var(--red);
+  background: rgba(248,113,113,.12); color: var(--red);
 }
 .limit-stock .amt { font-family: monospace; font-size: .75rem; color: var(--muted); }
 
@@ -277,7 +292,7 @@ body::before {
 }
 .ladder-bar {
   width: 100%; border-radius: 8px 8px 0 0;
-  background: linear-gradient(180deg, var(--green), rgba(0,255,136,.3));
+  background: linear-gradient(180deg, var(--green), rgba(52,211,153,.3));
   display: flex; align-items: flex-end; justify-content: center;
   padding-bottom: .3rem; transition: opacity .2s;
   min-height: 24px;
@@ -299,7 +314,7 @@ body::before {
   color: var(--muted); background: transparent; border: 1px solid transparent;
   transition: all .2s;
 }
-.rc-tab.active { color: var(--green); background: rgba(0,255,136,.06); border-color: rgba(0,255,136,.2); }
+.rc-tab.active { color: var(--green); background: rgba(52,211,153,.06); border-color: rgba(52,211,153,.2); }
 .rc-panel { display: none; }
 .rc-panel.active { display: block; }
 .rc-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
@@ -313,11 +328,11 @@ body::before {
   display: inline-flex; align-items: center; gap: .3rem;
   padding: .3rem .7rem; border-radius: 6px;
   font-size: .72rem; cursor: pointer;
-  color: var(--blue); background: rgba(0,212,255,.06);
-  border: 1px solid rgba(0,212,255,.2); transition: all .2s;
+  color: var(--blue); background: rgba(96,165,250,.06);
+  border: 1px solid rgba(96,165,250,.2); transition: all .2s;
 }
-.csv-btn:hover { background: rgba(0,212,255,.12); }
-.csv-copied { color: var(--green) !important; border-color: rgba(0,255,136,.3) !important; }
+.csv-btn:hover { background: rgba(96,165,250,.12); }
+.csv-copied { color: var(--green) !important; border-color: rgba(52,211,153,.3) !important; }
 
 /* ── Footer ── */
 .recap-footer {
@@ -329,7 +344,7 @@ body::before {
 /* ── Tooltip ── */
 .shm-tooltip {
   position: fixed; pointer-events: none; z-index: 997;
-  background: rgba(10, 14, 26, 0.92); border: 1px solid rgba(0,212,255,.15); border-radius: 8px;
+  background: rgba(10, 14, 26, 0.92); border: 1px solid rgba(96,165,250,.15); border-radius: 8px;
   padding: .5rem .75rem; font-size: .8rem; display: none; white-space: nowrap;
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   box-shadow: 0 8px 24px rgba(0,0,0,.25);
@@ -350,8 +365,8 @@ body::before {
 
 /* ── Risk banner ── */
 .risk-banner {
-  background: rgba(255,71,87,.06);
-  border: 1px solid rgba(255,71,87,.2);
+  background: rgba(248,113,113,.06);
+  border: 1px solid rgba(248,113,113,.2);
   border-left: 4px solid var(--red);
   border-radius: 8px; padding: .6rem 1rem;
   font-size: .85rem; color: var(--red);
@@ -426,9 +441,9 @@ body::before {
   padding: .3rem .7rem; border-radius: 8px;
   font-size: .82rem; font-weight: 700;
 }
-.mkt-badge.buy  { color: var(--green); background: rgba(0,255,136,.1); border: 1px solid rgba(0,255,136,.2); }
-.mkt-badge.sell { color: var(--red);   background: rgba(255,71,87,.1); border: 1px solid rgba(255,71,87,.2); }
-.mkt-badge.hold { color: var(--yellow); background: rgba(255,211,42,.08); border: 1px solid rgba(255,211,42,.18); }
+.mkt-badge.buy  { color: var(--green); background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.2); }
+.mkt-badge.sell { color: var(--red);   background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.2); }
+.mkt-badge.hold { color: var(--yellow); background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.18); }
 .mkt-row-label { font-size: .78rem; color: var(--muted); text-align: right; white-space: nowrap; }
 .mkt-row-val { font-size: .85rem; }
 .mkt-chips { display: flex; gap: .4rem; flex-wrap: wrap; }
@@ -436,8 +451,8 @@ body::before {
   display: inline-block; padding: 1px 8px; border-radius: 8px;
   font-size: .72rem; font-weight: 600;
 }
-.mkt-chip.leader { color: var(--green); background: rgba(0,255,136,.08); border: 1px solid rgba(0,255,136,.15); }
-.mkt-chip.avoid  { color: var(--red);   background: rgba(255,71,87,.08); border: 1px solid rgba(255,71,87,.15); }
+.mkt-chip.leader { color: var(--green); background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.15); }
+.mkt-chip.avoid  { color: var(--red);   background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.15); }
 .mkt-summary { font-size: .82rem; color: var(--fg); grid-column: 1 / -1; padding-top: .4rem; border-top: 1px solid var(--border); }
 .kline-crosshair{pointer-events:none}
 .kline-xline{stroke:rgba(255,255,255,0.3);stroke-width:1;stroke-dasharray:3 2}
@@ -462,21 +477,21 @@ body::before {
 # ── Color helpers ────────────────────────────────────────────────────
 
 def _sector_color(pct: float) -> str:
-    """Map sector pct_change to neon color hex."""
+    """Map sector pct_change to color hex — unified palette."""
     if pct >= 3:
-        return "#00ff88"
+        return "#34d399"   # strong green
     elif pct >= 1.5:
-        return "#1ac975"
+        return "#2aac7e"   # medium green
     elif pct >= 0.3:
-        return "#2a9d5e"
+        return "#1d7a5a"   # muted green
     elif pct >= -0.3:
-        return "#3d5a6e"
+        return "#3d5068"   # neutral slate
     elif pct >= -1.5:
-        return "#b8423a"
+        return "#b04040"   # muted red
     elif pct >= -3:
-        return "#e83535"
+        return "#dc4343"   # medium red
     else:
-        return "#ff4757"
+        return "#f87171"   # strong red
 
 
 def _pct_class(v: float) -> str:
@@ -669,7 +684,7 @@ def _render_index_svg(points: list, code: str = "") -> str:
     for i, p in enumerate(points):
         cx = x_pos(i)
         o, h, l, c = p.get("open", 0), p.get("high", 0), p.get("low", 0), p.get("close", 0)
-        color = "#00ff88" if c >= o else "#ff4757"
+        color = "#34d399" if c >= o else "#f87171"
         y_o, y_c = y_main(o), y_main(c)
         y_h, y_l = y_main(h), y_main(l)
         body_top = min(y_o, y_c)
@@ -693,8 +708,8 @@ def _render_index_svg(points: list, code: str = "") -> str:
         path = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
         return f'<polyline class="ma-line {cls_name}" points="{path}" fill="none" stroke="{color}" stroke-width="1.2" opacity=".7"/>'
 
-    ma5 = _ma_polyline("ma5", "#ffd32a", "ma5")
-    ma14 = _ma_polyline("ma14", "#00d4ff", "ma14")
+    ma5 = _ma_polyline("ma5", "#fbbf24", "ma5")
+    ma14 = _ma_polyline("ma14", "#60a5fa", "ma14")
     ma30 = _ma_polyline("ma30", "#ff6b9d", "ma30")
 
     # MACD sub-chart
@@ -712,7 +727,7 @@ def _render_index_svg(points: list, code: str = "") -> str:
     macd_bars = []
     for i, h_val in enumerate(macd_vals):
         cx = x_pos(i)
-        color = "#00ff88" if h_val >= 0 else "#ff4757"
+        color = "#34d399" if h_val >= 0 else "#f87171"
         y0 = y_sub(0)
         yv = y_sub(h_val)
         bar_top = min(y0, yv)
@@ -725,7 +740,7 @@ def _render_index_svg(points: list, code: str = "") -> str:
     # DIF/DEA lines
     dif_pts = " ".join(f"{x_pos(i):.1f},{y_sub(v):.1f}" for i, v in enumerate(dif_vals))
     dea_pts = " ".join(f"{x_pos(i):.1f},{y_sub(v):.1f}" for i, v in enumerate(dea_vals))
-    dif_line = f'<polyline class="macd-el" points="{dif_pts}" fill="none" stroke="#ffd32a" stroke-width="1" opacity=".8" style="display:none"/>' if dif_pts.strip() else ""
+    dif_line = f'<polyline class="macd-el" points="{dif_pts}" fill="none" stroke="#fbbf24" stroke-width="1" opacity=".8" style="display:none"/>' if dif_pts.strip() else ""
     dea_line = f'<polyline class="macd-el" points="{dea_pts}" fill="none" stroke="#ff6b9d" stroke-width="1" opacity=".8" style="display:none"/>' if dea_pts.strip() else ""
 
     # RSI sub-chart (hidden by default, same position as MACD)
@@ -737,7 +752,7 @@ def _render_index_svg(points: list, code: str = "") -> str:
     rsi_els = (
         f'<line class="rsi-el" x1="{pad}" y1="{y70}" x2="{w-pad}" y2="{y70}" stroke="var(--muted)" stroke-width=".5" stroke-dasharray="4"/>'
         f'<line class="rsi-el" x1="{pad}" y1="{y30}" x2="{w-pad}" y2="{y30}" stroke="var(--muted)" stroke-width=".5" stroke-dasharray="4"/>'
-        f'<polyline class="rsi-el" points="{rsi_pts}" fill="none" stroke="#00d4ff" stroke-width="1.2"/>'
+        f'<polyline class="rsi-el" points="{rsi_pts}" fill="none" stroke="#60a5fa" stroke-width="1.2"/>'
     )
 
     # Sub-chart divider line

@@ -1531,12 +1531,12 @@ class TestSparkline:
     def test_green_for_rising(self):
         prices = [10.0, 10.5, 11.0, 11.5, 12.0]
         html = _render_sparkline(prices)
-        assert "#52d6a7" in html  # green
+        assert "#34d399" in html  # green
 
     def test_red_for_falling(self):
         prices = [12.0, 11.5, 11.0, 10.5, 10.0]
         html = _render_sparkline(prices)
-        assert "#ff7e6b" in html  # red
+        assert "#f87171" in html  # red
 
     def test_shows_percent_change(self):
         prices = [10.0, 10.5, 11.0, 10.8, 11.0]

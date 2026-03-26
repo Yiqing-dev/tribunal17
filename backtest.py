@@ -1569,23 +1569,27 @@ _BT_HTML_HEAD = """<!DOCTYPE html>
 <title>回测验证报告</title>
 <style>
 :root {
-  --bg: #06101a; --fg: #dce9ef; --card: rgba(10, 22, 34, 0.82);
-  --border: rgba(110, 148, 171, 0.22); --green: #52d6a7; --red: #ff7e6b;
-  --yellow: #f6c66d; --blue: #69c8ff; --muted: #91a8b8; --white: #f5fbff;
-  --surface: rgba(18, 34, 49, 0.92); --accent: #ffb16d;
-  --mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+  --bg: #070e1b; --fg: #dde6f0; --card: rgba(11, 20, 35, 0.85);
+  --border: rgba(100, 150, 180, 0.14); --green: #34d399; --red: #f87171;
+  --yellow: #fbbf24; --blue: #60a5fa; --purple: #a78bfa; --muted: #7e91a7; --white: #f1f7fd;
+  --surface: rgba(14, 24, 40, 0.92); --accent: #f59e0b;
+  --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
 }
 * { margin:0; padding:0; box-sizing:border-box; }
+::selection { background: rgba(96, 165, 250, 0.25); color: var(--white); }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(100, 150, 180, 0.2); border-radius: 3px; }
 body {
   font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC",-apple-system,
                BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
   background:
-    radial-gradient(circle at 15% 20%, rgba(246,198,109,0.12), transparent 28%),
-    radial-gradient(circle at 85% 18%, rgba(105,200,255,0.10), transparent 26%),
-    radial-gradient(circle at 50% 110%, rgba(82,214,167,0.10), transparent 36%),
-    linear-gradient(180deg, #08131f 0%, #06101a 55%, #050d16 100%);
-  color: var(--fg); line-height:1.7;
-  -webkit-font-smoothing: antialiased;
+    radial-gradient(ellipse at 15% 20%, rgba(251,191,36,0.10), transparent 32%),
+    radial-gradient(ellipse at 85% 18%, rgba(96,165,250,0.08), transparent 30%),
+    radial-gradient(ellipse at 50% 110%, rgba(52,211,153,0.08), transparent 38%),
+    linear-gradient(180deg, #091420 0%, #070e1b 55%, #050c17 100%);
+  color: var(--fg); line-height:1.75;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
 .container { max-width:1100px; margin:0 auto; padding:2.2rem 1.5rem 4rem; }
 
@@ -1621,7 +1625,7 @@ h3 { color:var(--white); margin:.6rem 0 .5rem; font-size:.92rem; font-weight:700
 .hero::after {
   content:""; position:absolute; inset:-20% auto auto 56%;
   width:340px; height:340px; border-radius:50%;
-  background:radial-gradient(circle, rgba(105,200,255,0.12), transparent 64%);
+  background:radial-gradient(circle, rgba(96,165,250,0.12), transparent 64%);
   pointer-events:none;
 }
 .hero-grid {
@@ -1669,9 +1673,9 @@ th.sortable[data-sort-dir="desc"]::after { content:"↓"; opacity:.7; color:var(
 .buy { color:var(--green); } .sell { color:var(--red); } .hold { color:var(--yellow); }
 .badge { display:inline-flex; align-items:center; padding:2px 10px; border-radius:999px;
          font-size:.72rem; font-weight:600; backdrop-filter:blur(8px); }
-.badge-buy { background:rgba(82,214,167,0.12); color:var(--green); }
-.badge-sell { background:rgba(255,126,107,0.12); color:var(--red); }
-.badge-hold { background:rgba(246,198,109,0.12); color:var(--yellow); }
+.badge-buy { background:rgba(52,211,153,0.12); color:var(--green); }
+.badge-sell { background:rgba(248,113,113,0.12); color:var(--red); }
+.badge-hold { background:rgba(251,191,36,0.12); color:var(--yellow); }
 
 .footer { margin-top:2rem; padding-top:1rem; border-top:1px solid rgba(255,255,255,0.06);
           color:var(--muted); font-size:.72rem; text-align:center; }
