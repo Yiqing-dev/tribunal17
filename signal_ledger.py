@@ -19,6 +19,7 @@ Usage:
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
@@ -31,6 +32,22 @@ from typing import Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 _DEFAULT_PATH = "data/signals/signals.jsonl"
+
+
+def _flock_exclusive(f) -> None:
+    """Acquire POSIX exclusive advisory lock (non-blocking falls back to blocking)."""
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+    except OSError:
+        pass  # platform without flock — proceed unprotected
+
+
+def _flock_release(f) -> None:
+    """Release POSIX advisory lock."""
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
 
 
 @dataclass
@@ -89,12 +106,35 @@ class SignalLedger:
     # ── Write ─────────────────────────────────────────────────────────────
 
     def append(self, record: SignalRecord) -> None:
-        """Append a single signal record."""
+        """Append a single signal record.
+
+        Uses atomic write-to-temp-then-append with file locking to
+        prevent concurrent writers from interleaving or losing lines.
+        """
         if not record.recorded_at:
             record.recorded_at = datetime.now().isoformat()
-        line = json.dumps(record.to_dict(), ensure_ascii=False)
-        with open(self.path, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
+        line = json.dumps(record.to_dict(), ensure_ascii=False) + "\n"
+
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(self.path.parent), suffix=".tmp", prefix=".signal-"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as tmp_f:
+                tmp_f.write(line)
+
+            # Append under exclusive lock
+            with open(self.path, "a", encoding="utf-8") as f:
+                _flock_exclusive(f)
+                try:
+                    with open(tmp_path, "r", encoding="utf-8") as tmp_f:
+                        f.write(tmp_f.read())
+                finally:
+                    _flock_release(f)
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def append_from_trace(
         self,
@@ -279,7 +319,11 @@ class SignalLedger:
                     records = [r for r in records if (r.ticker, r.trade_date) != key]
                 seen_keys.add(key)
 
-                rec = SignalRecord.from_dict(d)
+                try:
+                    rec = SignalRecord.from_dict(d)
+                except (TypeError, ValueError):
+                    logger.warning("Skipping malformed signal record: %s", d)
+                    continue
 
                 if ticker and rec.ticker != ticker:
                     continue

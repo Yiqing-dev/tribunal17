@@ -8,6 +8,7 @@ Directory structure:
         run-abc123def456.jsonl ← full RunTrace for that run
 """
 
+import fcntl
 import json
 import logging
 import os
@@ -55,7 +56,7 @@ class ReplayStore:
                 pass
             raise
 
-        # Append to manifest
+        # Append to manifest (with advisory file lock for concurrency safety)
         manifest_entry = {
             "run_id": trace.run_id,
             "ticker": trace.ticker,
@@ -67,8 +68,19 @@ class ReplayStore:
             "was_vetoed": trace.was_vetoed,
             "compliance_status": trace.compliance_status,
         }
+        line = json.dumps(manifest_entry, ensure_ascii=False) + "\n"
         with open(self._manifest_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(manifest_entry, ensure_ascii=False) + "\n")
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            except OSError:
+                pass  # platform without flock — proceed unprotected
+            try:
+                f.write(line)
+            finally:
+                try:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
 
         logger.info(f"Saved replay trace: {trace_path}")
         return trace_path
@@ -103,6 +115,7 @@ class ReplayStore:
                         continue
                     entries.append(entry)
                 except json.JSONDecodeError:
+                    logger.warning("Skipping corrupted manifest line: %s", line[:120])
                     continue
 
         # Return most recent first

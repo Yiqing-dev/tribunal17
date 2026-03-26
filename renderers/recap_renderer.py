@@ -463,6 +463,12 @@ body::before {
 .kline-label-bg{fill:var(--card);stroke:var(--border);rx:4}
 .kline-label-text{fill:var(--fg);font-size:9px;font-family:var(--mono)}
 
+/* ── V5a: Keyboard focus ── */
+.idx-tab:focus-visible, .rc-tab:focus-visible, .toggle-btn:focus-visible,
+.csv-btn:focus-visible, .sd-close:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
 /* ── V5: Touch feedback ── */
 @media (hover: none) and (pointer: coarse) {
   .glass:active, .idx-tab:active, .rc-tab:active {

@@ -1351,7 +1351,7 @@ def _esc(text: str) -> str:
 
 
 def _card(title: str, value: str) -> str:
-    return f'<div class="card"><div class="card-title">{_esc(title)}</div><div class="card-value">{value}</div></div>'
+    return f'<div class="card"><div class="card-title">{_esc(title)}</div><div class="card-value">{_esc(value)}</div></div>'
 
 
 # ── SVG Helpers ─────────────────────────────────────────────────────────
@@ -1715,6 +1715,11 @@ th.sortable[data-sort-dir="desc"]::after { content:"↓"; opacity:.7; color:var(
 /* ── V3: Numeric alignment ── */
 td.num, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
 .card-value { font-variant-numeric: tabular-nums; }
+
+/* ── V5a: Keyboard focus ── */
+button:focus-visible, [role="button"]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
 
 /* ── V5: Touch feedback ── */
 @media (hover: none) and (pointer: coarse) {

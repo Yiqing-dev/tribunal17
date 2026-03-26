@@ -1111,7 +1111,7 @@ class TestAuditConclusion:
         assert level == "low"
         assert label == "低可信"
 
-    def test_compute_with_weakest_node(self):
+    def test_compute_with_weakest_node_medium(self):
         signals = [
             {"status": "bad"}, {"status": "good"},
             {"status": "good"}, {"status": "good"}, {"status": "good"},
@@ -1119,6 +1119,18 @@ class TestAuditConclusion:
         level, label, text = compute_audit_conclusion(signals, "催化剂分析师")
         assert level == "medium"
         assert "催化剂分析师" in text
+        assert "人工复核" in text
+
+    def test_compute_with_weakest_node_low(self):
+        """Low-level must use distinct stronger warning, not same text as medium."""
+        signals = [
+            {"status": "bad"}, {"status": "bad"},
+            {"status": "good"}, {"status": "good"}, {"status": "good"},
+        ]
+        level, label, text = compute_audit_conclusion(signals, "催化剂分析师")
+        assert level == "low"
+        assert "催化剂分析师" in text
+        assert "不建议" in text  # distinct from medium's "可参考"
 
     def test_audit_conclusion_rendered(self, structured_service):
         service, run_id = structured_service

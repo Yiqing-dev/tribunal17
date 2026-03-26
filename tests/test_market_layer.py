@@ -844,3 +844,111 @@ class TestEdgeCases:
         html = _render_mkt_hero(view)
         assert "进攻" in html
         assert "仓位乘数" in html
+
+
+# ── Utility Function Tests ────────────────────────────────────────────
+
+
+class TestSafeBadgeClass:
+    """safe_badge_class() must whitelist-validate CSS class values."""
+
+    def test_valid_actions(self):
+        from subagent_pipeline.renderers.decision_labels import safe_badge_class
+        assert safe_badge_class("buy") == "buy"
+        assert safe_badge_class("sell") == "sell"
+        assert safe_badge_class("hold") == "hold"
+        assert safe_badge_class("veto") == "veto"
+
+    def test_valid_severities(self):
+        from subagent_pipeline.renderers.decision_labels import safe_badge_class
+        assert safe_badge_class("high") == "high"
+        assert safe_badge_class("medium") == "medium"
+        assert safe_badge_class("low") == "low"
+
+    def test_valid_statuses(self):
+        from subagent_pipeline.renderers.decision_labels import safe_badge_class
+        assert safe_badge_class("good") == "good"
+        assert safe_badge_class("warn") == "warn"
+        assert safe_badge_class("bad") == "bad"
+
+    def test_rejects_xss_payload(self):
+        from subagent_pipeline.renderers.decision_labels import safe_badge_class
+        assert safe_badge_class('"><script>alert(1)</script>') == "hold"
+
+    def test_rejects_unknown_value(self):
+        from subagent_pipeline.renderers.decision_labels import safe_badge_class
+        assert safe_badge_class("DANGER") == "hold"
+
+    def test_empty_returns_default(self):
+        from subagent_pipeline.renderers.decision_labels import safe_badge_class
+        assert safe_badge_class("") == "hold"
+        assert safe_badge_class(None) == "hold"
+
+    def test_custom_default(self):
+        from subagent_pipeline.renderers.decision_labels import safe_badge_class
+        assert safe_badge_class("garbage", default="muted") == "muted"
+
+    def test_case_insensitive(self):
+        from subagent_pipeline.renderers.decision_labels import safe_badge_class
+        assert safe_badge_class("BUY") == "buy"
+        assert safe_badge_class("High") == "high"
+
+    def test_whitespace_stripped(self):
+        from subagent_pipeline.renderers.decision_labels import safe_badge_class
+        assert safe_badge_class("  buy  ") == "buy"
+
+
+class TestEmptyState:
+    """_empty_state() renders consistent empty-state placeholder HTML."""
+
+    def test_basic_render(self):
+        from subagent_pipeline.renderers.report_renderer import _empty_state
+        html = _empty_state("\U0001f4cb", "暂无数据")
+        assert "empty-state" in html
+        assert "暂无数据" in html
+        assert "\U0001f4cb" in html
+
+    def test_with_hint(self):
+        from subagent_pipeline.renderers.report_renderer import _empty_state
+        html = _empty_state("\U0001f50d", "暂无风险标签", "请检查数据源")
+        assert "empty-state-hint" in html
+        assert "请检查数据源" in html
+
+    def test_without_hint(self):
+        from subagent_pipeline.renderers.report_renderer import _empty_state
+        html = _empty_state("\U0001f4cb", "暂无数据")
+        assert "empty-state-hint" not in html
+
+    def test_escapes_html(self):
+        from subagent_pipeline.renderers.report_renderer import _empty_state
+        html = _empty_state("X", '<script>alert("xss")</script>')
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+
+
+class TestGetSignalEmoji:
+    """get_signal_emoji() maps actions to emojis."""
+
+    def test_buy(self):
+        from subagent_pipeline.renderers.decision_labels import get_signal_emoji
+        assert get_signal_emoji("BUY") == "\U0001f7e2"
+
+    def test_sell(self):
+        from subagent_pipeline.renderers.decision_labels import get_signal_emoji
+        assert get_signal_emoji("SELL") == "\U0001f534"
+
+    def test_hold(self):
+        from subagent_pipeline.renderers.decision_labels import get_signal_emoji
+        assert get_signal_emoji("HOLD") == "\U0001f7e1"
+
+    def test_veto(self):
+        from subagent_pipeline.renderers.decision_labels import get_signal_emoji
+        assert get_signal_emoji("VETO") == "\u26d4"
+
+    def test_unknown_returns_default(self):
+        from subagent_pipeline.renderers.decision_labels import get_signal_emoji
+        assert get_signal_emoji("UNKNOWN") == "\u26aa"
+
+    def test_case_insensitive(self):
+        from subagent_pipeline.renderers.decision_labels import get_signal_emoji
+        assert get_signal_emoji("buy") == "\U0001f7e2"

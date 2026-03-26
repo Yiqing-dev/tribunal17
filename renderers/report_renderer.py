@@ -480,6 +480,11 @@ td.num, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; tex
 .prob-seg:nth-child(3) { animation: bar-grow 600ms cubic-bezier(0.22,1,0.36,1) 200ms both; }
 .prob-seg:nth-child(4) { animation: bar-grow 600ms cubic-bezier(0.22,1,0.36,1) 300ms both; }
 
+/* ── V5a: Keyboard focus ── */
+.toggle-btn:focus-visible, .csv-btn:focus-visible, .filter-btn:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
 /* ── V5: Touch feedback ── */
 @media (hover: none) and (pointer: coarse) {
   .card:active, .kpi:active, .claim-card:active, .trust-card:active {
@@ -2681,6 +2686,11 @@ body {
   color: var(--muted);
   font-size: 0.76rem;
   white-space: nowrap;
+}
+
+/* ── V5a: Keyboard focus ── */
+button:focus-visible, [role="button"]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
 }
 
 /* ── V5: Touch feedback ── */

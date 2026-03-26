@@ -17,6 +17,7 @@ from .debate_view import (
     DebateView, ParticipantView, ClaimView,
     TimelineEntry, DebateRound, VerdictView,
 )
+from .decision_labels import safe_badge_class
 
 
 # ── Escape ────────────────────────────────────────────────────────────
@@ -553,6 +554,11 @@ body::before {
   }
 }
 
+/* ── V5a: Keyboard focus ── */
+button:focus-visible, [role="button"]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
 /* ── V5: Touch feedback ── */
 @media (hover: none) and (pointer: coarse) {
   .glass:active, .debate-hero:active, .roster-card:active {
@@ -612,7 +618,7 @@ _ACTION_EMOJI = {
 
 def _render_hero(v: DebateView) -> str:
     """Section 1: Hero banner + committee roster."""
-    action_css = v.verdict.action.lower() if v.verdict.action else "hold"
+    action_css = safe_badge_class(v.verdict.action.lower() if v.verdict.action else "hold")
     emoji = _ACTION_EMOJI.get(v.verdict.action, "")
 
     # Hero
@@ -805,7 +811,7 @@ def _render_controversies(v: DebateView) -> str:
 def _render_verdict(v: DebateView) -> str:
     """Section 5: Final verdict card."""
     vd = v.verdict
-    action_css = vd.action.lower() if vd.action else "hold"
+    action_css = safe_badge_class(vd.action.lower() if vd.action else "hold")
     emoji = _ACTION_EMOJI.get(vd.action, "")
 
     risk_css = "risk-ok" if vd.risk_score <= 3 else "risk-warn" if vd.risk_score <= 6 else "risk-bad"
