@@ -40,28 +40,42 @@ def global_macro_prompt(trade_date: str, market_snapshot_md: str = "") -> str:
 
 {snapshot_hint}
 
-**SEARCH TASKS (use WebSearch for each):**
+**KEY DATA SOURCES (all blocked by 403, must use WebSearch with site: filter):**
+- tradingeconomics.com — China stock market indices, forecasts, macro indicators
+- investing.com — Daily OHLCV historical data, 52-week range, cross-market indices (Hang Seng, Nikkei, S&P 500)
+- reuters.com, bloomberg.com, cnbc.com — global market news and analysis
 
-1. **Global market overview** — search:
+**SEARCH TASKS (use WebSearch for each, NEVER use WebFetch on these sites):**
+
+1. **Trading Economics China data** — search:
+   - "site:tradingeconomics.com china stock market" OR "site:tradingeconomics.com shanghai composite"
+   - "site:tradingeconomics.com china GDP interest rate inflation"
+   - Extract: Shanghai Composite level, 52-week range, monthly/yearly change %, forecasts, macro indicators (GDP growth, CPI, PMI, interest rate)
+
+2. **Investing.com market data** — search:
+   - "site:investing.com shanghai composite SSEC {trade_date}"
+   - "site:investing.com hang seng nikkei S&P 500 {trade_date}"
+   - Extract: recent daily close prices and % changes for Shanghai Composite + global peers (Hang Seng, Nikkei, S&P 500, Nasdaq), 52-week range, recent trend direction
+
+3. **Global market overview** — search:
    - "China stock market {trade_date}" OR "Shanghai composite {trade_date}"
-   - "SSE composite CSI 300" on Trading Economics or Investing.com
    - Extract: how international media frames today's A-share moves, any foreign catalysts
 
-2. **Geopolitical events** — search:
+4. **Geopolitical events** — search:
    - "geopolitics China markets {trade_date}" OR major headlines (war, sanctions, trade)
    - How geopolitical events impact specific A-share sectors (oil→petrochemical, war→defense)
 
-3. **Cross-market catalysts** — search:
+5. **Cross-market catalysts** — search:
    - Major global deals involving Chinese companies (M&A, licensing, partnerships)
    - US/EU regulatory actions affecting Chinese sectors (chip sanctions, tariffs)
    - Commodity price moves (oil, copper, gold, lithium) → sector implications
 
-4. **Foreign capital sentiment** — search:
+6. **Foreign capital sentiment** — search:
    - "northbound flow" OR "foreign investors China A-shares"
    - MSCI/FTSE China index changes, ETF flow data
-   - Analyst upgrades/downgrades on China from Goldman, Morgan Stanley, etc.
+   - Analyst upgrades/dowgrades on China from Goldman, Morgan Stanley, etc.
 
-5. **Overnight global markets** — search:
+7. **Overnight global markets** — search:
    - US markets (S&P 500, Nasdaq) close, major movers
    - European markets summary
    - Asian peers (Nikkei, Hang Seng, KOSPI)
@@ -71,6 +85,12 @@ def global_macro_prompt(trade_date: str, market_snapshot_md: str = "") -> str:
 
 ```
 GLOBAL_MACRO_OUTPUT:
+te_china_index = <Shanghai Composite level and % change from Trading Economics, or UNKNOWN>
+te_macro_indicators = <GDP growth, CPI, PMI, interest rate from Trading Economics, or UNKNOWN>
+te_forecast = <Trading Economics forecast/outlook for Shanghai Composite, or UNKNOWN>
+inv_recent_prices = <recent 3-5 day Shanghai Composite close prices from Investing.com, e.g. "3/26: 3917(-0.4%), 3/25: 3932(+1.3%)", or UNKNOWN>
+inv_global_peers = <Hang Seng, Nikkei, S&P 500 latest close and % change from Investing.com, or UNKNOWN>
+inv_52w_range = <52-week high and low from Investing.com, or UNKNOWN>
 overnight_markets = <1-2 sentences: US/EU/Asia close and tone>
 geopolitical_risk = <key geopolitical events affecting markets, or NONE>
 cross_market_catalysts = <specific deals/events impacting A-share sectors>
@@ -184,6 +204,12 @@ sector_global_trend = <global trend for this sector>
 def parse_global_macro_output(text: str) -> Dict[str, str]:
     """Parse GLOBAL_MACRO_OUTPUT: block from web agent response."""
     result = {
+        "te_china_index": "",
+        "te_macro_indicators": "",
+        "te_forecast": "",
+        "inv_recent_prices": "",
+        "inv_global_peers": "",
+        "inv_52w_range": "",
         "overnight_markets": "",
         "geopolitical_risk": "",
         "cross_market_catalysts": "",
@@ -272,6 +298,12 @@ def merge_global_macro_into_context(
         return market_context
 
     market_context["global_macro"] = {
+        "te_china_index": global_macro.get("te_china_index", ""),
+        "te_macro_indicators": global_macro.get("te_macro_indicators", ""),
+        "te_forecast": global_macro.get("te_forecast", ""),
+        "inv_recent_prices": global_macro.get("inv_recent_prices", ""),
+        "inv_global_peers": global_macro.get("inv_global_peers", ""),
+        "inv_52w_range": global_macro.get("inv_52w_range", ""),
         "overnight_markets": global_macro.get("overnight_markets", ""),
         "geopolitical_risk": global_macro.get("geopolitical_risk", ""),
         "cross_market_catalysts": global_macro.get("cross_market_catalysts", ""),
@@ -301,6 +333,30 @@ def format_global_macro_block(global_macro: Dict[str, str]) -> str:
         return ""
 
     parts = ["国际宏观情报:"]
+
+    te_index = global_macro.get("te_china_index", "")
+    if te_index and te_index.upper() not in ("UNKNOWN", "未找到相关信息"):
+        parts.append(f"  Trading Economics 中国指数: {te_index}")
+
+    te_macro = global_macro.get("te_macro_indicators", "")
+    if te_macro and te_macro.upper() not in ("UNKNOWN", "未找到相关信息"):
+        parts.append(f"  宏观指标(TE): {te_macro}")
+
+    te_forecast = global_macro.get("te_forecast", "")
+    if te_forecast and te_forecast.upper() not in ("UNKNOWN", "未找到相关信息"):
+        parts.append(f"  TE预测: {te_forecast}")
+
+    inv_prices = global_macro.get("inv_recent_prices", "")
+    if inv_prices and inv_prices.upper() not in ("UNKNOWN", "未找到相关信息"):
+        parts.append(f"  近期走势(Investing.com): {inv_prices}")
+
+    inv_peers = global_macro.get("inv_global_peers", "")
+    if inv_peers and inv_peers.upper() not in ("UNKNOWN", "未找到相关信息"):
+        parts.append(f"  全球指数: {inv_peers}")
+
+    inv_range = global_macro.get("inv_52w_range", "")
+    if inv_range and inv_range.upper() not in ("UNKNOWN", "未找到相关信息"):
+        parts.append(f"  52周区间: {inv_range}")
 
     overnight = global_macro.get("overnight_markets", "")
     if overnight:
