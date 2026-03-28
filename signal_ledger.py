@@ -34,6 +34,27 @@ logger = logging.getLogger(__name__)
 _DEFAULT_PATH = "data/signals/signals.jsonl"
 
 
+def normalize_ticker(ticker: str) -> str:
+    """Ensure ticker has the correct exchange suffix.
+
+    Canonical source for ticker normalization across the codebase.
+    Rules: 6xx→.SS (Shanghai), 0xx/3xx→.SZ (Shenzhen), 8xx/4xx/9xx→.BJ (Beijing).
+    Always strips and re-applies the suffix to fix wrong ones (e.g., 920344.SZ → 920344.BJ).
+    """
+    bare = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
+    if not bare.isdigit():
+        return ticker
+    if bare.startswith("6"):
+        correct = f"{bare}.SS"
+    elif bare.startswith(("0", "3")):
+        correct = f"{bare}.SZ"
+    elif bare.startswith(("8", "4", "9")):
+        correct = f"{bare}.BJ"
+    else:
+        correct = f"{bare}.SZ"
+    return correct
+
+
 def _flock_exclusive(f) -> None:
     """Acquire POSIX exclusive advisory lock (non-blocking falls back to blocking)."""
     try:
@@ -63,6 +84,8 @@ class SignalRecord:
     action: str = ""                # BUY / HOLD / SELL / VETO
     confidence: float = -1.0
     was_vetoed: bool = False
+    veto_source: str = ""           # "agent_veto" | "risk_gate" | ""
+    pre_veto_action: str = ""       # Original action before risk gate forced VETO
 
     # Price at signal time
     entry_price: float = 0.0       # Close on signal date
@@ -209,17 +232,7 @@ class SignalLedger:
                             risk_flags.append(f)
 
         # Normalize ticker
-        ticker = trace.ticker
-        bare = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
-        if ticker == bare and bare.isdigit():
-            if bare.startswith("6"):
-                ticker = f"{bare}.SS"
-            elif bare.startswith(("0", "3")):
-                ticker = f"{bare}.SZ"
-            elif bare.startswith(("8", "4", "9")):
-                ticker = f"{bare}.BJ"
-            else:
-                ticker = f"{bare}.SZ"
+        ticker = normalize_ticker(trace.ticker)
 
         record = SignalRecord(
             run_id=run_id,
@@ -229,6 +242,8 @@ class SignalLedger:
             action=trace.research_action,
             confidence=trace.final_confidence,
             was_vetoed=trace.was_vetoed,
+            veto_source=getattr(trace, "veto_source", ""),
+            pre_veto_action=getattr(trace, "pre_veto_action", ""),
             entry_price=entry_price,
             stop_loss=sl,
             take_profit=tp,
@@ -438,3 +453,112 @@ def backfill_ledger(
 
     logger.info(f"Backfilled {count} signals into {ledger_path}")
     return count
+
+
+# ── Ledger repair utility ─────────────────────────────────────────────────
+
+
+def repair_ledger(
+    ledger_path: str = _DEFAULT_PATH,
+    replay_dir: str = "data/replays",
+    dry_run: bool = True,
+) -> Dict:
+    """Repair known data quality issues in the signal ledger.
+
+    Fixes:
+      - Date repair: trade_date starting with "2025-" → look up correct date from replay
+      - Name repair: empty ticker_name → backfill from replay or static mapping
+      - Suffix repair: re-normalize ticker suffix (e.g., 920344.SZ → 920344.BJ)
+
+    Args:
+        dry_run: If True, return a report dict without modifying the file.
+                 If False, atomically rewrite the ledger.
+
+    Returns:
+        Dict with counts of each repair type and list of affected run_ids.
+    """
+    from .replay_store import ReplayStore
+
+    store = ReplayStore(storage_dir=replay_dir)
+    report: Dict = {
+        "date_fixes": 0,
+        "name_fixes": 0,
+        "suffix_fixes": 0,
+        "total_records": 0,
+        "affected_run_ids": [],
+    }
+
+    if not os.path.exists(ledger_path):
+        return report
+
+    with open(ledger_path, "r") as f:
+        lines = f.readlines()
+
+    repaired_lines = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            repaired_lines.append(line)
+            continue
+
+        report["total_records"] += 1
+        changed = False
+        run_id = d.get("run_id", "")
+
+        # 1. Date repair: "2025-" dates are likely off-by-one-year
+        trade_date = d.get("trade_date", "")
+        if trade_date.startswith("2025-"):
+            try:
+                trace = store.load(run_id)
+                if trace and trace.trade_date and not trace.trade_date.startswith("2025-"):
+                    d["trade_date"] = trace.trade_date
+                    changed = True
+                    report["date_fixes"] += 1
+            except Exception:
+                pass
+
+        # 2. Name repair: empty ticker_name
+        if not d.get("ticker_name"):
+            try:
+                trace = store.load(run_id)
+                if trace and getattr(trace, "ticker_name", ""):
+                    d["ticker_name"] = trace.ticker_name
+                    changed = True
+                    report["name_fixes"] += 1
+            except Exception:
+                pass
+
+        # 3. Suffix repair: re-normalize ticker
+        ticker = d.get("ticker", "")
+        if ticker:
+            fixed = normalize_ticker(ticker)
+            if fixed != ticker:
+                d["ticker"] = fixed
+                changed = True
+                report["suffix_fixes"] += 1
+
+        if changed:
+            report["affected_run_ids"].append(run_id)
+
+        repaired_lines.append(json.dumps(d, ensure_ascii=False))
+
+    if not dry_run:
+        # Atomic write: temp file → rename
+        dir_name = os.path.dirname(ledger_path) or "."
+        fd, tmp_path = tempfile.mkstemp(suffix=".jsonl", dir=dir_name)
+        try:
+            with os.fdopen(fd, "w") as tmp_f:
+                for rl in repaired_lines:
+                    tmp_f.write(rl + "\n")
+            os.replace(tmp_path, ledger_path)
+            logger.info(f"Repaired ledger: {report}")
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
+
+    return report

@@ -38,13 +38,13 @@ _DEBATE_CSS = """
   --bg: #070e1b;
   --fg: #dde6f0;
   --card: rgba(11, 20, 35, 0.85);
-  --border: rgba(100, 150, 180, 0.14);
+  --border: rgba(100, 150, 180, 0.18);
   --green: #34d399;
   --red: #f87171;
   --yellow: #fbbf24;
   --blue: #60a5fa;
   --purple: #a78bfa;
-  --muted: #7e91a7;
+  --muted: #8fa3b8;
   --surface: rgba(14, 24, 40, 0.92);
   --glow-green: rgba(52, 211, 153, 0.15);
   --glow-red: rgba(248, 113, 113, 0.15);
@@ -57,6 +57,17 @@ _DEBATE_CSS = """
   --signal-sell: var(--red);
   --signal-hold: var(--yellow);
   --signal-veto: var(--red);
+  --state-success: var(--green);
+  --state-danger: var(--red);
+  --state-warning: var(--yellow);
+  --state-info: var(--blue);
+  --elev-1: 0 4px 12px rgba(0,0,0,0.15);
+  --elev-2: 0 12px 28px rgba(0,0,0,0.25);
+  --elev-3: 0 22px 54px rgba(0,0,0,0.35);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 200ms;
+  --dur-med: 360ms;
+  --sp-1: 0.5rem; --sp-2: 1rem; --sp-3: 1.5rem; --sp-4: 2rem; --sp-6: 3rem;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 ::selection { background: rgba(96, 165, 250, 0.25); color: var(--white); }
@@ -571,9 +582,35 @@ button:focus-visible, [role="button"]:focus-visible {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 2rem 1rem; text-align: center; color: var(--muted);
 }
-.empty-state-icon { font-size: 2rem; margin-bottom: .6rem; opacity: .5; }
+.empty-state-icon { font-size: 2rem; margin-bottom: .6rem; opacity: .6; }
 .empty-state-title { font-size: .88rem; font-weight: 600; margin-bottom: .25rem; }
-.empty-state-hint { font-size: .78rem; opacity: .7; }
+.empty-state-hint { font-size: .78rem; opacity: .8; }
+
+/* ── S1: Contrast boost ── */
+.roster-role, .claim-meta, .sec-sub, .audit-cell .al,
+.verdict-kpi .vk-label, .hero-meta { font-weight: 500; }
+
+/* ── S4: Elevation system ── */
+.glass, .roster-card, .verdict-kpi, .audit-cell { box-shadow: var(--elev-1); }
+.glass:hover { box-shadow: var(--elev-2); }
+.debate-hero { box-shadow: var(--elev-3); }
+
+/* ── S5: Unified timing ── */
+.glass, .roster-card, .claim-card {
+  transition: transform var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.glass, .debate-hero { animation: db-rise var(--dur-med) var(--ease-out) both; }
+
+/* ── S3: 8px spacing rhythm ── */
+.glass { padding: var(--sp-3); }
+.debate-hero { padding: var(--sp-4); }
+.debate-shell { gap: var(--sp-3); }
+
+/* ── F2: Radar chart ── */
+.radar-wrap { display: flex; justify-content: center; margin: var(--sp-2) 0; }
+.radar-wrap svg text { font-size: 10px; fill: #8fa3b8; }
 
 @media print {
   :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666;--white:#111}
@@ -722,6 +759,91 @@ def _render_timeline(v: DebateView) -> str:
     return html
 
 
+def _render_radar_chart(bull_claims: list, bear_claims: list) -> str:
+    """SVG 5-axis radar chart comparing bull vs bear argument strength.
+
+    Axes: 技术, 基本面, 催化剂, 资金流, 情绪.
+    Each side's score per axis = avg confidence of claims mapped to that axis.
+    """
+    import math
+
+    axes = ["技术", "基本面", "催化剂", "资金流", "情绪"]
+    # Mapping from dimension strings to canonical axes
+    dim_map = {
+        "技术": "技术", "技术面": "技术", "技术分析": "技术",
+        "基本面": "基本面", "财务": "基本面", "估值": "基本面", "盈利": "基本面",
+        "催化剂": "催化剂", "事件": "催化剂", "政策": "催化剂", "消息": "催化剂",
+        "资金流": "资金流", "资金": "资金流", "主力": "资金流", "北向": "资金流",
+        "情绪": "情绪", "市场情绪": "情绪", "舆情": "情绪", "人气": "情绪",
+    }
+
+    def _aggregate(claims):
+        totals = {a: [] for a in axes}
+        for c in claims:
+            mapped = dim_map.get(c.dimension, "")
+            if not mapped:
+                # Distribute unmapped claims evenly
+                for a in axes:
+                    totals[a].append(c.confidence)
+            else:
+                totals[mapped].append(c.confidence)
+        return [sum(v) / len(v) if v else 0.0 for v in (totals[a] for a in axes)]
+
+    bull_vals = _aggregate(bull_claims)
+    bear_vals = _aggregate(bear_claims)
+
+    # Skip if both sides are all zeros
+    if all(v == 0 for v in bull_vals) and all(v == 0 for v in bear_vals):
+        return ""
+
+    cx, cy, r = 100, 100, 75
+    n = len(axes)
+
+    def _vertex(i, scale):
+        angle = math.radians(-90 + i * 360 / n)
+        return cx + r * scale * math.cos(angle), cy + r * scale * math.sin(angle)
+
+    # Build SVG
+    svg = f'<div class="radar-wrap"><svg viewBox="0 0 200 200" width="200" height="200">\n'
+
+    # Concentric pentagons (grid)
+    for level in (0.25, 0.5, 0.75, 1.0):
+        pts = " ".join(f"{_vertex(i, level)[0]:.1f},{_vertex(i, level)[1]:.1f}" for i in range(n))
+        svg += f'  <polygon points="{pts}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="0.5"/>\n'
+
+    # Axis lines
+    for i in range(n):
+        vx, vy = _vertex(i, 1.0)
+        svg += f'  <line x1="{cx}" y1="{cy}" x2="{vx:.1f}" y2="{vy:.1f}" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/>\n'
+
+    # Bull polygon (green)
+    bull_pts = " ".join(f"{_vertex(i, max(0.05, v))[0]:.1f},{_vertex(i, max(0.05, v))[1]:.1f}" for i, v in enumerate(bull_vals))
+    svg += f'  <polygon points="{bull_pts}" fill="rgba(52,211,153,0.2)" stroke="#34d399" stroke-width="1.5"/>\n'
+
+    # Bear polygon (red)
+    bear_pts = " ".join(f"{_vertex(i, max(0.05, v))[0]:.1f},{_vertex(i, max(0.05, v))[1]:.1f}" for i, v in enumerate(bear_vals))
+    svg += f'  <polygon points="{bear_pts}" fill="rgba(248,113,113,0.2)" stroke="#f87171" stroke-width="1.5"/>\n'
+
+    # Axis labels
+    for i, label in enumerate(axes):
+        lx, ly = _vertex(i, 1.2)
+        anchor = "middle"
+        if lx < cx - 10:
+            anchor = "end"
+        elif lx > cx + 10:
+            anchor = "start"
+        svg += f'  <text x="{lx:.1f}" y="{ly:.1f}" text-anchor="{anchor}" dominant-baseline="central">{label}</text>\n'
+
+    # Legend
+    svg += '  <line x1="10" y1="190" x2="22" y2="190" stroke="#34d399" stroke-width="2"/>\n'
+    svg += '  <text x="25" y="190" dominant-baseline="central" font-size="9" fill="#8fa3b8">看多</text>\n'
+    svg += '  <line x1="55" y1="190" x2="67" y2="190" stroke="#f87171" stroke-width="2"/>\n'
+    svg += '  <text x="70" y="190" dominant-baseline="central" font-size="9" fill="#8fa3b8">看空</text>\n'
+
+    svg += '</svg></div>\n'
+    return svg
+
+
 def _render_arena(v: DebateView) -> str:
     """Section 3: Bull/Bear confrontation arena."""
     if not v.bull_claims and not v.bear_claims:
@@ -745,6 +867,11 @@ def _render_arena(v: DebateView) -> str:
     html += f'    <div class="strength-pct" style="color:{"var(--green)" if bull_pct > 55 else "var(--red)" if bull_pct < 45 else "var(--yellow)"}">'
     html += f'{bull_pct}% : {bear_pct}%</div>\n'
     html += '  </div>\n'
+
+    # Radar chart
+    radar = _render_radar_chart(v.bull_claims, v.bear_claims)
+    if radar:
+        html += radar
 
     # Two columns
     html += '  <div class="arena-wrap">\n'

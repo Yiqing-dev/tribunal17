@@ -65,6 +65,11 @@ class NodeTrace:
     research_action: str = ""         # BUY/HOLD/SELL/VETO
     confidence: float = -1.0          # -1.0 sentinel: "not set"; finalize() skips if < 0
     thesis_effect: str = ""
+    # Design note: risk_score (0-10 numeric assessment) and risk_cleared
+    # (boolean pass/fail gate) are intentionally independent LLM outputs.
+    # risk_cleared is NOT derived from risk_score — the risk_manager agent
+    # evaluates qualitative factors beyond the numeric score. A high
+    # risk_score can still have risk_cleared=True if mitigants exist.
     risk_score: Optional[int] = None
     risk_cleared: Optional[bool] = None
     max_position_pct: float = -1.0
@@ -73,6 +78,7 @@ class NodeTrace:
     risk_flag_count: int = 0
     risk_flag_categories: List[str] = field(default_factory=list)
     vetoed: bool = False
+    veto_source: str = ""              # "agent_veto" | "risk_gate" | ""
     veto_reasons: List[str] = field(default_factory=list)
 
     # Compliance metadata (for publishing gate)
@@ -148,6 +154,8 @@ class RunTrace:
     final_confidence: float = -1.0
     compliance_status: str = ""
     was_vetoed: bool = False
+    veto_source: str = ""              # "agent_veto" | "risk_gate" | ""
+    pre_veto_action: str = ""          # Original action before risk gate forced VETO
 
     # Market context (injected from market layer agents)
     market_context: Dict = field(default_factory=dict)
@@ -186,6 +194,16 @@ class RunTrace:
                     self.final_confidence = nt.confidence
             if nt.vetoed:
                 self.was_vetoed = True
+                if nt.veto_source:
+                    self.veto_source = nt.veto_source
+                # Capture pre-veto action: when risk gate forces VETO,
+                # Research Manager's action is the original intent.
+                if nt.veto_source == "risk_gate" and nt.node_name == "Risk Judge":
+                    # Look for Research Manager's original action
+                    for pm_nt in self.node_traces:
+                        if pm_nt.node_name == "Research Manager" and pm_nt.research_action:
+                            self.pre_veto_action = pm_nt.research_action
+                            break
             if nt.compliance_status:
                 self.compliance_status = nt.compliance_status
 

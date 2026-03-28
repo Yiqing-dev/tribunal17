@@ -32,6 +32,26 @@
 
 收到口令后，Claude Code 严格按以下步骤执行。每完成一步打印对应口令作为状态提示。
 
+### Agent 写文件可靠性规则
+
+每个 Agent 启动时的 prompt 必须包含以下指令（防止 Write 工具因"未 Read"而卡死）：
+
+> **写文件前**：如果目标文件已存在，先用 `Read(file_path, limit=5)` 读取前5行，然后再用 `Write` 写入完整内容。如果目标文件不存在，可以直接 `Write`。
+
+在启动 Agent 前，主流程应清除上一轮的旧输出文件（防止旧数据残留）：
+
+```python
+# 清除旧输出（在每只股票的 L2 Step 0 之前执行）
+for suffix in ["_market_report", "_fundamentals_report", "_news_report",
+               "_sentiment_report", "_catalyst_report", "_bull_r1", "_bear_r1",
+               "_bull_r2", "_bear_r2", "_scenario_report", "_research_manager",
+               "_risk_aggressive", "_risk_conservative", "_risk_neutral",
+               "_risk_manager", "_research_output"]:
+    old = RESULTS / f"{ticker}{suffix}.txt"
+    if old.exists():
+        old.unlink()
+```
+
 ### 准备
 
 ```python

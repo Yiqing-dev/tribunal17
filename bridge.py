@@ -464,6 +464,62 @@ def parse_evidence_citations(text: str) -> List[str]:
 
 # ── Market-level parsers ──────────────────────────────────────────────
 
+
+class StaleMarketDataError(ValueError):
+    """Raised when market agent outputs contain a date that doesn't match the target trade date."""
+    pass
+
+
+def _extract_content_date(text: str) -> Optional[str]:
+    """Extract report date from the first 500 chars of agent output text.
+
+    Matches:
+        "2026年3月24日"  → "2026-03-24"
+        "2026-03-24"     → "2026-03-24"
+    """
+    head = text[:500] if text else ""
+    # Chinese format: YYYY年M月D日
+    m = re.search(r'(\d{4})\u5e74(\d{1,2})\u6708(\d{1,2})\u65e5', head)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    # ISO format
+    m = re.search(r'(\d{4}-\d{2}-\d{2})', head)
+    if m:
+        return m.group(1)
+    return None
+
+
+def validate_market_agent_dates(
+    trade_date: str,
+    macro_text: str = "",
+    breadth_text: str = "",
+    sector_text: str = "",
+) -> None:
+    """Validate that market agent output dates match *trade_date*.
+
+    Raises :class:`StaleMarketDataError` if any output contains a content date
+    that doesn't match.  Silently passes when no date can be extracted.
+    """
+    mismatches: List[str] = []
+    for label, text in [
+        ("macro_analyst", macro_text),
+        ("market_breadth", breadth_text),
+        ("sector_rotation", sector_text),
+    ]:
+        if not text:
+            continue
+        content_date = _extract_content_date(text)
+        if content_date and content_date != trade_date:
+            mismatches.append(
+                f"{label}: content date {content_date} != target {trade_date}"
+            )
+    if mismatches:
+        raise StaleMarketDataError(
+            f"Stale market data detected — agent outputs do not match "
+            f"trade_date {trade_date}:\n  " + "\n  ".join(mismatches)
+        )
+
+
 def parse_macro_output(text: str) -> Dict[str, Any]:
     """Extract MACRO_OUTPUT: key=value block."""
     block = _extract_tagged_block("MACRO_OUTPUT", text)
@@ -516,6 +572,8 @@ def assemble_market_context(
     sector: Dict[str, Any],
     trade_date: str = "",
     global_macro: Optional[Dict[str, str]] = None,
+    *,
+    raw_texts: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """Combine 3 market agent outputs into a canonical market_context dict.
 
@@ -523,7 +581,21 @@ def assemble_market_context(
         global_macro: Parsed output from web_collector.parse_global_macro_output().
             When provided, merged as ``market_context["global_macro"]`` and
             geopolitical risks are appended to ``risk_alerts``.
+        raw_texts: Optional dict of raw agent output texts keyed by
+            ``"macro"``, ``"breadth"``, ``"sector"``.  When provided *and*
+            *trade_date* is set, each text's embedded content date is validated
+            against *trade_date*.  Raises :class:`StaleMarketDataError` on
+            mismatch.
     """
+    # ── Date validation guard ──
+    if raw_texts and trade_date:
+        validate_market_agent_dates(
+            trade_date,
+            macro_text=raw_texts.get("macro", ""),
+            breadth_text=raw_texts.get("breadth", ""),
+            sector_text=raw_texts.get("sector", ""),
+        )
+
     regime = str(macro.get("regime", "NEUTRAL")).upper()
     breadth_state = str(breadth.get("breadth_state", "NARROW")).upper()
 
@@ -1095,6 +1167,10 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
             raw_conf = risk.get("confidence")
             nt.confidence = _safe_float(raw_conf) if raw_conf is not None else -1.0
             nt.vetoed = action == "VETO" or not nt.risk_cleared
+            if action == "VETO":
+                nt.veto_source = "agent_veto"
+            elif not nt.risk_cleared:
+                nt.veto_source = "risk_gate"
 
             # Risk flags
             flags = risk.get("risk_flags", [])

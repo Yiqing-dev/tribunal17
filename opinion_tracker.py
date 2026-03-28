@@ -172,6 +172,10 @@ class OpinionDrift:
     drift_magnitude: str = ""       # major / minor / stable
     drift_direction: str = ""       # bullish_shift / bearish_shift / unchanged
 
+    # Stale signal detection
+    is_stale: bool = False          # True when signal unchanged for >= stale_threshold days
+    stale_streak: int = 0           # Consecutive days with same action + unchanged pillars
+
     def to_dict(self) -> Dict:
         return asdict(self)
 
@@ -193,6 +197,8 @@ class WatchlistReport:
     action_flips: List[Dict] = field(default_factory=list)
     biggest_confidence_moves: List[Dict] = field(default_factory=list)
     new_risk_flags: List[Dict] = field(default_factory=list)
+    stale_signals: List[Dict] = field(default_factory=list)
+    unstable_tickers: List[Dict] = field(default_factory=list)
 
     # Latest snapshot per ticker
     current_state: Dict[str, DailySnapshot] = field(default_factory=dict)
@@ -214,6 +220,7 @@ class WatchlistReport:
             "action_flips": self.action_flips,
             "biggest_confidence_moves": self.biggest_confidence_moves,
             "new_risk_flags": self.new_risk_flags,
+            "unstable_tickers": self.unstable_tickers,
             "current_state": {
                 t: s.to_dict() for t, s in self.current_state.items()
             },
@@ -284,6 +291,24 @@ class WatchlistReport:
                 lines.append(
                     f"| {rf['date']} | {rf['ticker_name']} "
                     f"| {', '.join(rf['flags'])} |"
+                )
+            lines.append("")
+
+        # Unstable tickers warning
+        if self.unstable_tickers:
+            lines.append("### 信号不稳定预警")
+            lines.append("")
+            lines.append(
+                "以下股票在观察期内信号频繁翻转（>=3次），"
+                "跟随操作风险较高："
+            )
+            lines.append("")
+            lines.append("| 股票 | 翻转次数 | 观察天数 | 翻转率 |")
+            lines.append("|------|---------|---------|--------|")
+            for ut in self.unstable_tickers:
+                lines.append(
+                    f"| {ut['ticker_name']} | {ut['flip_count']} "
+                    f"| {ut['total_days']} | {ut['flip_rate']}% |"
                 )
             lines.append("")
 
@@ -616,6 +641,22 @@ def build_watchlist_report(
         for i in range(1, len(snapshots)):
             drift = compute_drift(snapshots[i - 1], snapshots[i])
             drift_list.append(drift)
+        # Post-process: stale signal detection
+        _STALE_THRESHOLD = 3
+        for i, dr in enumerate(drift_list):
+            same_action = not dr.action_changed
+            small_conf = abs(dr.confidence_delta) < 2.0  # <2% confidence change
+            same_pillars = (dr.market_score_delta == 0
+                            and dr.fundamental_score_delta == 0
+                            and dr.news_score_delta == 0
+                            and dr.sentiment_score_delta == 0)
+            if same_action and small_conf and same_pillars:
+                prev_streak = drift_list[i - 1].stale_streak if i > 0 else 0
+                dr.stale_streak = prev_streak + 1
+            else:
+                dr.stale_streak = 0
+            dr.is_stale = dr.stale_streak >= _STALE_THRESHOLD
+
         report.drifts[ticker] = drift_list
 
         # Current state
@@ -648,6 +689,14 @@ def build_watchlist_report(
                     "date": dr.date_curr,
                     "flags": dr.risk_flags_added,
                 })
+            if dr.is_stale:
+                report.stale_signals.append({
+                    "ticker": ticker,
+                    "ticker_name": dr.ticker_name,
+                    "date": dr.date_curr,
+                    "stale_streak": dr.stale_streak,
+                    "action": dr.action_curr,
+                })
 
     # Sort highlights
     report.action_flips.sort(key=lambda x: x["date"], reverse=True)
@@ -655,6 +704,26 @@ def build_watchlist_report(
         key=lambda x: abs(x["delta"]), reverse=True
     )
     report.new_risk_flags.sort(key=lambda x: x["date"], reverse=True)
+
+    # Unstable ticker detection: >=3 flips in the date range
+    _FLIP_THRESHOLD = 3
+    flip_counts: Dict[str, int] = {}
+    for flip in report.action_flips:
+        t = flip["ticker"]
+        flip_counts[t] = flip_counts.get(t, 0) + 1
+    for t, count in flip_counts.items():
+        n_snapshots = len(report.snapshots.get(t, []))
+        if count >= _FLIP_THRESHOLD:
+            name = report.current_state.get(t)
+            ticker_name = name.ticker_name if name else t
+            report.unstable_tickers.append({
+                "ticker": t,
+                "ticker_name": ticker_name,
+                "flip_count": count,
+                "total_days": n_snapshots,
+                "flip_rate": round(count / max(n_snapshots - 1, 1) * 100, 1),
+            })
+    report.unstable_tickers.sort(key=lambda x: x["flip_count"], reverse=True)
 
     return report
 
@@ -694,17 +763,12 @@ def latest_drift(
 
 
 def _normalize_ticker(ticker: str) -> str:
-    """Ensure ticker has exchange suffix."""
-    bare = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
-    if ticker == bare and bare.isdigit():
-        if bare.startswith("6"):
-            return f"{bare}.SS"
-        elif bare.startswith(("0", "3")):
-            return f"{bare}.SZ"
-        elif bare.startswith(("8", "4", "9")):
-            return f"{bare}.BJ"
-        return f"{bare}.SZ"
-    return ticker
+    """Ensure ticker has exchange suffix.
+
+    Delegates to the canonical implementation in signal_ledger.
+    """
+    from subagent_pipeline.signal_ledger import normalize_ticker
+    return normalize_ticker(ticker)
 
 
 def _safe_float(val, default: float = 0.0) -> float:

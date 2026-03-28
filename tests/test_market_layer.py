@@ -205,6 +205,87 @@ class TestAssembleMarketContext:
         assert format_market_context_block(None) == ""
 
 
+class TestStaleMarketDateValidation:
+    """P0: Detect stale L1 agent outputs via content date extraction."""
+
+    def test_extract_chinese_date(self):
+        from subagent_pipeline.bridge import _extract_content_date
+        text = "# \u5b8f\u89c2\u5206\u6790\u5e08\u62a5\u544a \u2014 2026\u5e743\u670824\u65e5\n..."
+        assert _extract_content_date(text) == "2026-03-24"
+
+    def test_extract_iso_date(self):
+        from subagent_pipeline.bridge import _extract_content_date
+        text = "# A\u80a1\u5e02\u573a\u5bbd\u5ea6\u5206\u6790\u62a5\u544a \u2014 2026-03-24\n..."
+        assert _extract_content_date(text) == "2026-03-24"
+
+    def test_extract_no_date(self):
+        from subagent_pipeline.bridge import _extract_content_date
+        assert _extract_content_date("no date here") is None
+        assert _extract_content_date("") is None
+
+    def test_extract_single_digit_month_day(self):
+        from subagent_pipeline.bridge import _extract_content_date
+        text = "\u62a5\u544a 2026\u5e741\u67085\u65e5"
+        assert _extract_content_date(text) == "2026-01-05"
+
+    def test_validate_matching_dates_passes(self):
+        from subagent_pipeline.bridge import validate_market_agent_dates
+        validate_market_agent_dates(
+            "2026-03-26",
+            macro_text="# \u62a5\u544a \u2014 2026\u5e743\u670826\u65e5",
+            breadth_text="# \u62a5\u544a \u2014 2026-03-26",
+        )
+
+    def test_validate_stale_raises(self):
+        from subagent_pipeline.bridge import validate_market_agent_dates, StaleMarketDataError
+        with pytest.raises(StaleMarketDataError, match="macro_analyst"):
+            validate_market_agent_dates(
+                "2026-03-26",
+                macro_text="# \u5b8f\u89c2\u5206\u6790\u5e08\u62a5\u544a \u2014 2026\u5e743\u670824\u65e5",
+            )
+
+    def test_validate_multiple_stale(self):
+        from subagent_pipeline.bridge import validate_market_agent_dates, StaleMarketDataError
+        with pytest.raises(StaleMarketDataError) as exc_info:
+            validate_market_agent_dates(
+                "2026-03-26",
+                macro_text="# \u62a5\u544a \u2014 2026\u5e743\u670824\u65e5",
+                breadth_text="# \u62a5\u544a \u2014 2026-03-24",
+                sector_text="# \u62a5\u544a \u2014 2026-03-26",
+            )
+        msg = str(exc_info.value)
+        assert "macro_analyst" in msg
+        assert "market_breadth" in msg
+        assert "sector_rotation" not in msg
+
+    def test_validate_no_date_passes(self):
+        from subagent_pipeline.bridge import validate_market_agent_dates
+        validate_market_agent_dates("2026-03-26", macro_text="just some text")
+
+    def test_assemble_with_raw_texts_stale_raises(self):
+        from subagent_pipeline.bridge import assemble_market_context, StaleMarketDataError
+        with pytest.raises(StaleMarketDataError):
+            assemble_market_context(
+                {"regime": "RISK_ON"}, {}, {},
+                trade_date="2026-03-26",
+                raw_texts={"macro": "# \u62a5\u544a \u2014 2026\u5e743\u670824\u65e5"},
+            )
+
+    def test_assemble_with_raw_texts_matching_passes(self):
+        from subagent_pipeline.bridge import assemble_market_context
+        ctx = assemble_market_context(
+            {"regime": "RISK_ON"}, {}, {},
+            trade_date="2026-03-26",
+            raw_texts={"macro": "# \u62a5\u544a \u2014 2026\u5e743\u670826\u65e5"},
+        )
+        assert ctx["regime"] == "RISK_ON"
+
+    def test_assemble_no_raw_texts_backward_compatible(self):
+        from subagent_pipeline.bridge import assemble_market_context
+        ctx = assemble_market_context({"regime": "NEUTRAL"}, {}, {}, "2026-03-26")
+        assert ctx["regime"] == "NEUTRAL"
+
+
 class TestMarketConfig:
     """Test config additions for market agents."""
 

@@ -851,3 +851,105 @@ class TestSaveJson:
         assert path.exists()
         data = json.loads(path.read_text(encoding="utf-8"))
         assert data["tickers"] == ["601985.SS"]
+
+
+# ── Stale signal detection ──────────────────────────────────────────────
+
+
+class TestStaleDetection:
+    """Bug 10: is_stale / stale_streak on OpinionDrift."""
+
+    def test_drift_has_stale_fields(self):
+        from subagent_pipeline.opinion_tracker import OpinionDrift
+        d = OpinionDrift()
+        assert d.is_stale is False
+        assert d.stale_streak == 0
+
+    def test_stale_after_3_identical(self):
+        """3 consecutive identical drifts → is_stale on 3rd."""
+        from subagent_pipeline.opinion_tracker import OpinionDrift, DailySnapshot, compute_drift, build_watchlist_report
+
+        # Create 4 identical snapshots → 3 drifts, all "stable"
+        snaps = []
+        for i in range(4):
+            snaps.append(DailySnapshot(
+                ticker="601985.SS", ticker_name="中国核电",
+                trade_date=f"2026-03-{10+i:02d}",
+                action="BUY", confidence=0.75,
+                market_score=2, fundamental_score=1,
+                news_score=1, sentiment_score=1,
+                risk_score=4,
+            ))
+
+        # Compute drifts manually (as build_watchlist_report does)
+        drifts = []
+        for i in range(1, len(snaps)):
+            drifts.append(compute_drift(snaps[i-1], snaps[i]))
+
+        # Apply stale detection (same logic as build_watchlist_report)
+        _STALE_THRESHOLD = 3
+        for i, dr in enumerate(drifts):
+            same_action = not dr.action_changed
+            small_conf = abs(dr.confidence_delta) < 2.0
+            same_pillars = (dr.market_score_delta == 0
+                            and dr.fundamental_score_delta == 0
+                            and dr.news_score_delta == 0
+                            and dr.sentiment_score_delta == 0)
+            if same_action and small_conf and same_pillars:
+                prev_streak = drifts[i-1].stale_streak if i > 0 else 0
+                dr.stale_streak = prev_streak + 1
+            else:
+                dr.stale_streak = 0
+            dr.is_stale = dr.stale_streak >= _STALE_THRESHOLD
+
+        assert len(drifts) == 3
+        assert drifts[0].stale_streak == 1
+        assert drifts[0].is_stale is False
+        assert drifts[1].stale_streak == 2
+        assert drifts[1].is_stale is False
+        assert drifts[2].stale_streak == 3
+        assert drifts[2].is_stale is True
+
+    def test_stale_resets_on_change(self):
+        from subagent_pipeline.opinion_tracker import OpinionDrift, DailySnapshot, compute_drift
+
+        snaps = []
+        for i in range(5):
+            action = "BUY" if i < 3 else "SELL"
+            snaps.append(DailySnapshot(
+                ticker="601985.SS", ticker_name="中国核电",
+                trade_date=f"2026-03-{10+i:02d}",
+                action=action, confidence=0.75,
+                market_score=2, fundamental_score=1,
+                news_score=1, sentiment_score=1,
+            ))
+
+        drifts = []
+        for i in range(1, len(snaps)):
+            drifts.append(compute_drift(snaps[i-1], snaps[i]))
+
+        # Apply stale detection
+        for i, dr in enumerate(drifts):
+            same_action = not dr.action_changed
+            small_conf = abs(dr.confidence_delta) < 2.0
+            same_pillars = (dr.market_score_delta == 0
+                            and dr.fundamental_score_delta == 0
+                            and dr.news_score_delta == 0
+                            and dr.sentiment_score_delta == 0)
+            if same_action and small_conf and same_pillars:
+                prev_streak = drifts[i-1].stale_streak if i > 0 else 0
+                dr.stale_streak = prev_streak + 1
+            else:
+                dr.stale_streak = 0
+            dr.is_stale = dr.stale_streak >= 3
+
+        # Drifts 0,1 are identical (BUY→BUY), drift 2 changes (BUY→SELL), drift 3 same (SELL→SELL)
+        assert drifts[0].stale_streak == 1
+        assert drifts[1].stale_streak == 2
+        assert drifts[2].stale_streak == 0  # Reset on action change
+        assert drifts[3].stale_streak == 1  # Start new streak
+
+    def test_watchlist_report_has_stale_signals(self):
+        from subagent_pipeline.opinion_tracker import WatchlistReport
+        r = WatchlistReport()
+        assert r.stale_signals == []

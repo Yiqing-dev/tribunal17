@@ -132,6 +132,10 @@ class BacktestSummary:
     # Per-action breakdown
     action_breakdown: Dict[str, Dict] = field(default_factory=dict)
 
+    # Shadow VETO analysis
+    shadow_veto_count: int = 0
+    shadow_veto_wins: int = 0
+
     def to_dict(self) -> Dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
 
@@ -314,11 +318,13 @@ def evaluate_signal(
     config: BacktestConfig = None,
     forward_bars: List[Dict] = None,
     signal_close: float = 0.0,
+    shadow_direction: str = "",
 ) -> BacktestResult:
     """Evaluate a single signal against forward price data.
 
     If forward_bars is None, fetches from Sina.
     If signal_close is 0, fetches from Sina.
+    If shadow_direction is set, override the inferred direction (for VETO shadow analysis).
     """
     config = config or BacktestConfig()
 
@@ -337,6 +343,20 @@ def evaluate_signal(
 
     # Infer expected direction
     result.direction_expected = infer_direction(action, confidence)
+
+    # VETO signals: skip evaluation entirely (no trade = no P&L)
+    # Unless shadow_direction is provided for shadow VETO analysis.
+    if result.direction_expected == "abstain" and not shadow_direction:
+        result.direction_correct = None
+        result.outcome = "neutral"
+        result.stop_loss = 0.0
+        result.take_profit = 0.0
+        result.eval_status = "skipped_veto"
+        return result
+
+    # Shadow VETO: override direction for hypothetical evaluation
+    if shadow_direction:
+        result.direction_expected = shadow_direction
 
     # Fetch prices if not provided
     if signal_close <= 0:
@@ -407,10 +427,10 @@ def evaluate_signal(
     elif result.direction_expected == "flat":
         if abs(result.stock_return_pct) <= neutral_band:
             result.direction_correct = True
-            result.outcome = "neutral"
+            result.outcome = "win"
         else:
             result.direction_correct = False
-            result.outcome = "neutral"
+            result.outcome = "loss"
     elif result.direction_expected == "abstain":
         # VETO signals: refuse to trade, not a directional bet
         result.direction_correct = None
@@ -418,11 +438,19 @@ def evaluate_signal(
     else:
         result.outcome = "neutral"
 
-    # Stop-loss / take-profit hits
-    if stop_loss > 0:
-        result.hit_stop_loss = result.min_low <= stop_loss
-    if take_profit > 0:
-        result.hit_take_profit = result.max_high >= take_profit
+    # Stop-loss / take-profit hits (direction-aware)
+    if result.direction_expected == "down":
+        # SELL: SL is above entry (price rising = loss), TP is below entry (price falling = profit)
+        if stop_loss > 0:
+            result.hit_stop_loss = result.max_high >= stop_loss
+        if take_profit > 0:
+            result.hit_take_profit = result.min_low <= take_profit
+    elif result.direction_expected == "up":
+        # BUY: SL is below entry, TP is above entry
+        if stop_loss > 0:
+            result.hit_stop_loss = result.min_low <= stop_loss
+        if take_profit > 0:
+            result.hit_take_profit = result.max_high >= take_profit
 
     if result.hit_stop_loss and result.hit_take_profit:
         result.first_hit = "ambiguous"
@@ -433,7 +461,7 @@ def evaluate_signal(
     else:
         result.first_hit = "neither"
 
-    result.eval_status = "completed"
+    result.eval_status = "shadow_veto" if shadow_direction else "completed"
     return result
 
 
@@ -459,10 +487,14 @@ def compute_summary(
         insufficient=len(insufficient),
     )
 
+    # Count skipped VETOs into veto_count (not in "completed" pool)
+    skipped_veto = [r for r in results if r.eval_status == "skipped_veto"]
+    summary.veto_count = len(skipped_veto)
+
     if not completed:
         return summary
 
-    # Action counts
+    # Action counts (from completed signals only)
     for r in completed:
         a = r.action.upper()
         if a == "BUY":
@@ -529,6 +561,11 @@ def compute_summary(
             "loss_count": len(action_losses),
             "win_rate_pct": round(len(action_wins) / ad * 100, 1) if ad > 0 else 0.0,
         }
+
+    # Shadow VETO analysis
+    shadow_results = [r for r in results if r.eval_status == "shadow_veto"]
+    summary.shadow_veto_count = len(shadow_results)
+    summary.shadow_veto_wins = sum(1 for r in shadow_results if r.outcome == "win")
 
     return summary
 
@@ -660,15 +697,9 @@ def run_backtest(
         results.append(result)
 
     # Normalize tickers: ensure suffix is present
+    from subagent_pipeline.signal_ledger import normalize_ticker
     for r in results:
-        bare = r.ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
-        if r.ticker == bare and bare.isdigit():
-            if bare.startswith("6"):
-                r.ticker = f"{bare}.SS"
-            elif bare.startswith(("0", "3")):
-                r.ticker = f"{bare}.SZ"
-            elif bare.startswith(("8", "4", "9")):
-                r.ticker = f"{bare}.BJ"
+        r.ticker = normalize_ticker(r.ticker)
 
     # Deduplicate: keep latest run per ticker+date (by trace timestamp)
     seen = {}
@@ -688,8 +719,34 @@ def run_backtest(
     results = list(seen.values())
     results.sort(key=lambda r: r.trade_date, reverse=True)
 
-    # Compute summaries
-    overall = compute_summary(results, scope="overall", config=config)
+    # Shadow VETO evaluation: re-evaluate VETO signals with their pre-veto direction
+    shadow_results: List[BacktestResult] = []
+    for r in results:
+        if r.eval_status != "skipped_veto":
+            continue
+        # Determine pre-veto direction from the trace
+        trace_d = _run_timestamps.get(r.run_id)  # reuse cached timestamp check
+        pre_veto_action = ""
+        for entry in store.list_runs(limit=500):
+            if entry.get("run_id") == r.run_id:
+                trace = store.load(r.run_id)
+                if trace:
+                    pre_veto_action = getattr(trace, "pre_veto_action", "")
+                break
+        if pre_veto_action and pre_veto_action.upper() in ("BUY", "SELL"):
+            shadow_dir = infer_direction(pre_veto_action)
+            shadow_r = evaluate_signal(
+                run_id=r.run_id, ticker=r.ticker, ticker_name=r.ticker_name,
+                trade_date=r.trade_date, action=r.action, confidence=r.confidence,
+                was_vetoed=True, stop_loss=r.stop_loss, take_profit=r.take_profit,
+                config=config, forward_bars=None if fetch_prices else [],
+                signal_close=0.0, shadow_direction=shadow_dir,
+            )
+            shadow_results.append(shadow_r)
+
+    # Compute summaries (include shadow results for shadow counts)
+    all_for_summary = results + shadow_results
+    overall = compute_summary(all_for_summary, scope="overall", config=config)
 
     per_ticker = {}
     ticker_groups: Dict[str, List[BacktestResult]] = {}
@@ -700,7 +757,7 @@ def run_backtest(
 
     report = BacktestReport(
         config=config,
-        results=results,
+        results=results + shadow_results,
         overall_summary=overall,
         per_ticker_summaries=per_ticker,
         generated_at=datetime.now().isoformat(),
@@ -1082,6 +1139,17 @@ def generate_multi_window_report(
             )
         html.append('</tbody></table>')
 
+        # HOLD performance warning (Bug 11)
+        hold_bd_mw = s.action_breakdown.get("HOLD")
+        if hold_bd_mw and hold_bd_mw.get("count", 0) >= 2:
+            hold_wr_mw = hold_bd_mw.get("win_rate_pct", 0.0)
+            if hold_wr_mw < 40.0:
+                html.append(
+                    f'<div style="background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);'
+                    f'border-radius:10px;padding:12px 16px;margin:12px 0;color:#fbbf24;">'
+                    f'<strong>&#9888; HOLD信号表现预警</strong>: 胜率仅 {hold_wr_mw:.1f}%，低于40%阈值。</div>'
+                )
+
     # ── Section 4: Per-date benchmark comparison ──
     if multi.benchmark_returns and first_rpt:
         w0 = multi.windows[0]
@@ -1114,6 +1182,19 @@ def generate_multi_window_report(
                         f'<td>{avg_ret:+.2f}%</td><td>—</td><td>—</td></tr>'
                     )
             html.append('</tbody></table>')
+
+    # ── Section 4b: Cumulative return chart (with benchmark) ──
+    if first_rpt:
+        chart_completed = [r for r in first_rpt.results if r.eval_status == "completed"]
+        if chart_completed:
+            html.append(
+                '<div class="reveal reveal-d2">'
+                + _cumulative_return_svg(
+                    chart_completed,
+                    benchmark_returns=multi.benchmark_returns or None,
+                )
+                + '</div>'
+            )
 
     # ── Section 5: Signal detail (first window) ──
     if first_rpt:
@@ -1203,10 +1284,11 @@ def generate_backtest_report(
         f'中性区间 ±{report.config.neutral_band_pct}% · {gen_date}</div>'
         f'</div><div>'
         f'<div class="summary-row">'
-        + _card("总信号数", str(s.total_signals))
-        + _card("已评估", str(s.completed))
+        + _card("总信号数", str(s.total_signals), "kpi-secondary")
+        + _card("已评估", str(s.completed), "kpi-secondary")
         + _card("平均收益",
-                f"{s.avg_stock_return_pct:+.2f}%" if s.completed else "—")
+                f"{s.avg_stock_return_pct:+.2f}%" if s.completed else "—",
+                "kpi-primary")
         + '</div></div></div></div>'
     )
 
@@ -1254,6 +1336,30 @@ def generate_backtest_report(
                 f'<td class="num">{bd["win_rate_pct"]:.1f}%</td></tr>'
             )
         html_parts.append('</tbody></table>')
+
+        # HOLD performance warning (Bug 11)
+        hold_bd = s.action_breakdown.get("HOLD")
+        if hold_bd and hold_bd.get("count", 0) >= 2:
+            hold_wr = hold_bd.get("win_rate_pct", 0.0)
+            if hold_wr < 40.0:
+                html_parts.append(
+                    f'<div style="background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);'
+                    f'border-radius:10px;padding:12px 16px;margin:12px 0;color:#fbbf24;">'
+                    f'<strong>&#9888; HOLD信号表现预警</strong>: 胜率仅 {hold_wr:.1f}%，低于40%阈值。'
+                    f'共 {hold_bd["count"]} 次HOLD信号，建议关注HOLD决策的参考价值。</div>'
+                )
+
+        # Shadow VETO analysis section (Bug 12)
+        if s.shadow_veto_count > 0:
+            sw = s.shadow_veto_wins
+            sc = s.shadow_veto_count
+            sw_pct = round(sw / sc * 100, 1) if sc > 0 else 0.0
+            html_parts.append(
+                f'<div style="background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);'
+                f'border-radius:10px;padding:12px 16px;margin:12px 0;color:#a78bfa;">'
+                f'<strong>VETO影子分析</strong>: {sc} 个被否决信号的假设回测中，{sw} 个本可盈利'
+                f'（影子胜率 {sw_pct:.1f}%）。此数据仅供参考，不改变否决决策。</div>'
+            )
 
     # ── Per-ticker summary ──
     if report.per_ticker_summaries:
@@ -1350,8 +1456,9 @@ def _esc(text: str) -> str:
     )
 
 
-def _card(title: str, value: str) -> str:
-    return f'<div class="card"><div class="card-title">{_esc(title)}</div><div class="card-value">{_esc(value)}</div></div>'
+def _card(title: str, value: str, tier: str = "") -> str:
+    cls = f"card {tier}" if tier else "card"
+    return f'<div class="{cls}"><div class="card-title">{_esc(title)}</div><div class="card-value">{_esc(value)}</div></div>'
 
 
 # ── SVG Helpers ─────────────────────────────────────────────────────────
@@ -1387,8 +1494,9 @@ def _donut_gauge(value_pct: float, label: str, color: str = "var(--green)",
     )
 
 
-def _cumulative_return_svg(results: list, w: int = 660, h: int = 160) -> str:
-    """SVG cumulative return curve from completed BacktestResults."""
+def _cumulative_return_svg(results: list, benchmark_returns: dict = None,
+                           w: int = 660, h: int = 180) -> str:
+    """SVG cumulative return curve with optional benchmark + drawdown shading."""
     sorted_r = sorted(results, key=lambda r: r.trade_date)
     if not sorted_r:
         return ""
@@ -1398,12 +1506,29 @@ def _cumulative_return_svg(results: list, w: int = 660, h: int = 160) -> str:
         running += r.stock_return_pct
         cum.append((r.trade_date, running))
 
-    pad_x, pad_y = 50, 20
+    # Build benchmark cumulative series (if available)
+    bench_cum = []
+    if benchmark_returns:
+        b_running = 0.0
+        for date, val in cum:
+            b_ret = benchmark_returns.get(date, {})
+            # Use smallest window available as single-period return proxy
+            b_pct = None
+            for wk in sorted(b_ret.keys()):
+                b_pct = b_ret[wk]
+                break
+            if b_pct is not None:
+                b_running += b_pct
+            bench_cum.append((date, b_running))
+
+    pad_x, pad_y = 50, 24
     plot_w = w - pad_x - 10
     plot_h = h - pad_y * 2
-    vals = [c[1] for c in cum]
-    v_min = min(min(vals), 0)
-    v_max = max(max(vals), 0)
+    all_vals = [c[1] for c in cum]
+    if bench_cum:
+        all_vals += [c[1] for c in bench_cum]
+    v_min = min(min(all_vals), 0)
+    v_max = max(max(all_vals), 0)
     v_range = v_max - v_min or 1
 
     def sx(i: int) -> float:
@@ -1414,42 +1539,80 @@ def _cumulative_return_svg(results: list, w: int = 660, h: int = 160) -> str:
 
     zero_y = sy(0)
     pts = " ".join(f"{sx(i):.1f},{sy(v):.1f}" for i, (_, v) in enumerate(cum))
-    # Area fill: close polygon along zero line
     area = pts + f" {sx(len(cum) - 1):.1f},{zero_y:.1f} {sx(0):.1f},{zero_y:.1f}"
-    final_color = "var(--green)" if cum[-1][1] >= 0 else "var(--red)"
+    final_color = "#34d399" if cum[-1][1] >= 0 else "#f87171"
 
-    # Date labels (first and last)
+    # Drawdown shading: area between running peak and cumulative line
+    dd_path = ""
+    peak = 0.0
+    dd_points = []
+    for i, (_, v) in enumerate(cum):
+        peak = max(peak, v)
+        if peak > v:  # in drawdown
+            dd_points.append((i, peak, v))
+        else:
+            if dd_points:
+                # Close the drawdown polygon
+                poly = " ".join(f"{sx(j):.1f},{sy(pv):.1f}" for j, pv, _ in dd_points)
+                poly += " " + " ".join(f"{sx(j):.1f},{sy(cv):.1f}" for j, _, cv in reversed(dd_points))
+                dd_path += f'<polygon points="{poly}" fill="#f87171" opacity="0.08"/>'
+                dd_points = []
+            dd_points = []
+    if dd_points:
+        poly = " ".join(f"{sx(j):.1f},{sy(pv):.1f}" for j, pv, _ in dd_points)
+        poly += " " + " ".join(f"{sx(j):.1f},{sy(cv):.1f}" for j, _, cv in reversed(dd_points))
+        dd_path += f'<polygon points="{poly}" fill="#f87171" opacity="0.08"/>'
+
+    # Benchmark polyline
+    bench_svg = ""
+    if bench_cum and len(bench_cum) == len(cum):
+        b_pts = " ".join(f"{sx(i):.1f},{sy(v):.1f}" for i, (_, v) in enumerate(bench_cum))
+        bench_svg = f'<polyline points="{b_pts}" fill="none" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4 3" stroke-linejoin="round" opacity=".7"/>'
+
+    # Legend
+    legend_y = 12
+    legend_svg = (
+        f'<line x1="{pad_x}" y1="{legend_y}" x2="{pad_x + 20}" y2="{legend_y}" stroke="{final_color}" stroke-width="2"/>'
+        f'<text x="{pad_x + 24}" y="{legend_y + 3}" fill="#8fa3b8" font-size="9">\u7b56\u7565</text>'
+    )
+    if bench_svg:
+        legend_svg += (
+            f'<line x1="{pad_x + 60}" y1="{legend_y}" x2="{pad_x + 80}" y2="{legend_y}" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4 3"/>'
+            f'<text x="{pad_x + 84}" y="{legend_y + 3}" fill="#8fa3b8" font-size="9">\u6caa\u6df1300</text>'
+        )
+
     d_first = cum[0][0][-5:] if cum[0][0] else ""
     d_last = cum[-1][0][-5:] if cum[-1][0] else ""
 
     return (
         f'<div class="cum-chart card">'
-        f'<h3>累计收益曲线</h3>'
+        f'<h3>\u7d2f\u8ba1\u6536\u76ca\u66f2\u7ebf</h3>'
         f'<svg viewBox="0 0 {w} {h}" width="100%" height="auto" '
         f'style="max-height:{h}px">'
         f'<defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">'
         f'<stop offset="0%" stop-color="{final_color}" stop-opacity="0.25"/>'
         f'<stop offset="100%" stop-color="{final_color}" stop-opacity="0.02"/>'
         f'</linearGradient></defs>'
+        f'{legend_svg}'
         f'<line x1="{pad_x}" y1="{zero_y:.1f}" x2="{w - 10}" y2="{zero_y:.1f}" '
         f'stroke="rgba(255,255,255,0.1)" stroke-dasharray="4 3"/>'
+        f'{dd_path}'
         f'<polygon points="{area}" fill="url(#cg)"/>'
+        f'{bench_svg}'
         f'<polyline points="{pts}" fill="none" stroke="{final_color}" '
         f'stroke-width="2" stroke-linejoin="round"/>'
-        # Y-axis labels
         f'<text x="{pad_x - 4}" y="{sy(v_max):.1f}" text-anchor="end" '
-        f'fill="var(--muted)" font-size="9" font-family="var(--mono)">'
+        f'fill="#8fa3b8" font-size="9" font-family="var(--mono)">'
         f'{v_max:+.1f}%</text>'
         f'<text x="{pad_x - 4}" y="{sy(v_min):.1f}" text-anchor="end" '
-        f'fill="var(--muted)" font-size="9" font-family="var(--mono)">'
+        f'fill="#8fa3b8" font-size="9" font-family="var(--mono)">'
         f'{v_min:+.1f}%</text>'
         f'<text x="{pad_x - 4}" y="{zero_y:.1f}" text-anchor="end" '
-        f'fill="var(--muted)" font-size="9" font-family="var(--mono)">0%</text>'
-        # X-axis date labels
+        f'fill="#8fa3b8" font-size="9" font-family="var(--mono)">0%</text>'
         f'<text x="{sx(0):.1f}" y="{h - 2}" text-anchor="start" '
-        f'fill="var(--muted)" font-size="9">{_esc(d_first)}</text>'
+        f'fill="#8fa3b8" font-size="9">{_esc(d_first)}</text>'
         f'<text x="{sx(len(cum) - 1):.1f}" y="{h - 2}" text-anchor="end" '
-        f'fill="var(--muted)" font-size="9">{_esc(d_last)}</text>'
+        f'fill="#8fa3b8" font-size="9">{_esc(d_last)}</text>'
         f'</svg></div>'
     )
 
@@ -1577,14 +1740,22 @@ _BT_HTML_HEAD = """<!DOCTYPE html>
 <style>
 :root {
   --bg: #070e1b; --fg: #dde6f0; --card: rgba(11, 20, 35, 0.85);
-  --border: rgba(100, 150, 180, 0.14); --green: #34d399; --red: #f87171;
-  --yellow: #fbbf24; --blue: #60a5fa; --purple: #a78bfa; --muted: #7e91a7; --white: #f1f7fd;
+  --border: rgba(100, 150, 180, 0.18); --green: #34d399; --red: #f87171;
+  --yellow: #fbbf24; --blue: #60a5fa; --purple: #a78bfa; --muted: #8fa3b8; --white: #f1f7fd;
   --surface: rgba(14, 24, 40, 0.92); --accent: #f59e0b;
   --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
   --signal-buy: var(--green);
   --signal-sell: var(--red);
   --signal-hold: var(--yellow);
   --signal-veto: var(--red);
+  --state-success: var(--green); --state-danger: var(--red);
+  --state-warning: var(--yellow); --state-info: var(--blue);
+  --elev-1: 0 4px 12px rgba(0,0,0,0.15);
+  --elev-2: 0 12px 28px rgba(0,0,0,0.25);
+  --elev-3: 0 22px 54px rgba(0,0,0,0.35);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 200ms; --dur-med: 360ms;
+  --sp-1: 0.5rem; --sp-2: 1rem; --sp-3: 1.5rem; --sp-4: 2rem; --sp-6: 3rem;
 }
 * { margin:0; padding:0; box-sizing:border-box; }
 ::selection { background: rgba(96, 165, 250, 0.25); color: var(--white); }
@@ -1727,8 +1898,35 @@ button:focus-visible, [role="button"]:focus-visible {
 }
 
 /* ── V7: Table scan ── */
-.bt-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.015); }
+.bt-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.025); }
 .bt-table th { position: sticky; top: 0; z-index: 1; }
+
+/* ── S1: Contrast boost ── */
+.card-title { font-weight: 500; }
+
+/* ── S4: Elevation system ── */
+.card { box-shadow: var(--elev-1); }
+.card:hover { box-shadow: var(--elev-2); }
+.hero { box-shadow: var(--elev-3); }
+
+/* ── S5: Unified timing ── */
+.card {
+  transition: transform var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+.reveal { animation: card-rise var(--dur-med) var(--ease-out) both; }
+
+/* ── S2: KPI hierarchy ── */
+.kpi-primary .card-value { font-size: 2.4rem; text-shadow: 0 0 24px currentColor; }
+.kpi-secondary .card-value { font-size: 1.4rem; opacity: .85; }
+
+/* ── S6: Table readability ── */
+.bt-table tbody tr:hover { background: rgba(255,255,255,0.045); }
+
+/* ── S3: 8px spacing rhythm ── */
+.card { padding: var(--sp-3); margin-bottom: var(--sp-2); }
+.hero { padding: var(--sp-4); margin-bottom: var(--sp-3); }
+.container { padding: var(--sp-4) var(--sp-3) var(--sp-6); }
 
 @media print {
   :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666;--white:#111;--accent:#333}

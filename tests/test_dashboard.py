@@ -698,6 +698,160 @@ class TestSnapshotStructured:
         assert view.action_class  # has a CSS class
 
 
+class TestPillarFallbackToTradecard:
+    """P1: pillar_checklist falls back to tradecard.pillars when analyst nodes lack pillar_score."""
+
+    @pytest.fixture
+    def trace_with_tradecard_pillars(self, tmp_path):
+        """Trace where analyst nodes have NO pillar_score but ResearchOutput has tradecard.pillars."""
+        run_id = "test-pillar-fallback"
+        now = datetime.now()
+        nodes = [
+            NodeTrace(run_id=run_id, node_name="Market Analyst", seq=0,
+                      timestamp=now, duration_ms=100,
+                      output_hash="m1", output_excerpt="Market report..."),
+            NodeTrace(run_id=run_id, node_name="Fundamentals Analyst", seq=0,
+                      timestamp=now, duration_ms=100,
+                      output_hash="f1", output_excerpt="Fundamentals..."),
+            NodeTrace(run_id=run_id, node_name="News Analyst", seq=0,
+                      timestamp=now, duration_ms=100,
+                      output_hash="n1", output_excerpt="News..."),
+            NodeTrace(run_id=run_id, node_name="Social Analyst", seq=0,
+                      timestamp=now, duration_ms=100,
+                      output_hash="s1", output_excerpt="Social..."),
+            NodeTrace(run_id=run_id, node_name="Research Manager", seq=5,
+                      timestamp=now, duration_ms=200,
+                      output_hash="pm1", output_excerpt="PM...",
+                      research_action="BUY", confidence=0.70),
+            NodeTrace(run_id=run_id, node_name="Risk Judge", seq=6,
+                      timestamp=now, duration_ms=100,
+                      output_hash="rj1", output_excerpt="Risk...",
+                      research_action="BUY", confidence=0.65,
+                      structured_data={"risk_cleared": True}),
+            NodeTrace(run_id=run_id, node_name="ResearchOutput", seq=7,
+                      timestamp=now, duration_ms=100,
+                      output_hash="ro1", output_excerpt="Output...",
+                      structured_data={
+                          "tradecard": {
+                              "pillars": {
+                                  "market_score": 2,
+                                  "fundamental_score": 1,
+                                  "macro_score": 0,
+                                  "sentiment_score": 1,
+                              },
+                          },
+                      }),
+        ]
+        trace = RunTrace(
+            run_id=run_id, ticker="601985.SS", trade_date="2026-03-26",
+            started_at=now, market="cn", language="zh", llm_provider="test",
+            node_traces=nodes,
+        )
+        trace.finalize()
+        store = ReplayStore(storage_dir=str(tmp_path))
+        store.save(trace)
+        return ReplayService(store=store), run_id
+
+    def test_fallback_populates_4_pillars(self, trace_with_tradecard_pillars):
+        service, run_id = trace_with_tradecard_pillars
+        view = SnapshotView.build(service, run_id)
+        assert len(view.pillar_checklist) == 4
+        pillars_by_name = {p["pillar"]: p for p in view.pillar_checklist}
+        assert pillars_by_name["\u6280\u672f\u9762"]["score"] == 2
+        assert pillars_by_name["\u57fa\u672c\u9762"]["score"] == 1
+        assert pillars_by_name["\u6d88\u606f\u9762"]["score"] == 0
+        assert pillars_by_name["\u60c5\u7eea\u9762"]["score"] == 1
+
+    def test_fallback_skips_existing_analyst_scores(self, tmp_path):
+        """When some analyst nodes have scores, fallback only fills gaps."""
+        run_id = "test-pillar-partial"
+        now = datetime.now()
+        nodes = [
+            NodeTrace(run_id=run_id, node_name="Market Analyst", seq=0,
+                      timestamp=now, duration_ms=100,
+                      output_hash="m2", output_excerpt="Market report...",
+                      structured_data={"pillar_score": 2}),
+            NodeTrace(run_id=run_id, node_name="Fundamentals Analyst", seq=0,
+                      timestamp=now, duration_ms=100,
+                      output_hash="f2", output_excerpt="Fundamentals..."),
+            NodeTrace(run_id=run_id, node_name="News Analyst", seq=0,
+                      timestamp=now, duration_ms=100,
+                      output_hash="n2", output_excerpt="News..."),
+            NodeTrace(run_id=run_id, node_name="Social Analyst", seq=0,
+                      timestamp=now, duration_ms=100,
+                      output_hash="s2", output_excerpt="Social..."),
+            NodeTrace(run_id=run_id, node_name="Research Manager", seq=5,
+                      timestamp=now, duration_ms=200,
+                      output_hash="pm2", output_excerpt="PM...",
+                      research_action="HOLD", confidence=0.60),
+            NodeTrace(run_id=run_id, node_name="Risk Judge", seq=6,
+                      timestamp=now, duration_ms=100,
+                      output_hash="rj2", output_excerpt="Risk...",
+                      research_action="HOLD", confidence=0.60,
+                      structured_data={"risk_cleared": True}),
+            NodeTrace(run_id=run_id, node_name="ResearchOutput", seq=7,
+                      timestamp=now, duration_ms=100,
+                      output_hash="ro2", output_excerpt="Output...",
+                      structured_data={
+                          "tradecard": {
+                              "pillars": {
+                                  "market_score": 0,
+                                  "fundamental_score": 1,
+                                  "news_score": 2,
+                                  "sentiment_score": 0,
+                              },
+                          },
+                      }),
+        ]
+        trace = RunTrace(
+            run_id=run_id, ticker="300750.SZ", trade_date="2026-03-26",
+            started_at=now, market="cn", language="zh", llm_provider="test",
+            node_traces=nodes,
+        )
+        trace.finalize()
+        store = ReplayStore(storage_dir=str(tmp_path))
+        store.save(trace)
+        svc = ReplayService(store=store)
+        view = SnapshotView.build(svc, run_id)
+        assert len(view.pillar_checklist) == 4
+        pillars_by_name = {p["pillar"]: p for p in view.pillar_checklist}
+        # Market Analyst had score=2 from analyst node — should keep that
+        assert pillars_by_name["\u6280\u672f\u9762"]["score"] == 2
+        # Others filled from tradecard
+        assert pillars_by_name["\u57fa\u672c\u9762"]["score"] == 1
+        assert pillars_by_name["\u6d88\u606f\u9762"]["score"] == 2
+        assert pillars_by_name["\u60c5\u7eea\u9762"]["score"] == 0
+
+    def test_no_tradecard_no_crash(self, tmp_path):
+        """Without tradecard or pillar_score, pillar_checklist is empty — no crash."""
+        run_id = "test-pillar-empty"
+        now = datetime.now()
+        nodes = [
+            NodeTrace(run_id=run_id, node_name="Market Analyst", seq=0,
+                      timestamp=now, duration_ms=100,
+                      output_hash="m3", output_excerpt="..."),
+            NodeTrace(run_id=run_id, node_name="Research Manager", seq=5,
+                      timestamp=now, duration_ms=200,
+                      output_hash="pm3", output_excerpt="...",
+                      research_action="HOLD", confidence=0.50),
+            NodeTrace(run_id=run_id, node_name="Risk Judge", seq=6,
+                      timestamp=now, duration_ms=100,
+                      output_hash="rj3", output_excerpt="...",
+                      research_action="HOLD", confidence=0.50),
+        ]
+        trace = RunTrace(
+            run_id=run_id, ticker="000001.SZ", trade_date="2026-03-26",
+            started_at=now, market="cn", language="zh", llm_provider="test",
+            node_traces=nodes,
+        )
+        trace.finalize()
+        store = ReplayStore(storage_dir=str(tmp_path))
+        store.save(trace)
+        svc = ReplayService(store=store)
+        view = SnapshotView.build(svc, run_id)
+        assert view.pillar_checklist == []
+
+
 class TestResearchStructured:
     """Phase 2: ResearchView populates claim text from structured_data."""
 

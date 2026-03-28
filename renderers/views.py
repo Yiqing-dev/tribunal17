@@ -206,6 +206,7 @@ class RunSummaryView:
     error_count: int = 0
     research_action: str = ""
     was_vetoed: bool = False
+    veto_source: str = ""              # "agent_veto" | "risk_gate" | ""
     compliance_status: str = ""
     status_badge: str = ""   # success / warning / error
 
@@ -238,6 +239,7 @@ class RunSummaryView:
             error_count=error_count,
             research_action=entry.get("research_action", ""),
             was_vetoed=was_vetoed,
+            veto_source=entry.get("veto_source", ""),
             compliance_status=compliance,
             status_badge=badge,
         )
@@ -401,6 +403,7 @@ class WarRoomView:
     research_action: str = ""
     confidence: float = -1.0
     was_vetoed: bool = False
+    veto_source: str = ""
     risk_score: Optional[int] = None
     risk_cleared: Optional[bool] = None
 
@@ -446,6 +449,7 @@ class WarRoomView:
             research_action=trace.research_action,
             confidence=trace.final_confidence,
             was_vetoed=trace.was_vetoed,
+            veto_source=getattr(trace, "veto_source", ""),
             risk_score=key_nodes.get("Risk Judge", NodeTraceView()).risk_score,
             risk_cleared=key_nodes.get("Risk Judge", NodeTraceView()).risk_cleared,
             synthesis_node=key_nodes.get("Research Manager"),
@@ -505,6 +509,7 @@ class SnapshotView:
     compliance_status: str = ""
     freshness_ok: bool = True
     was_vetoed: bool = False
+    veto_source: str = ""
 
     # Bull vs Bear strength (for bar chart)
     bull_strength: int = 0          # number of bull claims
@@ -742,6 +747,45 @@ class SnapshotView:
                     "label": first_line,
                 })
 
+        # ── Fallback: fill missing pillars from tradecard.pillars ──
+        if len(pillar_checklist) < 4:
+            _fb_out = service.show_node_output(run_id, "ResearchOutput")
+            if _fb_out:
+                _fb_pillars = (
+                    (_fb_out.get("structured_data") or {})
+                    .get("tradecard", {})
+                    .get("pillars", {})
+                )
+                if _fb_pillars:
+                    _existing = {p["pillar"] for p in pillar_checklist}
+                    _fb_map = [
+                        ("market_score", "\u6280\u672f\u9762"),
+                        ("fundamental_score", "\u57fa\u672c\u9762"),
+                        ("news_score", "\u6d88\u606f\u9762"),
+                        ("sentiment_score", "\u60c5\u7eea\u9762"),
+                    ]
+                    for _key, _lbl in _fb_map:
+                        if _lbl in _existing:
+                            continue
+                        _raw = _fb_pillars.get(_key)
+                        if _raw is None and _key == "news_score":
+                            _raw = _fb_pillars.get("macro_score")
+                        if _raw is None:
+                            continue
+                        try:
+                            _sc = int(_raw)
+                        except (ValueError, TypeError):
+                            continue
+                        if _sc < 0:
+                            continue
+                        _sc = min(max(_sc, 0), 2)
+                        pillar_checklist.append({
+                            "pillar": _lbl,
+                            "score": _sc,
+                            "emoji": PILLAR_EMOJI.get(_sc, "\u26aa"),
+                            "label": "",
+                        })
+
         # ── Risk Debate Summary (Feature 2) ──
         risk_debate_summary: List[Dict] = []
         _debater_map = [
@@ -813,6 +857,7 @@ class SnapshotView:
             compliance_status=trace.compliance_status or "",
             freshness_ok=getattr(trace, "freshness_ok", True),
             was_vetoed=trace.was_vetoed,
+            veto_source=getattr(trace, "veto_source", ""),
             bull_strength=bull_claims,
             bear_strength=bear_claims,
             metrics_fallback=metrics_fb,
@@ -848,6 +893,7 @@ class ResearchView:
     action_explanation: str = ""
     confidence: float = -1.0
     was_vetoed: bool = False
+    veto_source: str = ""
     risk_score: Optional[int] = None
     risk_cleared: Optional[bool] = None
 
@@ -1061,6 +1107,7 @@ class ResearchView:
             action_explanation=explanation,
             confidence=trace.final_confidence,
             was_vetoed=trace.was_vetoed,
+            veto_source=getattr(trace, "veto_source", ""),
             risk_score=risk_out.get("risk_score"),
             risk_cleared=risk_out.get("risk_cleared"),
             bull_excerpt=bull_out.get("output_excerpt", ""),
@@ -1277,6 +1324,7 @@ class StockDivergenceRow:
     confidence: float = 0.0
     risk_cleared: bool = False
     was_vetoed: bool = False
+    veto_source: str = ""
 
     # Top bull claims (sorted by confidence desc, max 3)
     bull_claims: List[Dict] = field(default_factory=list)
@@ -1446,6 +1494,7 @@ class StockDivergenceRow:
             confidence=trace.final_confidence,
             risk_cleared=risk_out.get("risk_cleared") if risk_out else False,
             was_vetoed=trace.was_vetoed,
+            veto_source=getattr(trace, "veto_source", ""),
             bull_claims=_top_claims(bull_out),
             bear_claims=_top_claims(bear_out),
             risk_flags=risk_flags,

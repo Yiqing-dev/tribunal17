@@ -43,13 +43,13 @@ _BASE_CSS = """
   --bg: #070e1b;
   --fg: #dde6f0;
   --card: rgba(11, 20, 35, 0.85);
-  --border: rgba(100, 150, 180, 0.14);
+  --border: rgba(100, 150, 180, 0.18);
   --green: #34d399;
   --red: #f87171;
   --yellow: #fbbf24;
   --blue: #60a5fa;
   --purple: #a78bfa;
-  --muted: #7e91a7;
+  --muted: #8fa3b8;
   --white: #f1f7fd;
   --surface: rgba(14, 24, 40, 0.92);
   --accent: #f59e0b;
@@ -58,6 +58,17 @@ _BASE_CSS = """
   --signal-sell: var(--red);
   --signal-hold: var(--yellow);
   --signal-veto: var(--red);
+  --state-success: var(--green);
+  --state-danger: var(--red);
+  --state-warning: var(--yellow);
+  --state-info: var(--blue);
+  --elev-1: 0 4px 12px rgba(0,0,0,0.15);
+  --elev-2: 0 12px 28px rgba(0,0,0,0.25);
+  --elev-3: 0 22px 54px rgba(0,0,0,0.35);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 200ms;
+  --dur-med: 360ms;
+  --sp-1: 0.5rem; --sp-2: 1rem; --sp-3: 1.5rem; --sp-4: 2rem; --sp-6: 3rem;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 ::selection { background: rgba(96, 165, 250, 0.25); color: var(--white); }
@@ -518,9 +529,79 @@ thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); }
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 2rem 1rem; text-align: center; color: var(--muted);
 }
-.empty-state-icon { font-size: 2rem; margin-bottom: .6rem; opacity: .5; }
+.empty-state-icon { font-size: 2rem; margin-bottom: .6rem; opacity: .6; }
 .empty-state-title { font-size: .88rem; font-weight: 600; margin-bottom: .25rem; }
-.empty-state-hint { font-size: .78rem; opacity: .7; }
+.empty-state-hint { font-size: .78rem; opacity: .8; }
+
+/* ── S1: Contrast boost ── */
+.kpi-label, .card-title, .tl, .te, .sec-sub,
+.kpi-cell .lab, .audit-cell .al, .verdict-kpi .vk-label {
+  font-weight: 500;
+}
+
+/* ── S4: Elevation system ── */
+.card, .kpi, .trust-card { box-shadow: var(--elev-1); }
+.card:hover, .kpi:hover { box-shadow: var(--elev-2); }
+.hero { box-shadow: var(--elev-3); }
+.hm-tooltip, .prob-seg[data-tip]:hover::after { box-shadow: var(--elev-2); }
+.detail-drawer { box-shadow: var(--elev-3); }
+
+/* ── S5: Unified timing ── */
+.card, .kpi, .claim-card, .trust-card {
+  transition: transform var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.reveal { animation: card-rise var(--dur-med) var(--ease-out) both; }
+
+/* ── S2: KPI hierarchy ── */
+.kpi-primary .kpi-val, .kpi-primary .card-value {
+  font-size: 2.4rem; text-shadow: 0 0 24px currentColor;
+}
+.kpi-secondary .kpi-val, .kpi-secondary .card-value {
+  font-size: 1.4rem; opacity: .85;
+}
+
+/* ── S6: Table readability ── */
+tbody tr:nth-child(even) { background: rgba(255,255,255,0.025); }
+tbody tr:hover { background: rgba(255,255,255,0.045); }
+
+/* ── S3: 8px spacing rhythm ── */
+.card { padding: var(--sp-3); margin-bottom: var(--sp-2); }
+.hero { padding: var(--sp-4); margin-bottom: var(--sp-3); }
+.kpi-row, .trust-grid, .claim-grid { gap: var(--sp-2); }
+.kpi { padding: var(--sp-2); }
+h2 { margin: var(--sp-4) 0 var(--sp-2); }
+.container { padding: var(--sp-4) var(--sp-3) var(--sp-6); }
+
+/* ── S7: Mobile first-screen ── */
+@media (min-width: 761px) {
+  details.mobile-collapse { display: contents; }
+  details.mobile-collapse > summary { display: none; }
+}
+@media (max-width: 760px) {
+  details.mobile-collapse { margin-bottom: var(--sp-1); }
+  details.mobile-collapse > summary {
+    cursor: pointer; list-style: none;
+    padding: var(--sp-1) var(--sp-2); border-radius: 10px;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    font-size: .88rem; font-weight: 600; color: var(--fg);
+  }
+  details.mobile-collapse > summary::-webkit-details-marker { display: none; }
+  details.mobile-collapse > summary::after { content: " \u25b8"; font-size: .7em; opacity: .5; }
+  details.mobile-collapse[open] > summary::after { content: " \u25be"; }
+}
+
+/* ── F3: Heatmap toggle ── */
+.hm-toolbar { display: flex; gap: .5rem; margin-bottom: .5rem; }
+.hm-toggle { display: inline-flex; padding: .3rem .7rem; border-radius: 6px; font-size: .75rem;
+  cursor: pointer; background: rgba(255,255,255,.04); border: 1px solid var(--border);
+  color: var(--muted); transition: all var(--dur-fast) var(--ease-out); }
+.hm-toggle:hover { background: rgba(255,255,255,.07); }
+.hm-toggle.active { color: var(--blue, #60a5fa); background: rgba(96,165,250,.08);
+  border-color: rgba(96,165,250,.3); }
+.hm-leg-item { cursor: pointer; transition: opacity var(--dur-fast) var(--ease-out); }
+.hm-leg-item:hover { opacity: .85; }
 
 @media print {
   :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666;--white:#111;--accent:#333}
@@ -1034,11 +1115,11 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     hero_kpis = []
     if view.confidence >= 0:
         conf_cls = "buy" if view.confidence >= 0.7 else ("hold" if view.confidence >= 0.4 else "sell")
-        hero_kpis.append(f'<div class="kpi {conf_cls}"><span class="kpi-val">{conf_pct}%</span><span class="kpi-label">置信度</span></div>')
-    hero_kpis.append(f'<div class="kpi"><span class="kpi-val">{view.total_evidence}</span><span class="kpi-label">证据条数</span></div>')
-    hero_kpis.append(f'<div class="kpi"><span class="kpi-val">{view.attributed_rate:.0%}</span><span class="kpi-label">绑定率</span></div>')
+        hero_kpis.append(f'<div class="kpi kpi-primary {conf_cls}"><span class="kpi-val">{conf_pct}%</span><span class="kpi-label">置信度</span></div>')
+    hero_kpis.append(f'<div class="kpi kpi-secondary"><span class="kpi-val">{view.total_evidence}</span><span class="kpi-label">证据条数</span></div>')
+    hero_kpis.append(f'<div class="kpi kpi-secondary"><span class="kpi-val">{view.attributed_rate:.0%}</span><span class="kpi-label">绑定率</span></div>')
     ev_label = _evidence_strength_label(view.evidence_strength)
-    hero_kpis.append(f'<div class="kpi"><span class="kpi-val" style="font-size:1.2rem">{_esc(ev_label)}</span><span class="kpi-label">证据强度</span></div>')
+    hero_kpis.append(f'<div class="kpi kpi-secondary"><span class="kpi-val" style="font-size:1.2rem">{_esc(ev_label)}</span><span class="kpi-label">证据强度</span></div>')
 
     hero_kpi_grid = f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;">{"".join(hero_kpis)}</div>'
 
@@ -1064,7 +1145,10 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
         _status_light(view.risk_cleared or False, "风控: 通过" if view.risk_cleared else "风控: 未通过"),
         _status_light(view.compliance_status in ("allow", ""), "合规: 通过" if view.compliance_status in ("allow", "") else "合规: " + view.compliance_status),
         _status_light(view.freshness_ok, "数据: 新鲜" if view.freshness_ok else "数据: 过期"),
-        _status_light(not view.was_vetoed, "否决: 无" if not view.was_vetoed else "否决: 是"),
+        _status_light(not view.was_vetoed, "否决: 无" if not view.was_vetoed else (
+            "否决: 风控门禁" if getattr(view, "veto_source", "") == "risk_gate"
+            else ("否决: 研究否决" if getattr(view, "veto_source", "") == "agent_veto"
+                  else "否决: 是"))),
     ]
     lights_html = f"""
     <div class="status-bar reveal reveal-d1">
@@ -1143,6 +1227,12 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     risk_debate_html = _render_risk_debate_summary(view)
     signal_history_html = _render_signal_history(view)
 
+    # Wrap supporting sections for mobile collapse
+    def _mc(summary_label: str, content: str) -> str:
+        if not content or not content.strip():
+            return ""
+        return f'<details class="mobile-collapse" open><summary>{_esc(summary_label)}</summary>{content}</details>'
+
     body = f"""
     <h1>{_esc(_ticker_display(view))}</h1>
     <p class="subtitle">{_esc(view.trade_date)} &middot; 研究快照</p>
@@ -1150,16 +1240,13 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     {conclusion}
     {lights_html}
     {battle_plan_html}
-    {chart_html}
-    <div class="cols">
-      <div>{drivers_html}</div>
-      <div>{risks_html}</div>
-    </div>
-    {evidence_html}
-    {checklist_html}
-    {risk_debate_html}
-    {catalyst_html}
-    {signal_history_html}"""
+    {_mc("基本面速览", chart_html)}
+    {_mc("核心驱动 / 风险", f'<div class="cols"><div>{drivers_html}</div><div>{risks_html}</div></div>')}
+    {_mc("证据强度", evidence_html)}
+    {_mc("信号核验", checklist_html)}
+    {_mc("风控辩论", risk_debate_html)}
+    {_mc("催化剂", catalyst_html)}
+    {_mc("信号历史", signal_history_html)}"""
 
     return _html_wrap(f"{_ticker_display(view)} 研究快照 — {view.trade_date}", body, "研究快照")
 
@@ -1612,7 +1699,9 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
             if isinstance(risk, dict) and risk.get('flags'):
                 cats = risk.get('categories', [])
                 cat_str = "、".join(_esc(c) for c in cats[:3])
-                veto_str = ' <span style="color:var(--red)">→ 否决</span>' if risk.get('vetoed') else ""
+                _vs = risk.get('veto_source', '')
+                veto_label = "风控门禁" if _vs == "risk_gate" else ("研究否决" if _vs == "agent_veto" else "否决")
+                veto_str = f' <span style="color:var(--red)">→ {veto_label}</span>' if risk.get('vetoed') else ""
                 parts.append(f'风控标记 {risk["flags"]} 项（{cat_str}）{veto_str}')
 
             detail = " → ".join(parts) if parts else ""
@@ -1837,7 +1926,9 @@ def render_audit(view: AuditView) -> str:
             if isinstance(risk, dict) and risk.get('flags'):
                 cats = risk.get('categories', [])
                 cat_str = "、".join(_esc(c) for c in cats[:3])
-                veto = ' <span class="badge badge-veto">否决</span>' if risk.get('vetoed') else ""
+                _vs2 = risk.get('veto_source', '')
+                veto_label2 = "风控门禁" if _vs2 == "risk_gate" else ("研究否决" if _vs2 == "agent_veto" else "否决")
+                veto = f' <span class="badge badge-veto">{veto_label2}</span>' if risk.get('vetoed') else ""
                 risk_str = f'{risk["flags"]}项（{cat_str}）{veto}'
             else:
                 risk_str = '<span style="color:var(--muted)">—</span>'
@@ -1972,13 +2063,13 @@ _POOL_CSS = """
   --bg: #070e1b;
   --fg: #dde6f0;
   --card: rgba(11, 20, 35, 0.85);
-  --border: rgba(100, 150, 180, 0.14);
+  --border: rgba(100, 150, 180, 0.18);
   --green: #34d399;
   --red: #f87171;
   --yellow: #fbbf24;
   --blue: #60a5fa;
   --purple: #a78bfa;
-  --muted: #7e91a7;
+  --muted: #8fa3b8;
   --surface: rgba(14, 24, 40, 0.92);
   --accent: #f59e0b;
   --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
@@ -1986,6 +2077,17 @@ _POOL_CSS = """
   --signal-sell: var(--red);
   --signal-hold: var(--yellow);
   --signal-veto: var(--red);
+  --state-success: var(--green);
+  --state-danger: var(--red);
+  --state-warning: var(--yellow);
+  --state-info: var(--blue);
+  --elev-1: 0 4px 12px rgba(0,0,0,0.15);
+  --elev-2: 0 12px 28px rgba(0,0,0,0.25);
+  --elev-3: 0 22px 54px rgba(0,0,0,0.35);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 200ms;
+  --dur-med: 360ms;
+  --sp-1: 0.5rem; --sp-2: 1rem; --sp-3: 1.5rem; --sp-4: 2rem; --sp-6: 3rem;
 }
 body {
   background:
@@ -3064,6 +3166,10 @@ def render_divergence_pool(
         <div class="section-title">热力图</div>
         <div class="section-copy">点击色块查看个股详情</div>
       </div>
+      <div class="hm-toolbar">
+        <button class="hm-toggle active" id="hmModeReturn" data-mode="return">涨跌幅</button>
+        <button class="hm-toggle" id="hmModeRisk" data-mode="risk">置信度</button>
+      </div>
       {_render_heatmap_legend()}
       <div class="heatmap-wrap">
         {_render_svg_heatmap(hd)}
@@ -3800,6 +3906,20 @@ def _heatmap_color(pct_change, action=""):
     return "#cf222e"
 
 
+def _heatmap_risk_color(confidence):
+    """Blue-orange color mapping for risk/confidence view of heatmap."""
+    conf = float(confidence) if confidence else 0
+    if conf >= 0.8:
+        return "#1d4ed8"   # deep blue — high confidence
+    elif conf >= 0.6:
+        return "#3b82f6"   # blue
+    elif conf >= 0.4:
+        return "#6b7280"   # grey — neutral
+    elif conf >= 0.2:
+        return "#ea580c"   # orange
+    return "#dc2626"       # red — low confidence
+
+
 def _render_heatmap_legend():
     """Render heatmap color legend."""
     return (
@@ -3857,12 +3977,14 @@ def _render_svg_heatmap(heatmap_data, width=960, height=400, max_nodes=0):
         conf = float(n.get("confidence", 0))
         conf_str = f"{conf:.0%}" if conf > 0 else ""
         sector = str(n.get("sector", ""))
+        risk_fill = _heatmap_risk_color(conf)
         data_attrs = f'data-idx="{idx}" data-ticker="{_esc(ticker)}" data-name="{_esc(name)}" data-pct="{pct:.2f}" data-action="{_esc(action)}" data-conf="{conf_str}" data-sector="{_esc(sector)}"'
 
         svg_nodes.append(
             f'<g class="hm-node" {data_attrs}>'
             f'<rect x="{rx:.1f}" y="{ry:.1f}" width="{max(rw - 1, 1):.1f}" height="{max(rh - 1, 1):.1f}" '
-            f'rx="3" fill="{fill}" stroke="var(--bg, #0d1117)" stroke-width="1.5"/>'
+            f'rx="3" fill="{fill}" stroke="var(--bg, #0d1117)" stroke-width="1.5" '
+            f'data-return-fill="{fill}" data-risk-fill="{risk_fill}"/>'
             f'{name_el}{pct_el}</g>'
         )
 
@@ -3973,6 +4095,40 @@ def _render_heatmap_js():
           tooltip.style.top = ty + 'px';
         });
         el.addEventListener('mouseleave', function(){ tooltip.style.display = 'none'; });
+      });
+
+      /* F3: Color mode toggle (return vs risk/confidence) */
+      var btnReturn = document.getElementById('hmModeReturn');
+      var btnRisk = document.getElementById('hmModeRisk');
+      if (btnReturn && btnRisk) {
+        function setMode(mode) {
+          var attr = mode === 'risk' ? 'data-risk-fill' : 'data-return-fill';
+          document.querySelectorAll('.hm-node rect[data-return-fill]').forEach(function(r) {
+            r.setAttribute('fill', r.getAttribute(attr) || r.getAttribute('data-return-fill'));
+          });
+          btnReturn.classList.toggle('active', mode === 'return');
+          btnRisk.classList.toggle('active', mode === 'risk');
+        }
+        btnReturn.addEventListener('click', function(){ setMode('return'); });
+        btnRisk.addEventListener('click', function(){ setMode('risk'); });
+      }
+
+      /* F3: Legend hover — highlight matching nodes */
+      document.querySelectorAll('.hm-leg-item').forEach(function(leg) {
+        leg.addEventListener('mouseenter', function() {
+          var dot = leg.querySelector('.hm-leg-dot');
+          if (!dot) return;
+          var col = dot.style.background || dot.style.backgroundColor;
+          document.querySelectorAll('.hm-node rect').forEach(function(r) {
+            var fill = r.getAttribute('fill') || '';
+            r.style.opacity = fill === col ? '1' : '0.25';
+          });
+        });
+        leg.addEventListener('mouseleave', function() {
+          document.querySelectorAll('.hm-node rect').forEach(function(r) {
+            r.style.opacity = '1';
+          });
+        });
       });
     })();
     </script>"""

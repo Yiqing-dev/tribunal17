@@ -41,13 +41,13 @@ _RECAP_CSS = """
   --bg: #070e1b;
   --fg: #dde6f0;
   --card: rgba(11, 20, 35, 0.85);
-  --border: rgba(100, 150, 180, 0.14);
+  --border: rgba(100, 150, 180, 0.18);
   --green: #34d399;
   --red: #f87171;
   --yellow: #fbbf24;
   --blue: #60a5fa;
   --purple: #a78bfa;
-  --muted: #7e91a7;
+  --muted: #8fa3b8;
   --white: #f1f7fd;
   --surface: rgba(14, 24, 40, 0.92);
   --glow-green: rgba(52, 211, 153, 0.15);
@@ -60,6 +60,17 @@ _RECAP_CSS = """
   --signal-sell: var(--red);
   --signal-hold: var(--yellow);
   --signal-veto: var(--red);
+  --state-success: var(--green);
+  --state-danger: var(--red);
+  --state-warning: var(--yellow);
+  --state-info: var(--blue);
+  --elev-1: 0 4px 12px rgba(0,0,0,0.15);
+  --elev-2: 0 12px 28px rgba(0,0,0,0.25);
+  --elev-3: 0 22px 54px rgba(0,0,0,0.35);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 200ms;
+  --dur-med: 360ms;
+  --sp-1: 0.5rem; --sp-2: 1rem; --sp-3: 1.5rem; --sp-4: 2rem; --sp-6: 3rem;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 ::selection { background: rgba(96, 165, 250, 0.25); color: var(--white); }
@@ -500,9 +511,37 @@ body::before {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 2rem 1rem; text-align: center; color: var(--muted);
 }
-.empty-state-icon { font-size: 2rem; margin-bottom: .6rem; opacity: .5; }
+.empty-state-icon { font-size: 2rem; margin-bottom: .6rem; opacity: .6; }
 .empty-state-title { font-size: .88rem; font-weight: 600; margin-bottom: .25rem; }
-.empty-state-hint { font-size: .78rem; opacity: .7; }
+.empty-state-hint { font-size: .78rem; opacity: .8; }
+
+/* ── S1: Contrast boost ── */
+.kpi-cell .lab, .sec-sub, .sd-section h4 { font-weight: 500; }
+
+/* ── S4: Elevation system ── */
+.glass { box-shadow: var(--elev-1); }
+.glass:hover { box-shadow: var(--elev-2); }
+.recap-hero { box-shadow: var(--elev-3); }
+.shm-tooltip { box-shadow: var(--elev-2); }
+.sector-drawer { box-shadow: var(--elev-3); }
+
+/* ── S5: Unified timing ── */
+.glass {
+  transition: transform var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.animate-in { animation: fadeSlideUp var(--dur-med) var(--ease-out) both; }
+
+/* ── S3: 8px spacing rhythm ── */
+.glass { padding: var(--sp-3); }
+.recap-hero { padding: var(--sp-4); }
+.recap-shell { gap: var(--sp-3); }
+
+/* ── F1: Temperature gauge ── */
+.temp-gauge { display: flex; flex-direction: column; align-items: center; margin: var(--sp-2) 0; }
+.temp-gauge svg { max-width: 160px; }
+.temp-gauge .gauge-label { font-size: .78rem; color: var(--muted); margin-top: .3rem; font-weight: 600; }
 
 @media print {
   :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666}
@@ -553,6 +592,60 @@ def _pct_str(v: float) -> str:
     return f"{sign}{v:.2f}%"
 
 
+# ── Temperature gauge ─────────────────────────────────────────────────
+
+import math as _math
+
+
+def _render_temperature_gauge(weather: str) -> str:
+    """SVG semi-circle gauge for market temperature.
+
+    Needle angle: 上涨→+60°, 震荡→0°, 下跌→-60°.
+    Colors: green (hot/bullish), yellow (neutral), red (cold/bearish).
+    """
+    # Map weather to needle angle (degrees from 12-o'clock, -90=left, +90=right)
+    angles = {"上涨": 60, "震荡": 0, "下跌": -60}
+    angle_deg = angles.get(weather, 0)
+    angle_rad = _math.radians(angle_deg - 90)  # SVG: 0°=right, rotate to gauge space
+
+    cx, cy, r = 80, 80, 60
+    # Arc segments: cold(red) -90°→-30°, neutral(yellow) -30°→30°, hot(green) 30°→90°
+    def _arc_d(start_deg: float, end_deg: float) -> str:
+        s = _math.radians(start_deg)
+        e = _math.radians(end_deg)
+        x1 = cx + r * _math.cos(s)
+        y1 = cy + r * _math.sin(s)
+        x2 = cx + r * _math.cos(e)
+        y2 = cy + r * _math.sin(e)
+        return f"M {x1:.1f},{y1:.1f} A {r},{r} 0 0,1 {x2:.1f},{y2:.1f}"
+
+    # Needle endpoint
+    needle_len = 50
+    nx = cx + needle_len * _math.cos(_math.radians(-90 + angle_deg + 90))  # map to gauge
+    ny = cy + needle_len * _math.sin(_math.radians(-90 + angle_deg + 90))
+    # Simpler: gauge left=-90°(svg 180°), center=0°(svg 270°), right=+90°(svg 360°)
+    # SVG angle: 180° + (angle_deg + 90) * (180/180) → 180 + angle_deg + 90
+    svg_angle_deg = 180 + (angle_deg + 90)
+    svg_angle_rad = _math.radians(svg_angle_deg)
+    nx = cx + needle_len * _math.cos(svg_angle_rad)
+    ny = cy + needle_len * _math.sin(svg_angle_rad)
+
+    weather_labels = {"上涨": "偏热", "震荡": "中性", "下跌": "偏冷"}
+    label = weather_labels.get(weather, weather)
+    needle_color = "#34d399" if weather == "上涨" else ("#f87171" if weather == "下跌" else "#fbbf24")
+
+    return f"""<div class="temp-gauge">
+      <svg viewBox="0 0 160 100" width="160" height="100">
+        <path d="{_arc_d(180, 240)}" fill="none" stroke="#f87171" stroke-width="10" stroke-linecap="round" opacity=".7"/>
+        <path d="{_arc_d(240, 300)}" fill="none" stroke="#fbbf24" stroke-width="10" stroke-linecap="round" opacity=".7"/>
+        <path d="{_arc_d(300, 360)}" fill="none" stroke="#34d399" stroke-width="10" stroke-linecap="round" opacity=".7"/>
+        <line x1="{cx}" y1="{cy}" x2="{nx:.1f}" y2="{ny:.1f}" stroke="{needle_color}" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="{cx}" cy="{cy}" r="4" fill="{needle_color}"/>
+      </svg>
+      <div class="gauge-label">{_esc(label)}</div>
+    </div>"""
+
+
 # ── Section renderers ────────────────────────────────────────────────
 
 def _render_recap_hero(data: dict) -> str:
@@ -569,6 +662,8 @@ def _render_recap_hero(data: dict) -> str:
     if risk:
         risk_html = f'<div class="risk-banner" style="margin-top:.8rem">{_esc(risk)}</div>'
 
+    gauge_html = _render_temperature_gauge(weather)
+
     return f"""
     <section class="recap-hero animate-in">
       <div class="hero-eyebrow">TradingAgents · 每日复盘</div>
@@ -578,6 +673,7 @@ def _render_recap_hero(data: dict) -> str:
         <span class="hero-chip {w_cls}">市场: {_esc(weather)}</span>
         <span class="hero-chip {a_cls}">建议: {_esc(advice)}</span>
       </div>
+      {gauge_html}
       {risk_html}
     </section>"""
 
