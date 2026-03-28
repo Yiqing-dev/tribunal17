@@ -12,6 +12,11 @@ data/reports/
 data/signals/
 data/ledgers/
 data/pilot/
+agent_artifacts/results/
+
+# External AI system files
+.qwen/
+QWEN.md
 
 # Archives
 *.zip
