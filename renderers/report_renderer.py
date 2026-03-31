@@ -4961,7 +4961,7 @@ def _render_sector_engine(view: MarketView) -> str:
     for s in view.avoid_sectors[:3]:
         avoids_html += f'<div class="sector-item"><span class="si-name">{_esc(s)}</span><span class="si-pct dn">\u9000\u6f6e</span></div>'
 
-    # Momentum flows — classify by flow sign, show both inflow and outflow
+    # Momentum flows — split by actual price direction, show change% + net inflow
     pos_items = []
     neg_items = []
     for m in view.sector_momentum:
@@ -4972,19 +4972,24 @@ def _render_sector_engine(view: MarketView) -> str:
         except (ValueError, TypeError):
             flow_val = 0.0
         (pos_items if flow_val > 0 else neg_items).append(m)
-    neg_items.sort(key=lambda x: float(x.get("flow", 0) or 0))  # most negative first
+    pos_items.sort(key=lambda x: float(x.get("flow", 0) or 0), reverse=True)
+    neg_items.sort(key=lambda x: float(x.get("flow", 0) or 0))
 
     momentum_html = ""
     for m in pos_items[:5]:
         nm = m.get("name", "")
-        flow = m.get("flow", "")
-        momentum_html += f'<div class="sector-item"><span class="si-name">{_esc(nm)}</span><span class="si-flow">{_esc(flow)}\u4ebf</span><span class="si-pct up">\u2191</span></div>'
+        pct = m.get("flow", "")
+        net = m.get("net_inflow_yi", "")
+        net_str = f" ({net:+.1f}\u4ebf)" if net else ""
+        momentum_html += f'<div class="sector-item"><span class="si-name">{_esc(nm)}</span><span class="si-flow">{_esc(str(pct))}%{_esc(net_str)}</span><span class="si-pct up">\u2191</span></div>'
     if neg_items:
         momentum_html += '<div style="border-top:1px solid rgba(0,0,0,.08);margin:.4rem 0"></div>'
         for m in neg_items[:5]:
             nm = m.get("name", "")
-            flow = m.get("flow", "")
-            momentum_html += f'<div class="sector-item"><span class="si-name">{_esc(nm)}</span><span class="si-flow">{_esc(flow)}\u4ebf</span><span class="si-pct dn">\u2193</span></div>'
+            pct = m.get("flow", "")
+            net = m.get("net_inflow_yi", "")
+            net_str = f" ({net:+.1f}\u4ebf)" if net else ""
+            momentum_html += f'<div class="sector-item"><span class="si-name">{_esc(nm)}</span><span class="si-flow">{_esc(str(pct))}%{_esc(net_str)}</span><span class="si-pct dn">\u2193</span></div>'
 
     rotation_badge = ""
     phase_labels = {"early": "\u65e9\u671f", "mid": "\u4e2d\u671f", "late": "\u6676\u671f", "peak": "\u89c1\u9876"}
@@ -5496,19 +5501,25 @@ def generate_market_report(
     if not market_context:
         return None
 
-    # Auto-enrich sector_momentum with outflow data from snapshot when missing
-    if market_context.get("_sector_momentum_inflow_only") and market_snapshot:
+    # Override sector_momentum with snapshot's actual price-change data.
+    # The LLM agent's sector_momentum is sorted by net_inflow which is
+    # misleading (sectors can have inflow yet fall in price).  The snapshot
+    # sector_fund_flow is now sorted by actual 涨跌幅, which is ground truth.
+    if market_snapshot:
         sector_flow = getattr(market_snapshot, "sector_fund_flow", [])
-        outflow_sectors = [s for s in sector_flow if (s.get("net_inflow", 0) or 0) < 0]
-        outflow_sectors.sort(key=lambda x: x.get("net_inflow", 0) or 0)
-        existing_names = {m.get("name") for m in market_context.get("sector_momentum", []) if isinstance(m, dict)}
-        for s in outflow_sectors[:5]:
-            if s["name"] not in existing_names:
-                market_context.setdefault("sector_momentum", []).append({
-                    "name": s["name"],
-                    "flow": str(round(s["net_inflow"] / 1e8, 2)),
-                    "direction": "out",
+        if sector_flow:
+            refreshed = []
+            for s in sector_flow:
+                pct = s.get("change_pct", 0) or 0
+                net = s.get("net_inflow", 0) or 0
+                refreshed.append({
+                    "name": s.get("name", ""),
+                    "flow": str(round(pct, 2)),       # use price change for color
+                    "net_inflow_yi": round(net / 1e8, 2) if abs(net) > 1e6 else 0,
+                    "direction": "in" if pct > 0 else "out",
                 })
+            market_context["sector_momentum"] = refreshed
+            market_context.pop("_sector_momentum_inflow_only", None)
 
     # Adaptive heatmap: board_data → sector_momentum → None
     if heatmap_data is None:
