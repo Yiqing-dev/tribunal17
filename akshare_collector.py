@@ -1172,15 +1172,19 @@ def _collect_sector_flow(ms: MarketSnapshot):
             "net_pct": _safe_float(r.get("今日主力净流入-净占比")),
         }
 
-    # Collect both top inflow (head) and top outflow (tail) sectors
-    top_inflow = df.head(10)
-    top_outflow = df.tail(10)
+    # Collect ALL sectors, then let downstream sort by change_pct or net_inflow
+    # EM returns ~496 rows sorted by net_inflow desc; we keep top 10 + bottom 10
+    # by PRICE CHANGE (not net_inflow) to reflect actual market performance.
+    pct_col = "涨跌幅" if source == "ths" else "今日涨跌幅"
+    df_sorted = df.sort_values(pct_col, ascending=False)
+    top_gainers = df_sorted.head(10)
+    top_losers = df_sorted.tail(10)
     seen = set()
-    for _, r in top_inflow.iterrows():
+    for _, r in top_gainers.iterrows():
         d = _row_to_dict(r, source)
         rows.append(d)
         seen.add(d["name"])
-    for _, r in top_outflow.iterrows():
+    for _, r in top_losers.iterrows():
         d = _row_to_dict(r, source)
         if d["name"] not in seen:
             rows.append(d)
@@ -1422,30 +1426,31 @@ def _build_market_markdown(ms: MarketSnapshot) -> str:
             lines.append(f"- ⚠️ {note}")
         lines.append("")
 
-    # Sector flow — show both top inflow and top outflow
+    # Sector flow — sorted by actual price change, not net_inflow
     if ms.sector_fund_flow:
-        inflow = [s for s in ms.sector_fund_flow if (s.get("net_inflow", 0) or 0) > 0]
-        outflow = [s for s in ms.sector_fund_flow if (s.get("net_inflow", 0) or 0) < 0]
-        outflow.sort(key=lambda x: x.get("net_inflow", 0) or 0)  # most negative first
+        gainers = sorted([s for s in ms.sector_fund_flow if (s.get("change_pct", 0) or 0) > 0],
+                         key=lambda x: x.get("change_pct", 0) or 0, reverse=True)
+        losers = sorted([s for s in ms.sector_fund_flow if (s.get("change_pct", 0) or 0) < 0],
+                        key=lambda x: x.get("change_pct", 0) or 0)
 
         def _fmt_sector_row(s):
             pct = s.get("change_pct", 0) or 0
             net = s.get("net_inflow", 0) or 0
-            return (f"| {s['name']} | {pct:+.2f}% | {net / 1e8:.2f}亿 |" if abs(net) > 1e6
-                    else f"| {s['name']} | {pct:+.2f}% | {net:.0f} |")
+            net_str = f"{net / 1e8:+.2f}亿" if abs(net) > 1e6 else f"{net:+.0f}"
+            return f"| {s['name']} | {pct:+.2f}% | {net_str} |"
 
-        lines.append("## 行业板块资金流向 — 净流入 Top 10")
+        lines.append("## 行业板块涨幅 Top 10")
         lines.append("| 板块 | 涨跌幅 | 主力净流入 |")
         lines.append("|------|--------|----------|")
-        for s in inflow[:10]:
+        for s in gainers[:10]:
             lines.append(_fmt_sector_row(s))
 
-        if outflow:
+        if losers:
             lines.append("")
-            lines.append("## 行业板块资金流向 — 净流出 Top 10")
-            lines.append("| 板块 | 涨跌幅 | 主力净流出 |")
+            lines.append("## 行业板块跌幅 Top 10")
+            lines.append("| 板块 | 涨跌幅 | 主力净流入 |")
             lines.append("|------|--------|----------|")
-            for s in outflow[:10]:
+            for s in losers[:10]:
                 lines.append(_fmt_sector_row(s))
         lines.append("")
 

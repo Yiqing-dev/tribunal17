@@ -4961,20 +4961,30 @@ def _render_sector_engine(view: MarketView) -> str:
     for s in view.avoid_sectors[:3]:
         avoids_html += f'<div class="sector-item"><span class="si-name">{_esc(s)}</span><span class="si-pct dn">\u9000\u6f6e</span></div>'
 
-    # Momentum flows — show both inflow and outflow
-    inflow_items = [m for m in view.sector_momentum if isinstance(m, dict) and m.get("direction") == "in"]
-    outflow_items = [m for m in view.sector_momentum if isinstance(m, dict) and m.get("direction") == "out"]
+    # Momentum flows — classify by flow sign, show both inflow and outflow
+    pos_items = []
+    neg_items = []
+    for m in view.sector_momentum:
+        if not isinstance(m, dict):
+            continue
+        try:
+            flow_val = float(m.get("flow", 0))
+        except (ValueError, TypeError):
+            flow_val = 0.0
+        (pos_items if flow_val > 0 else neg_items).append(m)
+    neg_items.sort(key=lambda x: float(x.get("flow", 0) or 0))  # most negative first
+
     momentum_html = ""
-    for m in inflow_items[:5]:
+    for m in pos_items[:5]:
         nm = m.get("name", "")
         flow = m.get("flow", "")
-        momentum_html += f'<div class="sector-item"><span class="si-name">{_esc(nm)}</span><span class="si-flow">{_esc(flow)}</span><span class="si-pct up">\u2191</span></div>'
-    if outflow_items:
+        momentum_html += f'<div class="sector-item"><span class="si-name">{_esc(nm)}</span><span class="si-flow">{_esc(flow)}\u4ebf</span><span class="si-pct up">\u2191</span></div>'
+    if neg_items:
         momentum_html += '<div style="border-top:1px solid rgba(0,0,0,.08);margin:.4rem 0"></div>'
-        for m in outflow_items[:5]:
+        for m in neg_items[:5]:
             nm = m.get("name", "")
             flow = m.get("flow", "")
-            momentum_html += f'<div class="sector-item"><span class="si-name">{_esc(nm)}</span><span class="si-flow">{_esc(flow)}</span><span class="si-pct dn">\u2193</span></div>'
+            momentum_html += f'<div class="sector-item"><span class="si-name">{_esc(nm)}</span><span class="si-flow">{_esc(flow)}\u4ebf</span><span class="si-pct dn">\u2193</span></div>'
 
     rotation_badge = ""
     phase_labels = {"early": "\u65e9\u671f", "mid": "\u4e2d\u671f", "late": "\u6676\u671f", "peak": "\u89c1\u9876"}
