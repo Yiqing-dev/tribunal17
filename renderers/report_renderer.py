@@ -29,7 +29,7 @@ from .decision_labels import (
     NODE_STATUS_LABELS, PARSE_STATUS_LABELS, COMPLIANCE_STATUS_LABELS,
     FRESHNESS_STATUS_LABELS, NO_COMPLIANCE_LABEL,
     get_regime_label, get_regime_class, get_breadth_label, get_breadth_class,
-    safe_badge_class,
+    safe_badge_class, get_severity_label,
 )
 
 # ── Shared CSS ────────────────────────────────────────────────────────────
@@ -1071,9 +1071,9 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
             for r in view.main_risks:
                 if isinstance(r, dict):
                     sev_cls = safe_badge_class(r.get("severity_class", ""))
-                    cat = r.get("category", "")
+                    cat = get_risk_label(r.get("category", ""))
                     desc = r.get("description", "")
-                    sev = r.get("severity", "")
+                    sev = get_severity_label(r.get("severity", ""))
                     sev_badge = f'<span class="badge badge-{sev_cls}">{_esc(sev)}</span> ' if sev else ""
                     text = f"{sev_badge}{_esc(cat)}"
                     if desc:
@@ -1185,9 +1185,9 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
         for r in view.main_risks:
             if isinstance(r, dict):
                 sev_cls = safe_badge_class(r.get("severity_class", ""))
-                cat = r.get("category", "")
+                cat = get_risk_label(r.get("category", ""))
                 desc = r.get("description", "")
-                sev = r.get("severity", "")
+                sev = get_severity_label(r.get("severity", ""))
                 sev_badge = f'<span class="badge badge-{sev_cls}">{_esc(sev)}</span> ' if sev else ""
                 text = f"{sev_badge}{_esc(cat)}"
                 if desc:
@@ -1605,7 +1605,7 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     if view.risk_flags_detail:
         for f in view.risk_flags_detail:
             sev_cls = safe_badge_class(f.get("severity_class", ""))
-            sev_label = f.get("severity", "")
+            sev_label = get_severity_label(f.get("severity", ""))
             ev_count = len(f.get("evidence_ids", []))
             ev_label = f"{ev_count}条证据" if ev_count else "无引用"
             mitigant = f.get("mitigant", "")
@@ -1613,14 +1613,14 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
             risk_content += f"""
             <div class="claim-card">
               <span class="badge badge-{sev_cls}">{_esc(sev_label)}</span>
-              <strong>{_esc(f.get("category", ""))}</strong>
+              <strong>{_esc(get_risk_label(f.get("category", "")))}</strong>
               <div style="margin-top:.25rem;">{_esc(_strip_internal_tokens(f.get("description", "")[:150]))}</div>
               <div class="ev-tags">{_esc(ev_label)}</div>
               {mitigant_html}
             </div>"""
         risk_content = f'<div class="claim-grid">{risk_content}</div>'
     elif view.risk_flag_categories:
-        items = "".join(f"<li>{_esc(c)}</li>" for c in view.risk_flag_categories)
+        items = "".join(f"<li>{_esc(get_risk_label(c))}</li>" for c in view.risk_flag_categories)
         risk_content = f"<ul>{items}</ul>"
 
     risk_html = f"""
@@ -3252,7 +3252,7 @@ def render_divergence_pool(
         )
         risk_tags = "".join(
             _pool_badge(
-                f'{rf.get("severity", "").upper() or "RISK"} {rf.get("category", "")}'.strip(),
+                f'{get_severity_label(rf.get("severity", ""))} {get_risk_label(rf.get("category", ""))}'.strip(),
                 _pool_severity_class(rf.get("severity", "")),
             )
             for rf in row.risk_flags
@@ -4163,7 +4163,7 @@ _TREEMAP_ENGINE_JS = r"""
 
   /* Tooltip — frosted glass */
   var tip = document.createElement('div');
-  tip.style.cssText = 'position:fixed;display:none;padding:10px 14px;border-radius:8px;font:13px/1.6 "PingFang SC","Microsoft YaHei",sans-serif;pointer-events:none;z-index:9999;max-width:320px;background:rgba(255,255,255,0.92);color:#1a1a1a;box-shadow:0 8px 32px rgba(0,0,0,0.12),0 1px 3px rgba(0,0,0,0.08);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(0,0,0,0.06)';
+  tip.style.cssText = 'position:fixed;display:none;padding:10px 14px;border-radius:8px;font:13px/1.6 "PingFang SC","Microsoft YaHei",sans-serif;pointer-events:none;z-index:9999;max-width:320px;background:rgba(255,255,255,0.95);color:#1a1a1a;box-shadow:0 8px 32px rgba(0,0,0,0.10),0 1px 3px rgba(0,0,0,0.06);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(0,0,0,0.06)';
   document.body.appendChild(tip);
 
   var curParent = rootId;
@@ -4175,7 +4175,7 @@ _TREEMAP_ENGINE_JS = r"""
     for (var i = 0; i < items.length; i++) total += items[i]._v;
     if (total <= 0) return;
     var sc = w * h / total;
-    items.sort(function(a,b){return b._v - a._v});
+    /* No sort — respect the interleaved red-green order from Python. */
     _lay(items, 0, x, y, w, h, sc);
   }
   function _lay(a, s, x, y, w, h, sc) {
@@ -4231,7 +4231,7 @@ _TREEMAP_ENGINE_JS = r"""
       var t = document.createElement('div');
       var fs = fontSize(rw, rh);
       var hasCh = n.ch && n.ch.length && maxD > 1;
-      t.style.cssText = 'position:absolute;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;padding:3px;font-family:"PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;letter-spacing:0.3px;border:1px solid rgba(255,255,255,0.45);transition:all 0.2s ease';
+      t.style.cssText = 'position:absolute;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;padding:4px;font-family:"PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;letter-spacing:0.3px;border:1px solid rgba(0,0,0,0.06);transition:all 0.18s cubic-bezier(0.22,1,0.36,1)';
       t.style.left = Math.round(r[0])+'px';
       t.style.top = Math.round(r[1])+'px';
       t.style.width = rw+'px';
@@ -4240,7 +4240,7 @@ _TREEMAP_ENGINE_JS = r"""
       t.style.lineHeight = '1.35';
       t.style.color = '#2a2a2a';
       t.style.background = n.color;
-      t.style.boxShadow = 'inset 0 1px 0 rgba(255,255,255,0.25), inset 0 -1px 0 rgba(0,0,0,0.04)';
+      t.style.boxShadow = 'inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -1px 0 rgba(0,0,0,0.03)';
       if (hasCh) t.style.cursor = 'pointer';
 
       /* Content: name bold, pct below */
@@ -4265,7 +4265,7 @@ _TREEMAP_ENGINE_JS = r"""
         t.addEventListener('mouseenter', function() {
           tip.innerHTML = n.hover || n.label;
           tip.style.display = 'block';
-          t.style.boxShadow = '0 4px 16px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.35)';
+          t.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.5)';
           t.style.zIndex = '5';
           t.style.transform = 'scale(1.02)';
         });
@@ -4331,42 +4331,45 @@ def _pct_to_hex(pct: float) -> str:
     """Map % change to hex color for treemap.
 
     A-share convention: red = up, green = down.
-    Gradient stops (linear RGB interpolation):
-      >= +8%  #E8A8B0   (strong rise)
-      +5%     #E0ACB0
-      +2%     #B8A0A4
-      +0.5%   #988484
-       0%     #E0E0DC   (neutral)
-      -0.5%   #E8F8E0
-      -2%     #E8F8DC
-      -5%     #E4FCD8   (strong fall)
+    Pastel diverging palette with narrow clamped domain and sqrt compression.
+
+    Design rules:
+      - Domain clamped to [-3%, +3%] — beyond that gets the endpoint color
+      - Non-linear (sqrt) compression — small moves are visible, large moves
+        don't jump to saturated extremes
+      - Warm off-white center with wide transition zone
+      - Never pure red/green — stays pastel and restrained at all values
+
+    Endpoints:
+      rise max  #FDA5B5  (soft salmon pink)
+      fall max  #AAD993  (muted mint green)
+      neutral   #F0EAE7  (warm off-white)
     """
-    # (pct_threshold, R, G, B)
-    stops = [
-        (-5.0, 0xE4, 0xFC, 0xD8),
-        (-2.0, 0xE8, 0xF8, 0xDC),
-        (-0.5, 0xE8, 0xF8, 0xE0),
-        (0.0, 0xE0, 0xE0, 0xDC),
-        (0.5, 0x98, 0x84, 0x84),
-        (2.0, 0xB8, 0xA0, 0xA4),
-        (5.0, 0xE0, 0xAC, 0xB0),
-        (8.0, 0xE8, 0xA8, 0xB0),
-    ]
-    pct = max(-10.0, min(10.0, pct))
-    if pct <= stops[0][0]:
-        return f"#{stops[0][1]:02X}{stops[0][2]:02X}{stops[0][3]:02X}"
-    if pct >= stops[-1][0]:
-        return f"#{stops[-1][1]:02X}{stops[-1][2]:02X}{stops[-1][3]:02X}"
-    for i in range(len(stops) - 1):
-        p0, r0, g0, b0 = stops[i]
-        p1, r1, g1, b1 = stops[i + 1]
-        if p0 <= pct <= p1:
-            t = (pct - p0) / (p1 - p0) if p1 != p0 else 0.0
-            r = int(r0 + (r1 - r0) * t)
-            g = int(g0 + (g1 - g0) * t)
-            b = int(b0 + (b1 - b0) * t)
-            return f"#{r:02X}{g:02X}{b:02X}"
-    return "#E0E0DC"
+    import math
+
+    CLAMP = 3.0  # narrow domain: [-3%, +3%]
+    # Neutral center (warm off-white)
+    nr, ng, nb = 0xF0, 0xEA, 0xE7
+
+    # Clamp
+    clamped = max(-CLAMP, min(CLAMP, pct))
+    # Normalize to [-1, 1]
+    t = clamped / CLAMP
+    # Sqrt compression: preserves sign, softens extremes, reveals small moves
+    compressed = math.copysign(math.sqrt(abs(t)), t)
+
+    if compressed >= 0:
+        # Rise: warm off-white → soft salmon pink (#FDA5B5)
+        er, eg, eb = 0xFD, 0xA5, 0xB5
+    else:
+        # Fall: warm off-white → muted mint (#AAD993)
+        er, eg, eb = 0xAA, 0xD9, 0x93
+        compressed = -compressed  # make positive for interpolation
+
+    r = int(nr + (er - nr) * compressed)
+    g = int(ng + (eg - ng) * compressed)
+    b = int(nb + (eb - nb) * compressed)
+    return f"#{max(0,min(255,r)):02X}{max(0,min(255,g)):02X}{max(0,min(255,b)):02X}"
 
 
 def _render_plotly_sector_treemap(sectors: list, limit_ups: list = None,
@@ -4401,9 +4404,31 @@ def _render_plotly_sector_treemap(sectors: list, limit_ups: list = None,
         if sec:
             lu_by_sector.setdefault(sec, []).append(stock)
 
+    # Interleave gainers and losers for visual red-green patchwork effect.
+    # Pair by turnover rank: biggest gainer next to biggest loser, etc.
+    # This ensures adjacent tiles in the squarify layout have different colors.
+    _gainers = sorted(
+        [s for s in sectors[:60] if float(s.get("pct_change", 0) or 0) > 0],
+        key=lambda s: float(s.get("total_turnover_yi", 0) or 0), reverse=True,
+    )
+    _losers = sorted(
+        [s for s in sectors[:60] if float(s.get("pct_change", 0) or 0) <= 0],
+        key=lambda s: float(s.get("total_turnover_yi", 0) or 0), reverse=True,
+    )
+    _interleaved = []
+    gi, li = 0, 0
+    while gi < len(_gainers) or li < len(_losers):
+        if gi < len(_gainers):
+            _interleaved.append(_gainers[gi]); gi += 1
+        if li < len(_losers):
+            _interleaved.append(_losers[li]); li += 1
+    # If one side is much larger, insert neutral-ish items from the dominant
+    # side between minority items to keep visual balance.
+    # (The squarify JS now respects this order without re-sorting.)
+
     seen_sectors = set()
     _used_ids = {"root"}
-    for s in sectors[:60]:
+    for s in _interleaved:
         sector_name = str(s.get("sector", ""))
         if not sector_name or sector_name in seen_sectors:
             continue

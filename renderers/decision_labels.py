@@ -96,21 +96,74 @@ EVIDENCE_STRENGTH_LABELS = {
 # ── Risk Category Chinese Labels ─────────────────────────────────────────
 
 RISK_CATEGORY_LABELS = {
-    "concentration":    "集中度风险",
-    "liquidity":        "流动性风险",
-    "valuation":        "估值风险",
-    "regulatory":       "政策/监管风险",
-    "event":            "事件风险",
-    "基本面增长":        "基本面增长放缓",
-    "技术趋势":          "技术面走势偏弱",
-    "宏观与流动性":      "宏观环境不确定",
-    "事件风险":          "待定事件风险",
+    # Core risk categories
+    "concentration":        "集中度风险",
+    "liquidity":            "流动性风险",
+    "valuation":            "估值风险",
+    "regulatory":           "政策/监管风险",
+    "event":                "事件风险",
+    # Capital flow
+    "capital_flow":         "资金流向风险",
+    "capital_outflow":      "资金净流出",
+    "sector_capital_flow":  "板块资金轮动",
+    "short_term_flow":      "短期资金面",
+    # Earnings & fundamentals
+    "earnings_uncertainty": "盈利不确定性",
+    "earnings_decline":     "盈利下滑",
+    "earnings_loss":        "持续亏损",
+    "earnings_quality":     "盈利质量",
+    # Institutional
+    "institutional_exit":   "机构撤离",
+    "coverage_gap":         "研报覆盖空白",
+    # Structural
+    "pledge_cascade":       "质押连锁风险",
+    "shareholder_pledge":   "股东质押",
+    "leverage_pressure":    "杠杆压力",
+    "technical_weak":       "技术面偏弱",
+    "negative_expected_return": "负期望收益",
+    # Market & sector
+    "sector_systemic":      "板块系统性风险",
+    "market_breadth":       "市场宽度不足",
+    "rotation_risk":        "轮动风险",
+    # Deal & policy
+    "deal_execution":       "交易执行风险",
+    "synergy_unproven":     "协同未验证",
+    "policy_timing":        "政策时点不确定",
+    "geopolitical":         "地缘政治风险",
+    # Support
+    "tail_risk":            "尾部风险",
+    "support_proximity":    "逼近支撑位",
+    # Chinese passthrough
+    "基本面增长":           "基本面增长放缓",
+    "技术趋势":             "技术面走势偏弱",
+    "宏观与流动性":         "宏观环境不确定",
+    "事件风险":             "待定事件风险",
 }
 
 
 def get_risk_label(category: str) -> str:
-    """Return Chinese label for a risk category."""
-    return RISK_CATEGORY_LABELS.get(category, category)
+    """Return Chinese label for a risk category.
+
+    Handles compound labels like 'valuation、capital_flow' by translating
+    each part separately.
+    """
+    if not category:
+        return category
+    # Direct match
+    if category in RISK_CATEGORY_LABELS:
+        return RISK_CATEGORY_LABELS[category]
+    # Compound: split on common delimiters
+    for sep in ("、", ",", "/", " "):
+        if sep in category:
+            parts = [p.strip() for p in category.split(sep) if p.strip()]
+            translated = [RISK_CATEGORY_LABELS.get(p, p) for p in parts]
+            return "、".join(translated)
+    return category
+
+
+def get_severity_label(severity: str) -> str:
+    """Return Chinese label for a severity level."""
+    return SEVERITY_LABELS.get((severity or "").lower(), severity or "")
 
 
 # ── Thesis Effect Labels ─────────────────────────────────────────────────
