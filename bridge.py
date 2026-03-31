@@ -1165,8 +1165,11 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
             nt.risk_cleared = risk.get("risk_cleared", False)
             nt.max_position_pct = _safe_float(risk.get("max_position_pct", -1.0))
 
-            action = str(risk.get("research_action", "HOLD")).upper()
-            nt.research_action = action
+            # Only set research_action if Risk Judge explicitly provides one.
+            # Default was "HOLD" which silently overrode PM's BUY/SELL direction.
+            raw_action = risk.get("research_action")
+            action = str(raw_action).upper() if raw_action else ""
+            nt.research_action = action if action else ""
             # Risk Judge may or may not provide its own confidence.
             # Use -1.0 sentinel so RunTrace.finalize() can prefer Research
             # Manager's confidence (see trace_models.py finalize(): "if
@@ -1244,8 +1247,10 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
                 tp_action = str(
                     trade_plan.get("action") or trade_plan.get("bias", "")
                 ).upper()
-                # Normalize TRADE_PLAN bias values to action
-                _BIAS_TO_ACTION = {"LONG": "BUY", "WAIT": "HOLD", "AVOID": "SELL"}
+                # Normalize TRADE_PLAN bias values to action.
+                # AVOID means "don't participate" (risk_cleared=FALSE or VETO),
+                # NOT a directional sell.  Map to HOLD to preserve non-participation.
+                _BIAS_TO_ACTION = {"LONG": "BUY", "WAIT": "HOLD", "AVOID": "HOLD"}
                 tp_action = _BIAS_TO_ACTION.get(tp_action, tp_action)
                 if tp_action in ("BUY", "HOLD", "SELL", "VETO"):
                     nt.research_action = tp_action
@@ -1380,20 +1385,46 @@ def build_run_trace(
         nt = build_node_trace(agent_key, text, run_id)
         trace.node_traces.append(nt)
 
-    # Add a synthetic Publishing Compliance node (always passes for subagent runs)
+    # Publishing Compliance — run lightweight deterministic checks
+    # (subagent_pipeline cannot import the full engine from tradingagents/)
+    compliance_reasons: list = []
+    compliance_status = "allow"
+    rules_fired = []
+
+    # P1: source tier — check if evidence block was produced
+    has_evidence = any(nt.node_name in ("Evidence Block",) or
+                       bool(nt.evidence_ids_referenced) for nt in trace.node_traces)
+    rules_fired.append("P1_source_tier")
+    if not has_evidence:
+        compliance_reasons.append("P1: 无证据链引用")
+
+    # P5: veto consistency — if vetoed, research_action must not be BUY
+    pm_action = ""
+    rm_action = ""
+    was_vetoed = False
+    for nt in trace.node_traces:
+        if nt.node_name == "Research Manager" and nt.research_action:
+            pm_action = nt.research_action
+        if nt.node_name == "Risk Judge":
+            rm_action = nt.research_action or ""
+            was_vetoed = nt.vetoed
+    rules_fired.append("P5_veto_consistency")
+    if was_vetoed and rm_action == "BUY":
+        compliance_reasons.append("P5: VETO后仍为BUY，方向不一致")
+        compliance_status = "flag"
+
+    if compliance_reasons:
+        compliance_status = "flag"
+
     compliance_nt = NodeTrace(
         run_id=run_id,
         node_name="Publishing Compliance",
-        seq=14,
+        seq=18,  # after research_output (seq=17), no conflicts
         timestamp=datetime.now(),
-        compliance_status="allow",
-        compliance_reasons=[],
-        compliance_rules_fired=[
-            "P1_source_tier", "P2_evidence_binding",
-            "P3_risk_flag_trace", "P4_disclosure_label",
-            "P5_veto_consistency",
-        ],
-        output_excerpt="合规审查通过",
+        compliance_status=compliance_status,
+        compliance_reasons=compliance_reasons,
+        compliance_rules_fired=rules_fired,
+        output_excerpt="合规审查通过" if compliance_status == "allow" else f"合规标记: {'; '.join(compliance_reasons)}",
     )
     trace.node_traces.append(compliance_nt)
 

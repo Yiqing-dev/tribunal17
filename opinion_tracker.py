@@ -646,7 +646,7 @@ def build_watchlist_report(
         _STALE_THRESHOLD = 3
         for i, dr in enumerate(drift_list):
             same_action = not dr.action_changed
-            small_conf = abs(dr.confidence_delta) < 2.0  # <2% confidence change
+            small_conf = abs(dr.confidence_delta) < 0.02  # <2% on 0.0-1.0 scale
             same_pillars = (dr.market_score_delta == 0
                             and dr.fundamental_score_delta == 0
                             and dr.news_score_delta == 0

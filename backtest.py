@@ -194,11 +194,14 @@ def infer_direction(action: str, confidence: float = -1.0) -> str:
 
 def _sina_symbol(ticker: str) -> str:
     """Convert ticker to Sina-style symbol (e.g. '601985.SS' -> 'sh601985')."""
-    bare = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
+    if ".BJ" in ticker:
+        # Beijing Exchange uses "bj" prefix in Sina
+        bare = ticker.replace(".BJ", "")
+        return f"bj{bare}"
+    bare = ticker.replace(".SS", "").replace(".SZ", "")
     if bare.startswith("6"):
         return f"sh{bare}"
-    else:
-        return f"sz{bare}"
+    return f"sz{bare}"
 
 
 def _fetch_sina_klines(ticker: str, datalen: int = 30) -> List[Dict]:

@@ -66,6 +66,7 @@ class ReplayStore:
             "error_count": trace.error_count,
             "research_action": trace.research_action,
             "was_vetoed": trace.was_vetoed,
+            "veto_source": trace.veto_source,
             "compliance_status": trace.compliance_status,
         }
         line = json.dumps(manifest_entry, ensure_ascii=False) + "\n"

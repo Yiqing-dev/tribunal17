@@ -179,8 +179,12 @@ class RunTrace:
             all_claims.update(nt.claim_ids_referenced)
             all_claims.update(nt.claim_ids_produced)
 
-            # Capture final-stage outputs
-            if nt.research_action and nt.node_name in ("Risk Judge", "Research Manager"):
+            # Capture final-stage outputs.
+            # Risk Judge may lack research_action if RISK_OUTPUT omitted the field;
+            # in that case, preserve the Research Manager's direction.
+            if nt.node_name == "Research Manager" and nt.research_action:
+                self.research_action = nt.research_action
+            elif nt.node_name == "Risk Judge" and nt.research_action:
                 self.research_action = nt.research_action
                 # Only overwrite confidence if the node provides a meaningful value
                 # (Risk Judge may not have its own confidence — use -1 sentinel to skip)
