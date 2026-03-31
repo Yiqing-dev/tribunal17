@@ -190,9 +190,9 @@ def _stance_for_agent(agent_key: str, sd: dict) -> str:
     # For analysts, infer from pillar_score or overall direction
     score = sd.get("pillar_score")
     if score is not None:
-        if score >= 2:
+        if score >= 3:
             return "bullish"
-        if score == 0:
+        if score <= 1:
             return "bearish"
     action = sd.get("research_action", "").upper()
     if action == "BUY":

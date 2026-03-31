@@ -94,7 +94,7 @@ class SignalRecord:
     stop_loss: float = 0.0
     take_profit: float = 0.0
 
-    # Pillar scores (0/1/2)
+    # Pillar scores (0-4)
     market_score: int = -1
     fundamental_score: int = -1
     news_score: int = -1

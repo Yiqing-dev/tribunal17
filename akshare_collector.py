@@ -1690,3 +1690,123 @@ def collect_sector_leader_stocks(
             time.sleep(0.5)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Board data: limit-up/down stocks, consecutive boards, sector attribution
+# ---------------------------------------------------------------------------
+
+def collect_board_data(trade_date: str, max_sectors: int = 20,
+                       top_n: int = 10) -> dict:
+    """Collect board data for the market report renderer.
+
+    Returns a dict with keys: trade_date, sectors, limit_ups, limit_downs,
+    consecutive_boards, limit_sector_attribution, sector_stocks.
+    All akshare calls are wrapped with _retry_call + em_proxy_session.
+    Fail-open: each section is independent — a single failure does not
+    block the rest.
+    """
+    ak = _get_ak()
+    date_fmt = trade_date.replace("-", "")
+    board: dict = {"trade_date": trade_date}
+
+    # 1. Sector heatmap (THS)
+    try:
+        df = _retry_call(ak.stock_board_industry_summary_ths)
+        sectors = []
+        for _, row in df.head(80).iterrows():
+            sectors.append({
+                "sector": str(row.get("板块", "")),
+                "pct_change": float(row.get("涨跌幅", 0) or 0),
+                "total_turnover_yi": round(float(row.get("总成交额", 0) or 0), 2),
+                "net_flow_yi": round(float(row.get("净流入", 0) or 0), 2),
+                "advance_count": int(row.get("上涨家数", 0) or 0),
+                "decline_count": int(row.get("下跌家数", 0) or 0),
+                "leader": str(row.get("领涨股", "") or ""),
+                "leader_pct": float(row.get("领涨股-涨跌幅", 0) or 0),
+            })
+        board["sectors"] = sectors
+        logger.info("board sectors: %d collected", len(sectors))
+    except Exception as e:
+        logger.warning("board sectors failed: %s", e)
+        board["sectors"] = []
+
+    # 2. Limit-up stocks (EM)
+    try:
+        with em_proxy_session():
+            df_zt = _retry_call(ak.stock_zt_pool_em, date=date_fmt)
+        limit_ups = []
+        for _, row in df_zt.iterrows():
+            limit_ups.append({
+                "ticker": str(row.get("代码", "")),
+                "name": str(row.get("名称", "")),
+                "pct_change": float(row.get("涨跌幅", 0) or 0),
+                "amount_yi": round(float(row.get("成交额", 0) or 0) / 1e8, 2),
+                "boards": int(row.get("连板数", 1) or 1),
+                "sector": str(row.get("所属行业", "") or ""),
+                "seal_amount_yi": round(
+                    float(row.get("封板资金", 0) or 0) / 1e8, 2),
+                "first_seal": str(row.get("首次封板时间", "") or ""),
+            })
+        board["limit_ups"] = limit_ups
+        logger.info("board limit_ups: %d stocks", len(limit_ups))
+    except Exception as e:
+        logger.warning("board limit_ups failed: %s", e)
+        board["limit_ups"] = []
+
+    # 3. Limit-down stocks (EM)
+    try:
+        with em_proxy_session():
+            df_dt = _retry_call(ak.stock_zt_pool_dtgc_em, date=date_fmt)
+        limit_downs = []
+        for _, row in df_dt.iterrows():
+            limit_downs.append({
+                "ticker": str(row.get("代码", "")),
+                "name": str(row.get("名称", "")),
+                "pct_change": float(row.get("涨跌幅", 0) or 0),
+                "amount_yi": round(
+                    float(row.get("成交额", 0) or 0) / 1e8, 2),
+                "sector": str(row.get("所属行业", "") or ""),
+            })
+        board["limit_downs"] = limit_downs
+        logger.info("board limit_downs: %d stocks", len(limit_downs))
+    except Exception as e:
+        logger.warning("board limit_downs failed: %s", e)
+        board["limit_downs"] = []
+
+    # 4. Consecutive boards (derived from limit_ups)
+    consec: dict = {}
+    for s in board.get("limit_ups", []):
+        b = s.get("boards", 1)
+        consec.setdefault(b, []).append(s)
+    board["consecutive_boards"] = {
+        str(k): v for k, v in sorted(consec.items())
+    }
+
+    # 5. Sector attribution (derived from limit_ups)
+    sector_agg: dict = {}
+    for s in board.get("limit_ups", []):
+        sec = s.get("sector", "")
+        if sec:
+            if sec not in sector_agg:
+                sector_agg[sec] = {"count": 0, "stocks": []}
+            sector_agg[sec]["count"] += 1
+            sector_agg[sec]["stocks"].append(s["name"])
+    board["limit_sector_attribution"] = dict(
+        sorted(sector_agg.items(), key=lambda x: x[1]["count"], reverse=True)
+    )
+
+    # 6. Sector constituent stocks (for treemap drill-down)
+    sector_names = [s["sector"] for s in board.get("sectors", []) if s.get("sector")]
+    if sector_names:
+        sector_stocks = collect_sector_leader_stocks(
+            sector_names, top_n=top_n, max_sectors=max_sectors,
+        )
+        board["sector_stocks"] = sector_stocks
+        logger.info("board sector_stocks: %d sectors, %d stocks total",
+                     len(sector_stocks),
+                     sum(len(v) for v in sector_stocks.values()))
+    else:
+        board["sector_stocks"] = {}
+
+    return board

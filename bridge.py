@@ -1400,6 +1400,18 @@ def build_run_trace(
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
 
+def _compute_5d_return(price_history: Optional[List[float]], window: int = 5) -> Optional[float]:
+    """Compute N-trading-day return from a price history list.
+
+    Requires at least ``window + 1`` prices so that we have a start price
+    ``window`` bars ago and the latest close.  Returns None if data is
+    insufficient.
+    """
+    if not price_history or len(price_history) < window + 1:
+        return None
+    return (price_history[-1] - price_history[-(window + 1)]) / price_history[-(window + 1)]
+
+
 def _try_fetch_prices(ticker: str, days: int = 30) -> List[float]:
     """Fetch recent close prices via akshare for sparkline rendering.
 
@@ -1469,6 +1481,30 @@ def generate_report(
                     nt.structured_data = {}
                 nt.structured_data["price_history"] = price_history
                 break
+    # 1c. Trend override — downgrade pillar scores when recent trend is strongly negative
+    from .config import PIPELINE_CONFIG
+    _tw = PIPELINE_CONFIG.get("trend_override_window", 5)
+    _thr = PIPELINE_CONFIG.get("trend_override_threshold", -0.05)
+    _td = PIPELINE_CONFIG.get("trend_override_downgrade", 1)
+    five_day_ret = _compute_5d_return(price_history, window=_tw)
+    if five_day_ret is not None and five_day_ret < _thr:
+        logger.info(
+            f"Trend override triggered: {_tw}d return={five_day_ret:.2%} "
+            f"< {_thr:.0%}, downgrading pillar scores by {_td}"
+        )
+        for nt in trace.node_traces:
+            if nt.node_name in (
+                "Market Analyst", "Fundamentals Analyst",
+                "News Analyst", "Social Analyst",
+            ):
+                sd = nt.structured_data or {}
+                if "pillar_score" in sd and isinstance(sd["pillar_score"], (int, float)):
+                    old = sd["pillar_score"]
+                    sd["pillar_score"] = max(0, old - _td)
+                    logger.debug(
+                        f"  {nt.node_name}: pillar_score {old} → {sd['pillar_score']}"
+                    )
+
     logger.info(f"Built RunTrace {trace.run_id}: {trace.total_nodes} nodes, "
                 f"action={trace.research_action}")
 

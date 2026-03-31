@@ -761,7 +761,7 @@ def _degraded_banner(reasons: list, audit_link: str = "") -> str:
 
 
 def _radar_svg(pillars, action_class, size=180):
-    """SVG radar chart for 4-pillar scores (0-2 scale)."""
+    """SVG radar chart for 4-pillar scores (0-4 scale)."""
     import math
     cx = cy = size / 2
     max_r = size * 0.38
@@ -774,8 +774,8 @@ def _radar_svg(pillars, action_class, size=180):
         return (cx + r * math.cos(angle), cy + r * math.sin(angle))
 
     svg = [f'<svg viewBox="0 0 {size} {size}" width="{size}" height="{size}">']
-    # Grid polygons at r=max_r/2 (score 1) and r=max_r (score 2)
-    for frac in (0.5, 1.0):
+    # Grid polygons at r=max_r/4 (score 1), r=max_r/2 (score 2), r=3*max_r/4 (score 3), r=max_r (score 4)
+    for frac in (0.25, 0.5, 0.75, 1.0):
         pts = " ".join(f"{polar(a, max_r * frac)[0]:.1f},{polar(a, max_r * frac)[1]:.1f}" for a in axes)
         svg.append(f'<polygon points="{pts}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>')
     # Axis lines
@@ -789,13 +789,13 @@ def _radar_svg(pillars, action_class, size=180):
         scores.append(s)
     if scores:
         data_pts = " ".join(
-            f"{polar(axes[i], max_r * s / 2)[0]:.1f},{polar(axes[i], max_r * s / 2)[1]:.1f}"
+            f"{polar(axes[i], max_r * s / 4)[0]:.1f},{polar(axes[i], max_r * s / 4)[1]:.1f}"
             for i, s in enumerate(scores)
         )
         svg.append(f'<polygon points="{data_pts}" fill="{fill_color}" fill-opacity="0.18" '
                    f'stroke="{fill_color}" stroke-width="1.5"/>')
         for i, s in enumerate(scores):
-            dx, dy = polar(axes[i], max_r * s / 2)
+            dx, dy = polar(axes[i], max_r * s / 4)
             svg.append(f'<circle cx="{dx:.1f}" cy="{dy:.1f}" r="3" fill="{fill_color}"/>')
     # Labels
     offsets = [(0, -12), (12, 0), (0, 14), (-12, 0)]  # top, right, bottom, left
@@ -824,7 +824,7 @@ def _render_checklist(view: SnapshotView) -> str:
             f'<span class="ck-emoji">{emoji}</span>'
             f'<span class="ck-pillar">{pillar}</span>'
             f'<span class="ck-label">{label}</span>'
-            f'<span class="ck-score num">{score}/2</span>'
+            f'<span class="ck-score num">{score}/4</span>'
             f'</div>'
         )
     radar = _radar_svg(view.pillar_checklist, view.action_class)

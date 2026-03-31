@@ -69,7 +69,7 @@ class DailySnapshot:
     confidence: float = -1.0
     was_vetoed: bool = False
 
-    # Pillar scores (0/1/2)
+    # Pillar scores (0-4)
     market_score: int = -1
     fundamental_score: int = -1
     news_score: int = -1

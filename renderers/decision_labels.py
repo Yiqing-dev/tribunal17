@@ -18,9 +18,11 @@ SIGNAL_EMOJI: Dict[str, str] = {
 }
 
 PILLAR_EMOJI: Dict[int, str] = {
-    2: "\u2705",
-    1: "\u26a0\ufe0f",
-    0: "\u274c",
+    4: "\U0001f7e2",
+    3: "\U0001f535",
+    2: "\U0001f7e1",
+    1: "\U0001f7e0",
+    0: "\U0001f534",
 }
 
 

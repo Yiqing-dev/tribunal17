@@ -730,7 +730,7 @@ class SnapshotView:
                 score = int(raw_score) if raw_score is not None else -1
                 if score < 0:
                     continue
-                score = min(max(score, 0), 2)
+                score = min(max(score, 0), 4)
                 emoji = PILLAR_EMOJI.get(score, "\u26aa")
                 # Use first line of excerpt as label fallback
                 excerpt = nd_out.get("output_excerpt", "")
@@ -778,7 +778,7 @@ class SnapshotView:
                             continue
                         if _sc < 0:
                             continue
-                        _sc = min(max(_sc, 0), 2)
+                        _sc = min(max(_sc, 0), 4)
                         pillar_checklist.append({
                             "pillar": _lbl,
                             "score": _sc,

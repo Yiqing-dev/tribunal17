@@ -39,6 +39,11 @@ PIPELINE_CONFIG = {
     "bull_bear_rounds": 2,     # number of Bull/Bear debate rounds
     "risk_debate_rounds": 1,   # number of Aggressive/Conservative/Neutral rounds
 
+    # Trend override: auto-downgrade pillar scores when recent trend is strongly negative
+    "trend_override_window": 5,        # trading days to measure
+    "trend_override_threshold": -0.05, # return below this triggers downgrade
+    "trend_override_downgrade": 1,     # points to subtract from each pillar_score
+
     # Model assignments per stage (short names from MODEL_MAP)
     "models": {
         # Stage 0.8: Market Agents (parallel, once per day)

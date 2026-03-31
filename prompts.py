@@ -134,7 +134,7 @@ sector_momentum should be valid JSON array.
 
 
 def market_analyst(ticker: str, current_date: str, market_context_block: str = "", akshare_md: str = "", **kw) -> str:
-    """Technical Analyst (Pro v2) — pillar_score 0/1/2."""
+    """Technical Analyst (Pro v2) — pillar_score 0-4."""
     _mkt_ctx = ""
     if market_context_block:
         _mkt_ctx = f"""
@@ -164,7 +164,7 @@ def market_analyst(ticker: str, current_date: str, market_context_block: str = "
 4. Northbound/institutional fund flow data (if A-share)
 """
     return f"""**ROLE**: You are the [Technical Analyst] (Pro v2).
-**OBJECTIVE**: Convert {ticker}'s price action over the last 30 days into actionable mid-term (3-6 Months) execution conditions, and output a **pillar_score** (0/1/2) for Novice Mode.
+**OBJECTIVE**: Convert {ticker}'s price action over the last 30 days into actionable mid-term (3-6 Months) execution conditions, and output a **pillar_score** (0-4) for Novice Mode.
 
 {common_input_block(ticker, **kw)}
 {_mkt_ctx}
@@ -187,9 +187,11 @@ A3. Key Levels & Path
 - Two Paths: Bullish Path (Confirmation needed) / Bearish Path (Trigger conditions).
 
 A4. Novice Mode Scoring (pillar_score)
-- **2**: Structure clearly bullish AND evidence strong/aligned.
-- **1**: Neutral / Waiting for confirmation / Repairing.
-- **0**: Bearish or Insufficient Evidence.
+- **4**: Structure clearly bullish, strong momentum alignment, high confidence.
+- **3**: Bullish lean but with caveats or confirmation pending.
+- **2**: Neutral / Waiting for confirmation / Mixed signals.
+- **1**: Bearish lean, weakening structure, warning signals.
+- **0**: Clearly bearish, breakdown, or insufficient evidence.
 - Confidence: High/Med/Low.
 
 A5. Output Table (Mandatory)
@@ -198,7 +200,7 @@ Columns: Conclusion | FACT(Link+Date) | INTERP | DISPROVE | Confidence | Decisio
 
 **FINAL OUTPUT FORMAT**:
 At the very end of your response, you MUST output the score line exactly as:
-`pillar_score = {{0, 1, or 2}}`
+`pillar_score = {{0, 1, 2, 3, or 4}}`
 
 {_data_instruction}
 {_data_block}
@@ -210,7 +212,7 @@ For reference, the current date is {current_date}. The company we want to look a
 
 
 def fundamentals_analyst(ticker: str, current_date: str, akshare_md: str = "", **kw) -> str:
-    """Fundamental Analyst (Pro v2) — pillar_score 0/1/2."""
+    """Fundamental Analyst (Pro v2) — pillar_score 0-4."""
     _data_instruction = SUBAGENT_DATA_INSTRUCTION_WITH_AKSHARE if akshare_md else SUBAGENT_DATA_INSTRUCTION
     _data_block = ""
     if akshare_md:
@@ -237,7 +239,7 @@ def fundamentals_analyst(ticker: str, current_date: str, akshare_md: str = "", *
 7. 基金持仓季度变化：公募/社保/QFII 增减仓方向
 """
     return f"""**ROLE**: You are the [Fundamental Analyst] (Pro v2).
-**OBJECTIVE**: Use S1/S2 evidence to determine the fundamental drivers for {ticker} over 3-6 Months, and output a **pillar_score** (0/1/2).
+**OBJECTIVE**: Use S1/S2 evidence to determine the fundamental drivers for {ticker} over 3-6 Months, and output a **pillar_score** (0-4).
 
 {common_input_block(ticker, **kw)}
 {GLOBAL_CONSTRAINTS_SHORT}
@@ -264,8 +266,10 @@ B4. Monitor List (3 Must-Watch Variables)
 Metric | Source | Warning Threshold | Frequency
 
 B5. Novice Mode Scoring (pillar_score)
-- **2**: Turnaround clear OR Valuation/Fundamentals strongly supportive.
-- **1**: Repairing / Waiting for confirmation.
+- **4**: Fundamentals clearly improving, strong earnings/valuation support, high confidence.
+- **3**: Positive lean but awaiting confirmation (e.g. next earnings, guidance).
+- **2**: Neutral / Mixed signals / Valuation fair but no catalyst.
+- **1**: Weakening fundamentals, margin pressure, or elevated valuation risk.
 - **0**: Deteriorating OR Insufficient Evidence.
 
 B6. Output Table (Mandatory)
@@ -274,7 +278,7 @@ Columns: FACT(Link+Date) | Key Numbers | Bull Impact | Bear Impact | Uncertainty
 
 **FINAL OUTPUT FORMAT**:
 At the very end of your response, you MUST output the score line exactly as:
-`pillar_score = {{0, 1, or 2}}`
+`pillar_score = {{0, 1, 2, 3, or 4}}`
 
 {_data_instruction}
 {_data_block}
@@ -286,7 +290,7 @@ For reference, the current date is {current_date}. The company we want to look a
 
 
 def news_analyst(ticker: str, current_date: str, akshare_md: str = "", **kw) -> str:
-    """News & Catalyst Agent (Pro v2) — pillar_score 0/1/2."""
+    """News & Catalyst Agent (Pro v2) — pillar_score 0-4."""
     _data_instruction = SUBAGENT_DATA_INSTRUCTION_WITH_AKSHARE if akshare_md else SUBAGENT_DATA_INSTRUCTION
     _data_block = ""
     if akshare_md:
@@ -314,7 +318,7 @@ def news_analyst(ticker: str, current_date: str, akshare_md: str = "", **kw) -> 
 7. 概念股/题材归属：当前所属板块概念(如新能源/AI/半导体)，近期轮动方向
 """
     return f"""**ROLE**: You are the [News & Catalyst Agent] (Pro v2).
-**OBJECTIVE**: Map past 30 days of info to a "Tradable Catalyst Map" for {ticker}, and output a **pillar_score** (0/1/2).
+**OBJECTIVE**: Map past 30 days of info to a "Tradable Catalyst Map" for {ticker}, and output a **pillar_score** (0-4).
 
 {common_input_block(ticker, **kw)}
 {GLOBAL_CONSTRAINTS_SHORT}
@@ -329,8 +333,10 @@ C2. Catalyst Map (Forward Looking)
 - Leading Indicators for each catalyst
 
 C3. Novice Mode Scoring (pillar_score)
-- **2**: Clear Positive Catalyst + Verifiable.
-- **1**: Neutral / Uncertainty.
+- **4**: Clear positive catalyst, verifiable, near-term with high impact.
+- **3**: Positive catalyst likely but timing or magnitude uncertain.
+- **2**: Neutral / No clear catalyst / Mixed news flow.
+- **1**: Negative catalyst emerging, regulatory risk, or adverse event.
 - **0**: Negative Catalyst OR High Uncertainty (Event Lock).
 
 C4. Output Table (Mandatory)
@@ -339,7 +345,7 @@ Columns: Event | Date | Source Tier | Link | Impact Path | Duration | Reversal |
 
 **FINAL OUTPUT FORMAT**:
 At the very end of your response, you MUST output the score line exactly as:
-`pillar_score = {{0, 1, or 2}}`
+`pillar_score = {{0, 1, 2, 3, or 4}}`
 
 {_data_instruction}
 {_data_block}
@@ -351,7 +357,7 @@ For reference, the current date is {current_date}. We are looking at the company
 
 
 def sentiment_analyst(ticker: str, current_date: str, akshare_md: str = "", **kw) -> str:
-    """Flow & Sentiment Agent (Pro v2) — pillar_score 0/1/2."""
+    """Flow & Sentiment Agent (Pro v2) — pillar_score 0-4."""
     _data_instruction = SUBAGENT_DATA_INSTRUCTION_WITH_AKSHARE if akshare_md else SUBAGENT_DATA_INSTRUCTION
     _data_block = ""
     if akshare_md:
@@ -377,7 +383,7 @@ def sentiment_analyst(ticker: str, current_date: str, akshare_md: str = "", **kw
 6. Dragon-Tiger board data (if available)
 """
     return f"""**ROLE**: You are the [Flow & Sentiment Agent] (Pro v2).
-**OBJECTIVE**: Assess "Crowding" and "Reflexivity Risk" for {ticker}, and output a **pillar_score** (0/1/2). (S3 Social data is auxiliary only).
+**OBJECTIVE**: Assess "Crowding" and "Reflexivity Risk" for {ticker}, and output a **pillar_score** (0-4). (S3 Social data is auxiliary only).
 
 {common_input_block(ticker, **kw)}
 {GLOBAL_CONSTRAINTS_SHORT}
@@ -395,8 +401,10 @@ D2. Reflexivity Risk (Stampede Conditions)
 - Trigger Condition: Price Break + Fund Outflow
 
 D3. Novice Mode Scoring (pillar_score)
-- **2**: Strong Inflows AND Low Crowding.
-- **1**: Neutral.
+- **4**: Strong inflows, low crowding, positive sentiment alignment.
+- **3**: Net positive flow but crowding or sentiment shows caution.
+- **2**: Neutral / Balanced flow / No clear sentiment signal.
+- **1**: Outflows emerging, rising crowding, or sentiment deteriorating.
 - **0**: High Crowding / De-leveraging Risk / Extreme Sentiment.
 
 D4. Output Table (Mandatory)
@@ -405,7 +413,7 @@ Columns: Signal | FACT(Link+Date) | Interp | Reverse Risk | Trigger | Confidence
 
 **FINAL OUTPUT FORMAT**:
 At the very end of your response, you MUST output the score line exactly as:
-`pillar_score = {{0, 1, or 2}}`
+`pillar_score = {{0, 1, 2, 3, or 4}}`
 
 {_data_instruction}
 {_data_block}
@@ -629,6 +637,18 @@ def research_manager(
 **市场环境（来自市场层 Agent）：**
 {market_context_block}
 请在综合研判中回答：个股投资逻辑是否与市场大方向一致？如果个股逻辑逆市场方向，需在结论中明确说明风险加成。
+
+**M2b. 市场偏向调节（Regime-Dependent Asymmetric Weighting）**
+- 如果市场 regime 为 NEUTRAL:
+  · M2 仲裁中，看空论据权重 ×1.2（同等证据强度下，看空结论优先）
+  · 对看多论据要求更高的证据门槛（需 S1 来源或多重 S2 交叉确认）
+  · M3 情景树中 Bear Case 概率不低于 25%
+- 如果市场 regime 为 RISK_OFF:
+  · 看空论据权重 ×1.5
+  · M3 情景树中 Bear Case 概率不低于 35%
+  · 除非看多方有 P0 级催化剂（已发布的政策文件、已公告的业绩超预期），否则不得给出 BUY
+- 如果市场 regime 为 RISK_ON:
+  · 正常权重（1:1），但 Bull Case 概率不低于 20%
 """
     return f"""**ROLE**: You are the [Research Manager / Investment Committee CIRO] (Pro v2).
 **OBJECTIVE**: Synthesize structured claims from Bull/Bear analysts into a definitive, actionable decision. Arbitrate conflicts using strict evidence rules.
@@ -671,8 +691,8 @@ M4. Preliminary Decision (BUY / HOLD / SELL)
 - Triggers: Price + Fundamental conditions
 
 M5. Novice Mode Output
-- **manager_score** (0-8, sum of 4 analysts if available, else estimate)
-- **target_position_pct** (0.0 to 0.30) - Must be 0 if score < 6 or vetoed.
+- **manager_score** (0-16, sum of 4 analysts if available, else estimate)
+- **target_position_pct** (0.0 to 0.30) - Must be 0 if score < 10 or vetoed.
 
 **OUTPUT PROTOCOL — At the end, provide a structured synthesis block:**
 
@@ -689,7 +709,7 @@ bull_case = <one sentence>
 bear_case = <one sentence>
 invalidation = <conditions that would invalidate this conclusion>
 open_questions = <what is still unknown>
-manager_score = <0..8>
+manager_score = <0..16>
 target_position_pct = <0.xx>
 ```
 
@@ -776,6 +796,8 @@ def conservative_debator(
 - Recommend specific risk control measures (stop-loss level, max position size %).
 - State your recommendation (BUY/SELL/HOLD) and max acceptable position size % clearly.
 
+**注意**: 当研究总监 confidence ≥ 0.70 时，你的风险论证应聚焦于**仓位大小调整**而非**方向翻转**，除非你能识别 R1 级别硬性风险事件。
+
 **结构化输出（必须附加在回复末尾）：**
 ```
 RISK_DEBATER_OUTPUT:
@@ -820,6 +842,8 @@ def neutral_debator(
 - Respond DIRECTLY to both Aggressive and Conservative points with specific data.
 - Find the synthesis: Where does the data actually point when stripped of emotional bias?
 - State your recommendation (BUY/SELL/HOLD) with specific position size %, entry, and exit criteria.
+
+**注意**: 当研究总监 confidence ≥ 0.70 时，你的风险论证应聚焦于**仓位大小调整**而非**方向翻转**，除非你能识别 R1 级别硬性风险事件。
 
 **结构化输出（必须附加在回复末尾）：**
 ```
@@ -900,6 +924,17 @@ R3. Novice Mode Risk Scoring (risk_score)
 R4. Output Table (Mandatory)
 Columns: Check | Status | Pass/Fail | Comment
 (Markdown Table)
+
+**R5. 信念保护规则（Conviction Preservation）**
+当研究总监的 confidence ≥ 0.70 且 research_action 为 BUY 或 SELL 时:
+a) **禁止翻转方向**（BUY→SELL 或 SELL→BUY），除非 R1 硬性事件锁触发
+b) 你可以调整 max_position_pct（降低仓位），但必须保留行动方向
+c) risk_cleared 应为 TRUE，除非 R1 硬性规则触发
+d) 如果你不同意研究总监在此置信度下的方向判断，必须明确指出 PM 遗漏的具体证据（引用 [E#] 编号），不得仅以笼统的风险担忧推翻
+
+当 confidence < 0.70 时:
+- 正常 R1-R4 评估流程
+- 可以在风险标志显著时覆盖为 HOLD
 
 **EVIDENCE & CLAIM PROTOCOL — CRITICAL:**
 - The Claim Audit below shows you exactly how many claims are unattributed and low-confidence.
