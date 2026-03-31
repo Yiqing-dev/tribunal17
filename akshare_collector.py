@@ -1070,6 +1070,34 @@ class MarketSnapshot:
     apis_succeeded: list = field(default_factory=list)
     apis_failed: list = field(default_factory=list)
 
+    def to_json(self) -> str:
+        """Serialize snapshot to JSON for persistence across pipeline stages."""
+        import json as _json
+        d = {
+            "trade_date": self.trade_date,
+            "index_data": self.index_data,
+            "sector_fund_flow": self.sector_fund_flow,
+            "concept_fund_flow": self.concept_fund_flow,
+            "northbound_summary": self.northbound_summary,
+            "advance_count": self.advance_count,
+            "decline_count": self.decline_count,
+            "limit_up_count": self.limit_up_count,
+            "limit_down_count": self.limit_down_count,
+            "total_stocks": self.total_stocks,
+            "stock_spots": self.stock_spots,
+            "markdown_report": self.markdown_report,
+            "apis_succeeded": self.apis_succeeded,
+            "apis_failed": self.apis_failed,
+        }
+        return _json.dumps(d, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "MarketSnapshot":
+        """Deserialize snapshot from JSON."""
+        import json as _json
+        d = _json.loads(json_str)
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
 
 def _collect_index_data(ms: MarketSnapshot):
     """Collect major A-share index data."""
@@ -1129,22 +1157,33 @@ def _collect_sector_flow(ms: MarketSnapshot):
         return
 
     rows = []
-    if source == "ths":
-        for _, r in df.head(20).iterrows():
-            rows.append({
+    def _row_to_dict(r, src):
+        if src == "ths":
+            return {
                 "name": str(r.get("板块", "")),
                 "change_pct": _safe_float(r.get("涨跌幅")),
                 "net_inflow": _safe_float(r.get("净流入")),
-                "net_pct": 0,  # THS doesn't provide 净占比
-            })
-    else:
-        for _, r in df.head(20).iterrows():
-            rows.append({
-                "name": str(r.get("名称", "")),
-                "change_pct": _safe_float(r.get("今日涨跌幅")),
-                "net_inflow": _safe_float(r.get("今日主力净流入-净额")),
-                "net_pct": _safe_float(r.get("今日主力净流入-净占比")),
-            })
+                "net_pct": 0,
+            }
+        return {
+            "name": str(r.get("名称", "")),
+            "change_pct": _safe_float(r.get("今日涨跌幅")),
+            "net_inflow": _safe_float(r.get("今日主力净流入-净额")),
+            "net_pct": _safe_float(r.get("今日主力净流入-净占比")),
+        }
+
+    # Collect both top inflow (head) and top outflow (tail) sectors
+    top_inflow = df.head(10)
+    top_outflow = df.tail(10)
+    seen = set()
+    for _, r in top_inflow.iterrows():
+        d = _row_to_dict(r, source)
+        rows.append(d)
+        seen.add(d["name"])
+    for _, r in top_outflow.iterrows():
+        d = _row_to_dict(r, source)
+        if d["name"] not in seen:
+            rows.append(d)
     ms.sector_fund_flow = rows
 
 
@@ -1383,16 +1422,31 @@ def _build_market_markdown(ms: MarketSnapshot) -> str:
             lines.append(f"- ⚠️ {note}")
         lines.append("")
 
-    # Sector flow
+    # Sector flow — show both top inflow and top outflow
     if ms.sector_fund_flow:
-        lines.append("## 行业板块资金流向 (Top 10)")
-        lines.append("| 板块 | 涨跌幅 | 主力净流入 |")
-        lines.append("|------|--------|----------|")
-        for s in ms.sector_fund_flow[:10]:
+        inflow = [s for s in ms.sector_fund_flow if (s.get("net_inflow", 0) or 0) > 0]
+        outflow = [s for s in ms.sector_fund_flow if (s.get("net_inflow", 0) or 0) < 0]
+        outflow.sort(key=lambda x: x.get("net_inflow", 0) or 0)  # most negative first
+
+        def _fmt_sector_row(s):
             pct = s.get("change_pct", 0) or 0
             net = s.get("net_inflow", 0) or 0
-            lines.append(f"| {s['name']} | {pct:.2f}% | {net / 1e8:.2f}亿 |" if abs(net) > 1e6
-                         else f"| {s['name']} | {pct:.2f}% | {net:.0f} |")
+            return (f"| {s['name']} | {pct:+.2f}% | {net / 1e8:.2f}亿 |" if abs(net) > 1e6
+                    else f"| {s['name']} | {pct:+.2f}% | {net:.0f} |")
+
+        lines.append("## 行业板块资金流向 — 净流入 Top 10")
+        lines.append("| 板块 | 涨跌幅 | 主力净流入 |")
+        lines.append("|------|--------|----------|")
+        for s in inflow[:10]:
+            lines.append(_fmt_sector_row(s))
+
+        if outflow:
+            lines.append("")
+            lines.append("## 行业板块资金流向 — 净流出 Top 10")
+            lines.append("| 板块 | 涨跌幅 | 主力净流出 |")
+            lines.append("|------|--------|----------|")
+            for s in outflow[:10]:
+                lines.append(_fmt_sector_row(s))
         lines.append("")
 
     # Concept flow

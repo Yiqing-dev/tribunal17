@@ -642,6 +642,16 @@ def assemble_market_context(
         "sector_momentum": sector.get("sector_momentum", []),
     }
 
+    # Enrich sector_momentum: if LLM agent only returned inflow sectors,
+    # the momentum list will lack outflow entries.  Detect this and flag it
+    # so downstream renderers know the data is one-sided.
+    momentum = result.get("sector_momentum", [])
+    has_outflow = any(
+        isinstance(m, dict) and m.get("direction") == "out" for m in momentum
+    )
+    if not has_outflow and momentum:
+        result["_sector_momentum_inflow_only"] = True
+
     # Merge global macro web data when available
     if global_macro:
         from .web_collector import merge_global_macro_into_context

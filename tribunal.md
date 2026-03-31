@@ -131,6 +131,9 @@ market_context_block = format_market_context_block(market_context)
 
 Path(RESULTS / "market_context.json").write_text(json.dumps(market_context, ensure_ascii=False, indent=2))
 Path(RESULTS / "market_context_block.txt").write_text(market_context_block)
+
+# ⚠️ 持久化 snapshot 对象 — L5/L6 渲染报告时需要 limit_up/down 等字段
+Path(RESULTS / "market_snapshot.json").write_text(snapshot.to_json())
 ```
 
 打印：`[L1] 太史令、户部司、舆图司、全球宏观情报司会同议事完毕`
@@ -314,6 +317,23 @@ generate_committee_report(trace, output_dir=str(REPORTS))
 
 ```python
 from subagent_pipeline.renderers.report_renderer import generate_pool_report
+from subagent_pipeline.akshare_collector import MarketSnapshot
+
+# ⚠️ 必须加载 L1 持久化的 snapshot，否则涨停跌停等数据丢失
+snapshot = MarketSnapshot.from_json(Path(RESULTS / "market_snapshot.json").read_text())
+
+# 从 recap 加载涨跌停明细（可选，丰富涨跌停宇宙板块）
+recap_path = REPLAYS / f"recap_{trade_date}.json"
+board_data = None
+if recap_path.exists():
+    _recap = json.loads(recap_path.read_text())
+    board_data = {
+        "limit_ups": _recap.get("limit_board", {}).get("limit_up_stocks", []),
+        "limit_downs": _recap.get("limit_board", {}).get("limit_down_stocks", []),
+        "consecutive_boards": _recap.get("consecutive_boards", []),
+        "sectors": [],
+    }
+
 generate_pool_report(
     run_ids=all_run_ids, output_dir=str(REPORTS),
     storage_dir=str(REPLAYS), trade_date=trade_date,
@@ -327,9 +347,12 @@ generate_pool_report(
 
 ```python
 from subagent_pipeline.renderers.report_renderer import generate_market_report
+
+# snapshot 和 board_data 已在 L5 加载
 generate_market_report(
     market_context=market_context, market_snapshot=snapshot,
     output_dir=str(REPORTS), trade_date=trade_date,
+    board_data=board_data,
 )
 ```
 

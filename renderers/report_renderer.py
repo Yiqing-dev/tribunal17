@@ -4961,16 +4961,20 @@ def _render_sector_engine(view: MarketView) -> str:
     for s in view.avoid_sectors[:3]:
         avoids_html += f'<div class="sector-item"><span class="si-name">{_esc(s)}</span><span class="si-pct dn">\u9000\u6f6e</span></div>'
 
-    # Momentum flows
+    # Momentum flows — show both inflow and outflow
+    inflow_items = [m for m in view.sector_momentum if isinstance(m, dict) and m.get("direction") == "in"]
+    outflow_items = [m for m in view.sector_momentum if isinstance(m, dict) and m.get("direction") == "out"]
     momentum_html = ""
-    for m in view.sector_momentum[:5]:
-        if isinstance(m, dict):
+    for m in inflow_items[:5]:
+        nm = m.get("name", "")
+        flow = m.get("flow", "")
+        momentum_html += f'<div class="sector-item"><span class="si-name">{_esc(nm)}</span><span class="si-flow">{_esc(flow)}</span><span class="si-pct up">\u2191</span></div>'
+    if outflow_items:
+        momentum_html += '<div style="border-top:1px solid rgba(0,0,0,.08);margin:.4rem 0"></div>'
+        for m in outflow_items[:5]:
             nm = m.get("name", "")
             flow = m.get("flow", "")
-            direction = m.get("direction", "")
-            cls = "up" if direction == "in" else ("dn" if direction == "out" else "")
-            arrow = "\u2191" if direction == "in" else ("\u2193" if direction == "out" else "")
-            momentum_html += f'<div class="sector-item"><span class="si-name">{_esc(nm)}</span><span class="si-flow">{_esc(flow)}</span><span class="si-pct {cls}">{arrow}</span></div>'
+            momentum_html += f'<div class="sector-item"><span class="si-name">{_esc(nm)}</span><span class="si-flow">{_esc(flow)}</span><span class="si-pct dn">\u2193</span></div>'
 
     rotation_badge = ""
     phase_labels = {"early": "\u65e9\u671f", "mid": "\u4e2d\u671f", "late": "\u6676\u671f", "peak": "\u89c1\u9876"}
@@ -5481,6 +5485,20 @@ def generate_market_report(
     """
     if not market_context:
         return None
+
+    # Auto-enrich sector_momentum with outflow data from snapshot when missing
+    if market_context.get("_sector_momentum_inflow_only") and market_snapshot:
+        sector_flow = getattr(market_snapshot, "sector_fund_flow", [])
+        outflow_sectors = [s for s in sector_flow if (s.get("net_inflow", 0) or 0) < 0]
+        outflow_sectors.sort(key=lambda x: x.get("net_inflow", 0) or 0)
+        existing_names = {m.get("name") for m in market_context.get("sector_momentum", []) if isinstance(m, dict)}
+        for s in outflow_sectors[:5]:
+            if s["name"] not in existing_names:
+                market_context.setdefault("sector_momentum", []).append({
+                    "name": s["name"],
+                    "flow": str(round(s["net_inflow"] / 1e8, 2)),
+                    "direction": "out",
+                })
 
     # Adaptive heatmap: board_data → sector_momentum → None
     if heatmap_data is None:
