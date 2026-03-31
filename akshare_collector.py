@@ -1240,8 +1240,8 @@ def _collect_northbound_market(ms: MarketSnapshot):
             return
 
         # Aggregate SH + SZ northbound rows
-        total_net_buy = sum(_safe_float(r.get("成交净买额")) for _, r in nb.iterrows())
-        total_net_flow = sum(_safe_float(r.get("资金净流入")) for _, r in nb.iterrows())
+        total_net_buy = sum((_safe_float(r.get("成交净买额")) or 0) for _, r in nb.iterrows())
+        total_net_flow = sum((_safe_float(r.get("资金净流入")) or 0) for _, r in nb.iterrows())
         total_up = sum(int(r.get("上涨数", 0) or 0) for _, r in nb.iterrows())
         total_down = sum(int(r.get("下跌数", 0) or 0) for _, r in nb.iterrows())
         total_flat = sum(int(r.get("持平数", 0) or 0) for _, r in nb.iterrows())

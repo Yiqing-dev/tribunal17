@@ -3425,6 +3425,26 @@ def generate_pool_report(
     if not view.rows:
         return None
 
+    # Override sector_momentum with snapshot's actual price-change data.
+    # The LLM agent's sector_momentum is sorted by net_inflow which is
+    # misleading (sectors can have inflow yet fall in price).  The snapshot
+    # sector_fund_flow is now sorted by actual 涨跌幅, which is ground truth.
+    if market_context and market_snapshot:
+        sector_flow = getattr(market_snapshot, "sector_fund_flow", [])
+        if sector_flow:
+            refreshed = []
+            for s in sector_flow:
+                pct = s.get("change_pct", 0) or 0
+                net = s.get("net_inflow", 0) or 0
+                refreshed.append({
+                    "name": s.get("name", ""),
+                    "flow": str(round(pct, 2)),       # use price change for color
+                    "net_inflow_yi": round(net / 1e8, 2) if abs(net) > 1e6 else 0,
+                    "direction": "in" if pct > 0 else "out",
+                })
+            market_context["sector_momentum"] = refreshed
+            market_context.pop("_sector_momentum_inflow_only", None)
+
     # Build heatmap data if market context available
     heatmap_data = None
     if market_context or market_snapshot:

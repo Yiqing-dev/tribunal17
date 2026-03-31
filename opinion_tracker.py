@@ -220,6 +220,7 @@ class WatchlistReport:
             "action_flips": self.action_flips,
             "biggest_confidence_moves": self.biggest_confidence_moves,
             "new_risk_flags": self.new_risk_flags,
+            "stale_signals": self.stale_signals,
             "unstable_tickers": self.unstable_tickers,
             "current_state": {
                 t: s.to_dict() for t, s in self.current_state.items()

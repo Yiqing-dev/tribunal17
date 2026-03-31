@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from .akshare_collector import _retry_call
+from .akshare_collector import _retry_call, _last_trading_day, _is_cn_trading_day
 from .proxy_pool import em_proxy_session
 
 logger = logging.getLogger(__name__)
@@ -846,7 +846,16 @@ def _derive_market_weather(idx_summary: IndexSummary) -> tuple:
 
 def collect_daily_recap(trade_date: str = "") -> DailyRecapData:
     """Collect all daily recap data. Main entry point."""
-    today = trade_date or datetime.now().strftime("%Y-%m-%d")
+    effective_date = trade_date or datetime.now().strftime("%Y-%m-%d")
+    if not _is_cn_trading_day(effective_date):
+        rolled = _last_trading_day(effective_date)
+        logger.warning(
+            f"Trade date {effective_date} is a weekend — "
+            f"rolling back to last trading day {rolled}. "
+            f"Some real-time APIs may still return stale data."
+        )
+        effective_date = rolled
+    today = effective_date
     t0 = time.time()
 
     # Get spot data once (reused across collectors)

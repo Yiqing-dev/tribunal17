@@ -659,8 +659,6 @@ def assemble_market_context(
 
     return result
 
-    return result
-
 
 def format_market_context_block(ctx: Dict[str, Any]) -> str:
     """Format market_context dict as a text block for injection into per-ticker prompts."""
