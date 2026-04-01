@@ -16,7 +16,7 @@ import json as _json
 from pathlib import Path
 from typing import Optional
 
-from .report_renderer import _squarify, _html_wrap
+from .shared_utils import _squarify, _html_wrap
 from .decision_labels import (
     get_regime_label, get_regime_class,
     get_breadth_label, get_breadth_class,
