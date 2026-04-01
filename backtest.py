@@ -145,6 +145,7 @@ class BacktestReport:
     """Complete backtest output: results + summaries."""
     config: BacktestConfig = field(default_factory=BacktestConfig)
     results: List[BacktestResult] = field(default_factory=list)
+    shadow_results: List[BacktestResult] = field(default_factory=list)
     overall_summary: BacktestSummary = field(default_factory=BacktestSummary)
     per_ticker_summaries: Dict[str, BacktestSummary] = field(default_factory=dict)
     generated_at: str = ""
@@ -163,6 +164,7 @@ class BacktestReport:
                 "engine_version": self.config.engine_version,
             },
             "results": [r.to_dict() for r in self.results],
+            "shadow_results": [r.to_dict() for r in self.shadow_results],
             "overall_summary": self.overall_summary.to_dict(),
             "per_ticker_summaries": {
                 k: v.to_dict() for k, v in self.per_ticker_summaries.items()
@@ -173,7 +175,7 @@ class BacktestReport:
 
 # ── Direction Inference ───────────────────────────────────────────────────
 
-def infer_direction(action: str, confidence: float = -1.0) -> str:
+def infer_direction(action: str) -> str:
     """Map action to expected price direction.
 
     Returns: 'up', 'down', 'flat', or 'abstain'.
@@ -187,7 +189,7 @@ def infer_direction(action: str, confidence: float = -1.0) -> str:
         return "abstain"
     elif action in ("HOLD",):
         return "flat"
-    return "flat"
+    return "abstain"
 
 
 # ── Forward Price Fetching ────────────────────────────────────────────────
@@ -345,7 +347,7 @@ def evaluate_signal(
     )
 
     # Infer expected direction
-    result.direction_expected = infer_direction(action, confidence)
+    result.direction_expected = infer_direction(action)
 
     # VETO signals: skip evaluation entirely (no trade = no P&L)
     # Unless shadow_direction is provided for shadow VETO analysis.
@@ -639,7 +641,7 @@ def run_backtest(
     for entry in runs:
         run_id = entry.get("run_id", "")
         trade_date = entry.get("trade_date", "")
-        action = entry.get("research_action", "")
+        action = entry.get("research_action", "").strip()
 
         if not trade_date or not action:
             continue
@@ -693,7 +695,7 @@ def run_backtest(
                 stop_loss=sl,
                 take_profit=tgt,
                 eval_window_days=config.eval_window_days,
-                direction_expected=infer_direction(action, trace.final_confidence),
+                direction_expected=infer_direction(action),
                 eval_status="insufficient",
                 error_msg="Price fetching disabled",
             )
@@ -747,9 +749,12 @@ def run_backtest(
             )
             shadow_results.append(shadow_r)
 
-    # Compute summaries (include shadow results for shadow counts)
-    all_for_summary = results + shadow_results
-    overall = compute_summary(all_for_summary, scope="overall", config=config)
+    # Compute summaries — shadow results are tracked separately
+    overall = compute_summary(results, scope="overall", config=config)
+    # Compute shadow stats from the dedicated shadow list
+    shadow_completed = [r for r in shadow_results if r.eval_status == "shadow_veto"]
+    overall.shadow_veto_count = len(shadow_completed)
+    overall.shadow_veto_wins = sum(1 for r in shadow_completed if r.outcome == "win")
 
     per_ticker = {}
     ticker_groups: Dict[str, List[BacktestResult]] = {}
@@ -760,7 +765,8 @@ def run_backtest(
 
     report = BacktestReport(
         config=config,
-        results=results + shadow_results,
+        results=results,
+        shadow_results=shadow_results,
         overall_summary=overall,
         per_ticker_summaries=per_ticker,
         generated_at=datetime.now().isoformat(),
@@ -871,6 +877,7 @@ def load_backtest_report(path: str) -> Optional[BacktestReport]:
         data = json.load(f)
     config = BacktestConfig(**data.get("config", {}))
     results = [BacktestResult.from_dict(r) for r in data.get("results", [])]
+    shadow = [BacktestResult.from_dict(r) for r in data.get("shadow_results", [])]
     overall = BacktestSummary(**data.get("overall_summary", {}))
     per_ticker = {
         k: BacktestSummary(**v)
@@ -879,6 +886,7 @@ def load_backtest_report(path: str) -> Optional[BacktestReport]:
     return BacktestReport(
         config=config,
         results=results,
+        shadow_results=shadow,
         overall_summary=overall,
         per_ticker_summaries=per_ticker,
         generated_at=data.get("generated_at", ""),
@@ -1590,6 +1598,8 @@ def _cumulative_return_svg(results: list, benchmark_returns: dict = None,
     return (
         f'<div class="cum-chart card">'
         f'<h3>\u7d2f\u8ba1\u6536\u76ca\u66f2\u7ebf</h3>'
+        f'<p style="margin:-0.3rem 0 0.4rem;font-size:0.75rem;color:#8fa3b8;">'
+        f'\u7b80\u5355\u7d2f\u52a0\u53e3\u5f84\uff0c\u4ec5\u4f9b\u8d8b\u52bf\u53c2\u8003</p>'
         f'<svg viewBox="0 0 {w} {h}" width="100%" height="auto" '
         f'style="max-height:{h}px">'
         f'<defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">'

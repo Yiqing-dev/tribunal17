@@ -78,9 +78,9 @@ AGENT_SEQ = {
 
 def parse_pillar_score(text: str) -> Optional[int]:
     """Extract `pillar_score = N` from analyst output."""
-    m = re.search(r'pillar_score\s*=\s*(\d)', text)
+    m = re.search(r'pillar_score\s*=\s*(\d+)', text)
     if m:
-        return int(m.group(1))
+        return min(int(m.group(1)), 4)
     return None
 
 
@@ -263,8 +263,10 @@ def parse_risk_output(text: str) -> Dict[str, Any]:
             raw = re.sub(r',\s*}', '}', raw)
             raw = re.sub(r'(?<=[{,])\s*(\w+)\s*:', r' "\1":', raw)
             result["risk_flags"] = json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning("risk_flags JSON parse failed, defaulting to []: %s", e)
             result["risk_flags"] = []
+            result["_risk_flags_parse_failed"] = True
         block = block[:flags_m.start()] + block[flags_m.end():]
 
     for line in block.strip().split('\n'):
@@ -1081,6 +1083,11 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
     elif agent_key == "scenario_agent":
         scenario = parse_scenario_output(text)
         if scenario:
+            probs_defaulted = (
+                "base_prob" not in scenario
+                or "bull_prob" not in scenario
+                or "bear_prob" not in scenario
+            )
             nt.structured_data = {
                 "base_prob": scenario.get("base_prob", 0.5),
                 "bull_prob": scenario.get("bull_prob", 0.25),
@@ -1088,7 +1095,12 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
                 "base_case_trigger": scenario.get("base_trigger", ""),
                 "bull_case_trigger": scenario.get("bull_trigger", ""),
                 "bear_case_trigger": scenario.get("bear_trigger", ""),
+                "probs_defaulted": probs_defaulted,
             }
+            if probs_defaulted:
+                warnings = list(nt.parse_warnings or [])
+                warnings.append("scenario probabilities partially defaulted (50/25/25)")
+                nt.parse_warnings = warnings
         else:
             nt.parse_status = "fallback_used"
             nt.parse_confidence = 0.5
@@ -1101,10 +1113,16 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
         if synth:
             action = str(synth.get("research_action", "HOLD")).upper()
             nt.research_action = action
+            _conf_defaulted = "confidence" not in synth
             try:
                 nt.confidence = float(synth.get("confidence", 0.5))
             except (ValueError, TypeError):
                 nt.confidence = 0.5
+                _conf_defaulted = True
+            if _conf_defaulted:
+                warnings = list(nt.parse_warnings or [])
+                warnings.append("confidence defaulted to 0.5 (not provided by PM)")
+                nt.parse_warnings = warnings
             nt.thesis_effect = str(synth.get("thesis_effect", "unchanged"))
 
             # Evidence references
@@ -1163,6 +1181,10 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
         if risk:
             nt.risk_score = _safe_int(risk.get("risk_score"))
             nt.risk_cleared = risk.get("risk_cleared", False)
+            if "risk_cleared" not in risk:
+                warnings = list(nt.parse_warnings or [])
+                warnings.append("risk_cleared not explicitly provided, defaulted to False")
+                nt.parse_warnings = warnings
             nt.max_position_pct = _safe_float(risk.get("max_position_pct", -1.0))
 
             # Only set research_action if Risk Judge explicitly provides one.
@@ -1184,6 +1206,10 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
                 nt.veto_source = "risk_gate"
 
             # Risk flags
+            if risk.get("_risk_flags_parse_failed"):
+                warnings = list(nt.parse_warnings or [])
+                warnings.append("risk_flags JSON parse failed, flags may be incomplete")
+                nt.parse_warnings = warnings
             flags = risk.get("risk_flags", [])
             nt.risk_flag_count = len(flags)
             nt.risk_flag_categories = list(dict.fromkeys(
@@ -1220,7 +1246,7 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
             nt.parse_warnings = ["RISK_OUTPUT block not found"]
             nt.status = NodeStatus.WARN
             nt.risk_score = 5
-            nt.risk_cleared = True
+            nt.risk_cleared = False
 
     # ── Stage 7: Research Output (Trade Card + Trade Plan) ──
     elif agent_key == "research_output":
@@ -1507,7 +1533,7 @@ def generate_report(
     trace = build_run_trace(outputs, ticker, ticker_name, trade_date, run_id)
 
     # 1a. Inject market context into RunTrace for downstream rendering
-    if market_context:
+    if market_context is not None:
         trace.market_context = market_context
 
     # 1b. Inject price history into Market Analyst node for sparklines

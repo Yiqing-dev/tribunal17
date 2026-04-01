@@ -296,6 +296,10 @@ def em_proxy_session():
         max_supplier_refresh=2,
     )
 
+    # WARNING: Global monkey-patch of requests.get. NOT thread-safe —
+    # concurrent threads share the same rotated proxy. Acceptable for the
+    # current single-threaded pipeline; refactor to session-level injection
+    # before any multi-threaded usage.
     patches = [patch("requests.get", new=rotating)]
 
     # Also patch akshare's request_with_retry (used by stock_zh_a_spot_em)

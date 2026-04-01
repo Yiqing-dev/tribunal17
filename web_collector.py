@@ -224,7 +224,10 @@ def parse_global_macro_output(text: str) -> Dict[str, str]:
         text, re.DOTALL,
     )
     if not block_match:
-        # Fallback: try to find key=value pairs anywhere
+        # Fallback: only scan short text to avoid false matches from prose
+        if len(text) > 2000:
+            logger.warning("GLOBAL_MACRO_OUTPUT block not found; text too long for safe fallback scan")
+            return result
         block_text = text
     else:
         block_text = block_match.group(1)

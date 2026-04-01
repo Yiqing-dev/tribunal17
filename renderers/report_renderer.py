@@ -10,6 +10,7 @@ All renderers consume view models from views.py, never raw traces.
 All user-facing text is in Chinese (A-share product).
 """
 
+import copy
 import logging
 from pathlib import Path
 from typing import Optional
@@ -909,12 +910,16 @@ def _render_battle_plan(view: SnapshotView) -> str:
     side_label = {"LONG": "\u505a\u591a", "SHORT": "\u505a\u7a7a", "WAIT": "\u7b49\u5f85",
                   "BUY": "\u505a\u591a", "SELL": "\u505a\u7a7a", "AVOID": "\u56de\u907f",
                   "HOLD": "\u7b49\u5f85", "VETO": "\u5426\u51b3"}.get(side, side)
-    conf_cls = "buy" if confidence >= 0.7 else ("hold" if confidence >= 0.4 else "sell")
+    if confidence >= 0:
+        conf_cls = "buy" if confidence >= 0.7 else ("hold" if confidence >= 0.4 else "sell")
+        conf_badge = f'<span class="badge badge-{conf_cls}">\u7f6e\u4fe1\u5ea6 {confidence:.0%}</span>'
+    else:
+        conf_badge = '<span class="badge">\u7f6e\u4fe1\u5ea6 \u2014</span>'
 
     header = (
         f'<div class="bp-header">'
         f'<span class="bp-side">{emoji} {_esc(side_label)}</span>'
-        f'<span class="badge badge-{conf_cls}">\u7f6e\u4fe1\u5ea6 {confidence:.0%}</span>'
+        f'{conf_badge}'
         f'</div>'
     )
 
@@ -1115,7 +1120,9 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     hero_kpis = []
     if view.confidence >= 0:
         conf_cls = "buy" if view.confidence >= 0.7 else ("hold" if view.confidence >= 0.4 else "sell")
-        hero_kpis.append(f'<div class="kpi kpi-primary {conf_cls}"><span class="kpi-val">{conf_pct}%</span><span class="kpi-label">置信度</span></div>')
+        _conf_note = "\u2248" if getattr(view, "confidence_defaulted", False) else ""
+        _conf_sub = ' <span style="font-size:.6rem;color:var(--muted);">(\u9ed8\u8ba4)</span>' if getattr(view, "confidence_defaulted", False) else ""
+        hero_kpis.append(f'<div class="kpi kpi-primary {conf_cls}"><span class="kpi-val">{_conf_note}{conf_pct}%</span><span class="kpi-label">\u7f6e\u4fe1\u5ea6{_conf_sub}</span></div>')
     hero_kpis.append(f'<div class="kpi kpi-secondary"><span class="kpi-val">{view.total_evidence}</span><span class="kpi-label">证据条数</span></div>')
     hero_kpis.append(f'<div class="kpi kpi-secondary"><span class="kpi-val">{view.attributed_rate:.0%}</span><span class="kpi-label">绑定率</span></div>')
     ev_label = _evidence_strength_label(view.evidence_strength)
@@ -1463,6 +1470,13 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     _sig_emoji_r = get_signal_emoji(view.research_action)
     color_var = 'green' if view.action_class == 'buy' else ('red' if view.action_class in ('sell', 'veto') else 'yellow')
     conf_pct_r = int(view.confidence * 100)
+    if view.confidence >= 0:
+        _conf_cls_r = "buy" if view.confidence >= 0.7 else ("hold" if view.confidence >= 0.4 else "sell")
+        _conf_note_r = "\u2248" if getattr(view, "confidence_defaulted", False) else ""
+        _conf_sub_r = ' <span style="font-size:.6rem;color:var(--muted);">(\u9ed8\u8ba4)</span>' if getattr(view, "confidence_defaulted", False) else ""
+        _conf_kpi_r = f'<div class="kpi {_conf_cls_r}"><span class="kpi-val">{_conf_note_r}{conf_pct_r}%</span><span class="kpi-label">\u7f6e\u4fe1\u5ea6{_conf_sub_r}</span></div>'
+    else:
+        _conf_kpi_r = '<div class="kpi"><span class="kpi-val">\u2014</span><span class="kpi-label">\u7f6e\u4fe1\u5ea6</span></div>'
     risk_display = view.risk_score if view.risk_score is not None else '—'
 
     exec_summary = f"""
@@ -1477,7 +1491,7 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
         </div>
         <div class="hero-right">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;">
-            <div class="kpi {'buy' if view.confidence >= 0.7 else ('hold' if view.confidence >= 0.4 else 'sell')}"><span class="kpi-val">{conf_pct_r}%</span><span class="kpi-label">置信度</span></div>
+            {_conf_kpi_r}
             <div class="kpi"><span class="kpi-val">{risk_display}</span><span class="kpi-label">风险评分/10</span></div>
             <div class="kpi"><span class="kpi-val">{view.total_evidence}</span><span class="kpi-label">证据</span></div>
             <div class="kpi"><span class="kpi-val">{view.total_claims}</span><span class="kpi-label">论据</span></div>
@@ -1579,9 +1593,13 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
         base_lbl = f"基准 {base_pct}%{base_arrow}" if base_pct > 18 else ""
         bull_lbl = f"乐观 {bull_pct}%{bull_arrow}" if bull_pct > 18 else ""
         bear_lbl = f"悲观 {bear_pct}%{bear_arrow}" if bear_pct > 18 else ""
+        _probs_note = (' <span style="font-size:.75rem;color:#8fa3b8;">'
+                       '(\u6982\u7387\u4e3a\u89e3\u6790\u9ed8\u8ba4\u503c'
+                       '\uff0c\u4ec5\u4f9b\u53c2\u8003)</span>'
+                       if sp.get("probs_defaulted") else "")
         scenario_html = f"""
     <div class="card">
-      <h3>情景分析</h3>
+      <h3>\u60c5\u666f\u5206\u6790{_probs_note}</h3>
       <div class="prob-bar">
         <div class="prob-seg" style="width:{base_pct}%;background:var(--blue);color:var(--white);" data-tip="{base_tip}">{base_lbl}</div>
         <div class="prob-seg" style="width:{bull_pct}%;background:var(--green);color:var(--white);" data-tip="{bull_tip}">{bull_lbl}</div>
@@ -3430,6 +3448,7 @@ def generate_pool_report(
     # misleading (sectors can have inflow yet fall in price).  The snapshot
     # sector_fund_flow is now sorted by actual 涨跌幅, which is ground truth.
     if market_context and market_snapshot:
+        market_context = copy.copy(market_context)  # avoid mutating caller's dict
         sector_flow = getattr(market_snapshot, "sector_fund_flow", [])
         if sector_flow:
             refreshed = []
@@ -3544,8 +3563,8 @@ _MARKET_CSS = """
   background: rgba(255,255,255,.04);
   border: 1px solid rgba(255,255,255,.08);
 }
-.mkt-hero-chip.up   { color: var(--green); border-color: rgba(52,211,153,.25); }
-.mkt-hero-chip.down { color: var(--red);   border-color: rgba(248,113,113,.25); }
+.mkt-hero-chip.up   { color: var(--red);   border-color: rgba(248,113,113,.25); }
+.mkt-hero-chip.down { color: var(--green); border-color: rgba(52,211,153,.25); }
 .mkt-hero-chip.neu  { color: var(--yellow); border-color: rgba(251,191,36,.25); }
 .mkt-hero-kpi {
   display: grid; grid-template-columns: repeat(3, 1fr);
@@ -3561,8 +3580,8 @@ _MARKET_CSS = """
   font-size: 1.4rem; font-weight: 700;
   font-family: "JetBrains Mono", "Fira Code", monospace;
 }
-.mkt-kpi .val.up   { color: var(--green); }
-.mkt-kpi .val.down { color: var(--red); }
+.mkt-kpi .val.up   { color: var(--red); }
+.mkt-kpi .val.down { color: var(--green); }
 .mkt-kpi .val.neu  { color: var(--yellow); }
 .mkt-kpi .val.gold { color: var(--accent); }
 .mkt-kpi .lab { font-size: .7rem; color: var(--muted); margin-top: .15rem; }
@@ -3589,8 +3608,8 @@ _MARKET_CSS = """
 .idx-battle-card .idx-pct {
   font-size: .95rem; font-weight: 600; font-family: "JetBrains Mono", monospace; margin-top: .15rem;
 }
-.idx-battle-card .idx-pct.up { color: var(--green); }
-.idx-battle-card .idx-pct.down { color: var(--red); }
+.idx-battle-card .idx-pct.up { color: var(--red); }
+.idx-battle-card .idx-pct.down { color: var(--green); }
 .idx-battle-card .idx-pct.flat { color: var(--muted); }
 .idx-battle-card .idx-bar {
   position: absolute; bottom: 0; left: 0; right: 0; height: 3px; border-radius: 0 0 14px 14px;
@@ -3609,8 +3628,8 @@ _MARKET_CSS = """
   display: flex; height: 36px; border-radius: 6px; overflow: hidden;
   margin: .6rem 0; position: relative;
 }
-.breadth-dual-bar .bar-up { background: linear-gradient(90deg, rgba(52,211,153,.6), var(--green)); }
-.breadth-dual-bar .bar-dn { background: linear-gradient(90deg, var(--red), rgba(248,113,113,.6)); }
+.breadth-dual-bar .bar-up { background: linear-gradient(90deg, rgba(248,113,113,.6), var(--red)); }
+.breadth-dual-bar .bar-dn { background: linear-gradient(90deg, var(--green), rgba(52,211,153,.6)); }
 .breadth-dual-bar .bar-label {
   position: absolute; top: 50%; transform: translateY(-50%);
   font-size: .78rem; font-weight: 600; color: #fff;
@@ -3655,8 +3674,8 @@ _MARKET_CSS = """
 .sector-item .si-name { flex: 1; }
 .sector-item .si-flow { font-size: .75rem; font-family: monospace; color: var(--muted); }
 .sector-item .si-pct { font-family: monospace; font-weight: 600; min-width: 55px; text-align: right; }
-.sector-item .si-pct.up { color: var(--green); }
-.sector-item .si-pct.dn { color: var(--red); }
+.sector-item .si-pct.up { color: var(--red); }
+.sector-item .si-pct.dn { color: var(--green); }
 .rotation-phase-badge {
   display: inline-flex; align-items: center; gap: .3rem;
   padding: .3rem .6rem; border-radius: 6px;
@@ -3675,8 +3694,8 @@ _MARKET_CSS = """
 .limit-universe-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .limit-col-header { display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem; }
 .limit-col-header .lch-count { font-size: 1.6rem; font-weight: 700; font-family: "JetBrains Mono", monospace; }
-.limit-col-header .lch-count.up { color: var(--green); }
-.limit-col-header .lch-count.dn { color: var(--red); }
+.limit-col-header .lch-count.up { color: var(--red); }
+.limit-col-header .lch-count.dn { color: var(--green); }
 .limit-col-header .lch-label { font-size: .85rem; color: var(--muted); }
 .limit-stock-row {
   display: flex; align-items: center; gap: .4rem;
@@ -3694,11 +3713,11 @@ _MARKET_CSS = """
   font-size: .7rem; padding: .1rem .35rem; border-radius: 4px; font-weight: 700; font-family: monospace;
 }
 .limit-stock-row .ls-boards.hot { background: rgba(245,158,11,.12); color: var(--accent); }
-.limit-stock-row .ls-boards.normal { background: rgba(52,211,153,.1); color: var(--green); }
+.limit-stock-row .ls-boards.normal { background: rgba(248,113,113,.1); color: var(--red); }
 .limit-stock-row .ls-seal { font-size: .75rem; color: var(--muted); font-family: monospace; min-width: 48px; text-align: right; }
 .limit-stock-row .ls-pct { font-size: .78rem; font-family: monospace; font-weight: 600; min-width: 52px; text-align: right; }
-.limit-stock-row .ls-pct.up { color: var(--green); }
-.limit-stock-row .ls-pct.dn { color: var(--red); }
+.limit-stock-row .ls-pct.up { color: var(--red); }
+.limit-stock-row .ls-pct.dn { color: var(--green); }
 .consec-ladder { display: flex; gap: .5rem; align-items: flex-end; margin: .8rem 0; }
 .consec-ladder-wrap { position: relative; }
 
@@ -4880,9 +4899,9 @@ def _render_sentiment_ecosystem(view: MarketView) -> str:
       <div class="breadth-dual-bar">
         <div class="bar-up" style="width:{adv_pct}%"></div>
         <div class="bar-dn" style="width:{dec_pct}%"></div>
-        <span class="bar-label left">\u2191 {view.advance_count}</span>
-        <span class="bar-label right">{view.decline_count} \u2193</span>
-      </div>
+        <span class="bar-label left">\u2191 {"≈" if view.breadth_estimated else ""}{view.advance_count}</span>
+        <span class="bar-label right">{"≈" if view.breadth_estimated else ""}{view.decline_count} \u2193</span>
+      </div>{"" if not view.breadth_estimated else '<div style="font-size:.7rem;color:var(--muted);margin-top:.2rem;">≈ 由涨跌比推算，非精确计数</div>'}
       <div class="breadth-stats">
         <div class="breadth-stat">
           <div class="bs-val" style="color:var(--green)">{view.limit_up_count}</div>
@@ -4930,6 +4949,7 @@ def _render_sentiment_ecosystem(view: MarketView) -> str:
         <span>\u4e2d\u6027</span>
         <span>\u4e50\u89c2</span>
       </div>
+      <div style="font-size:.7rem;color:var(--muted);margin-top:.25rem;">\u542f\u53d1\u5f0f\u6307\u6807: \u6da8\u8dcc\u505c\u6bd4\u00d780% + \u6da8\u8dcc\u5bb6\u6570\u6bd4\u00d720%</div>
       {consec_summary}
       {risk_strip}
     </div>"""
@@ -4954,7 +4974,8 @@ def _render_sector_engine(view: MarketView) -> str:
             sectors, limit_ups=view.limit_up_stocks,
             sector_stocks=view.sector_stocks)
     elif view.sector_momentum:
-        # Adaptive fallback: synthesize sector tiles from LLM momentum data
+        # Adaptive fallback: synthesize sector tiles from LLM momentum data.
+        # NOTE: turnover is a rough proxy (|flow|*10), NOT real market data.
         synth_sectors = []
         for m in view.sector_momentum:
             if isinstance(m, dict):
@@ -4963,15 +4984,20 @@ def _render_sector_engine(view: MarketView) -> str:
                     flow = float(m.get("flow", 0))
                 except (ValueError, TypeError):
                     pass
-                # flow already carries sign (-4.1 for outflow)
                 synth_sectors.append({
                     "sector": m.get("name", ""),
                     "pct_change": flow,
                     "total_turnover_yi": abs(flow) * 10,
                 })
         if synth_sectors:
-            treemap_html = _render_plotly_sector_treemap(
-                synth_sectors, sector_stocks=view.sector_stocks)
+            treemap_html = (
+                '<p style="font-size:.75rem;color:#8fa3b8;margin-bottom:.3rem;">'
+                '\u26a0 \u677f\u5757\u6570\u636e\u4e0d\u53ef\u7528\uff0c'
+                '\u4ee5\u4e0b\u70ed\u529b\u56fe\u7531LLM\u8f93\u51fa\u5408\u6210'
+                '\uff0c\u74e6\u7247\u5927\u5c0f\u4e3a\u4f30\u7b97\u503c</p>'
+                + _render_plotly_sector_treemap(
+                    synth_sectors, sector_stocks=view.sector_stocks)
+            )
 
     # Right sidebar: leaders + avoid + rotation phase + attribution
     leaders_html = ""
@@ -5525,6 +5551,7 @@ def generate_market_report(
     # The LLM agent's sector_momentum is sorted by net_inflow which is
     # misleading (sectors can have inflow yet fall in price).  The snapshot
     # sector_fund_flow is now sorted by actual 涨跌幅, which is ground truth.
+    market_context = copy.copy(market_context)  # avoid mutating caller's dict
     if market_snapshot:
         sector_flow = getattr(market_snapshot, "sector_fund_flow", [])
         if sector_flow:

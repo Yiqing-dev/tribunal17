@@ -179,6 +179,12 @@ class SignalLedger:
             logger.warning(f"Trace not found: {run_id}")
             return None
 
+        # Validate action (consistent with backfill_ledger whitelist)
+        _action = (trace.research_action or "").upper().strip()
+        if _action not in ("BUY", "HOLD", "SELL", "VETO"):
+            logger.warning("Skipping trace %s: invalid action '%s'", run_id, trace.research_action)
+            return None
+
         # Extract trade plan prices and pillar scores
         sl, tp = 0.0, 0.0
         pillars = {}
@@ -340,7 +346,7 @@ class SignalLedger:
                     logger.warning("Skipping malformed signal record: %s", d)
                     continue
 
-                if ticker and rec.ticker != ticker:
+                if ticker and normalize_ticker(rec.ticker) != normalize_ticker(ticker):
                     continue
                 if action and rec.action.upper() != action.upper():
                     continue

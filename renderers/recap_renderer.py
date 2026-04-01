@@ -165,8 +165,8 @@ body::before {
   background: rgba(255,255,255,.04);
   border: 1px solid rgba(255,255,255,.08);
 }
-.hero-chip.up   { color: var(--green); border-color: rgba(52,211,153,.2); }
-.hero-chip.down { color: var(--red);   border-color: rgba(248,113,113,.2); }
+.hero-chip.up   { color: var(--red);   border-color: rgba(248,113,113,.2); }
+.hero-chip.down { color: var(--green); border-color: rgba(52,211,153,.2); }
 .hero-chip.neu  { color: var(--yellow); border-color: rgba(251,191,36,.2); }
 
 /* ── Section head ── */
@@ -194,8 +194,8 @@ body::before {
   font-family: "JetBrains Mono", "Fira Code", monospace;
 }
 .kpi-cell .lab { font-size: .72rem; color: var(--muted); margin-top: .15rem; }
-.kpi-cell .val.up   { color: var(--green); }
-.kpi-cell .val.down { color: var(--red); }
+.kpi-cell .val.up   { color: var(--red); }
+.kpi-cell .val.down { color: var(--green); }
 .kpi-cell .val.neu  { color: var(--yellow); }
 
 /* ── Index Tabs ── */
@@ -266,8 +266,8 @@ body::before {
 .sd-stock { display: flex; justify-content: space-between; font-size: .85rem; padding: .25rem 0; }
 .sd-stock .nm { color: var(--fg); }
 .sd-stock .pc { font-family: monospace; }
-.sd-stock .pc.up { color: var(--green); }
-.sd-stock .pc.dn { color: var(--red); }
+.sd-stock .pc.up { color: var(--red); }
+.sd-stock .pc.dn { color: var(--green); }
 .sd-resonance-badge {
   display: inline-block; padding: .15rem .45rem; border-radius: 4px;
   font-size: .7rem; background: rgba(52,211,153,.1); color: var(--green);
@@ -278,8 +278,8 @@ body::before {
 .limit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .limit-card-title { font-size: .95rem; font-weight: 700; margin-bottom: .6rem; display: flex; align-items: center; gap: .5rem; }
 .limit-card-title .cnt { font-family: monospace; font-size: 1.5rem; }
-.limit-card-title .cnt.up { color: var(--green); }
-.limit-card-title .cnt.dn { color: var(--red); }
+.limit-card-title .cnt.up { color: var(--red); }
+.limit-card-title .cnt.dn { color: var(--green); }
 .limit-stock {
   display: flex; justify-content: space-between; align-items: center;
   padding: .35rem .4rem; border-bottom: 1px solid rgba(255,255,255,.04);
@@ -562,21 +562,21 @@ body::before {
 # ── Color helpers ────────────────────────────────────────────────────
 
 def _sector_color(pct: float) -> str:
-    """Map sector pct_change to color hex — unified palette."""
+    """Map sector pct_change to color hex — A-share convention: red=up, green=down."""
     if pct >= 3:
-        return "#34d399"   # strong green
+        return "#f87171"   # strong red (大涨)
     elif pct >= 1.5:
-        return "#2aac7e"   # medium green
+        return "#dc4343"   # medium red
     elif pct >= 0.3:
-        return "#1d7a5a"   # muted green
+        return "#b04040"   # muted red
     elif pct >= -0.3:
         return "#3d5068"   # neutral slate
     elif pct >= -1.5:
-        return "#b04040"   # muted red
+        return "#1d7a5a"   # muted green
     elif pct >= -3:
-        return "#dc4343"   # medium red
+        return "#2aac7e"   # medium green
     else:
-        return "#f87171"   # strong red
+        return "#34d399"   # strong green (大跌)
 
 
 def _pct_class(v: float) -> str:
@@ -632,13 +632,13 @@ def _render_temperature_gauge(weather: str) -> str:
 
     weather_labels = {"上涨": "偏热", "震荡": "中性", "下跌": "偏冷"}
     label = weather_labels.get(weather, weather)
-    needle_color = "#34d399" if weather == "上涨" else ("#f87171" if weather == "下跌" else "#fbbf24")
+    needle_color = "#f87171" if weather == "上涨" else ("#34d399" if weather == "下跌" else "#fbbf24")
 
     return f"""<div class="temp-gauge">
       <svg viewBox="0 0 160 100" width="160" height="100">
-        <path d="{_arc_d(180, 240)}" fill="none" stroke="#f87171" stroke-width="10" stroke-linecap="round" opacity=".7"/>
+        <path d="{_arc_d(180, 240)}" fill="none" stroke="#34d399" stroke-width="10" stroke-linecap="round" opacity=".7"/>
         <path d="{_arc_d(240, 300)}" fill="none" stroke="#fbbf24" stroke-width="10" stroke-linecap="round" opacity=".7"/>
-        <path d="{_arc_d(300, 360)}" fill="none" stroke="#34d399" stroke-width="10" stroke-linecap="round" opacity=".7"/>
+        <path d="{_arc_d(300, 360)}" fill="none" stroke="#f87171" stroke-width="10" stroke-linecap="round" opacity=".7"/>
         <line x1="{cx}" y1="{cy}" x2="{nx:.1f}" y2="{ny:.1f}" stroke="{needle_color}" stroke-width="2.5" stroke-linecap="round"/>
         <circle cx="{cx}" cy="{cy}" r="4" fill="{needle_color}"/>
       </svg>
@@ -684,9 +684,11 @@ def _render_index_kpi_ribbon(data: dict) -> str:
     turnover = idx_summary.get("turnover_total_yi", 0)
     turnover_delta = idx_summary.get("turnover_delta_yi", 0)
     nb = idx_summary.get("northbound_flow_yi", 0)
+    nb_status = idx_summary.get("northbound_status", "")
     adv = idx_summary.get("advancers", 0)
     dec = idx_summary.get("decliners", 0)
     flat = idx_summary.get("flat", 0)
+    flat_estimated = idx_summary.get("flat_estimated", False)
 
     # Index cells — show close point + pct change
     cells = ""
@@ -701,12 +703,12 @@ def _render_index_kpi_ribbon(data: dict) -> str:
             f'</div>'
         )
 
-    # Turnover + delta
+    # Turnover + delta (estimated from Shanghai index volume ratio proxy)
     delta_label = ""
     if turnover_delta:
         delta_sign = "+" if turnover_delta > 0 else ""
-        vol_word = "放量" if turnover_delta > 0 else "缩量"
-        delta_label = f" ({vol_word}{delta_sign}{turnover_delta:.0f})"
+        vol_word = "\u653e\u91cf" if turnover_delta > 0 else "\u7f29\u91cf"
+        delta_label = f" (\u2248{vol_word}{delta_sign}{turnover_delta:.0f})"
 
     # Extra KPIs
     nb_cls = _pct_class(nb)
@@ -717,8 +719,12 @@ def _render_index_kpi_ribbon(data: dict) -> str:
         f'<div class="lab">成交额(亿){delta_label}</div>'
         f'</div>'
         f'<div class="kpi-cell glass">'
-        f'<div class="val {nb_cls} mono">{nb_sign}{nb:.1f}</div>'
-        f'<div class="lab">北向(亿)</div>'
+        f'<div class="val {nb_cls} mono">'
+        f'{"—" if nb_status == "flow_suspended" else f"{nb_sign}{nb:.1f}"}'
+        f'</div>'
+        f'<div class="lab">'
+        f'{"北向(暂停披露)" if nb_status == "flow_suspended" else ("北向(采集失败)" if nb_status == "error" else "北向(亿)")}'
+        f'</div>'
         f'</div>'
         f'<div class="kpi-cell glass">'
         f'<div class="val up mono">{adv}</div>'
@@ -729,8 +735,8 @@ def _render_index_kpi_ribbon(data: dict) -> str:
         f'<div class="lab">下跌</div>'
         f'</div>'
         f'<div class="kpi-cell glass">'
-        f'<div class="val neu mono">{flat}</div>'
-        f'<div class="lab">平盘</div>'
+        f'<div class="val neu mono">{"≈" if flat_estimated else ""}{flat}</div>'
+        f'<div class="lab">平盘{"(估)" if flat_estimated else ""}</div>'
         f'</div>'
     )
 
@@ -826,7 +832,7 @@ def _render_index_svg(points: list, code: str = "") -> str:
     for i, p in enumerate(points):
         cx = x_pos(i)
         o, h, l, c = p.get("open", 0), p.get("high", 0), p.get("low", 0), p.get("close", 0)
-        color = "#34d399" if c >= o else "#f87171"
+        color = "#f87171" if c >= o else "#34d399"
         y_o, y_c = y_main(o), y_main(c)
         y_h, y_l = y_main(h), y_main(l)
         body_top = min(y_o, y_c)
@@ -869,7 +875,7 @@ def _render_index_svg(points: list, code: str = "") -> str:
     macd_bars = []
     for i, h_val in enumerate(macd_vals):
         cx = x_pos(i)
-        color = "#34d399" if h_val >= 0 else "#f87171"
+        color = "#f87171" if h_val >= 0 else "#34d399"
         y0 = y_sub(0)
         yv = y_sub(h_val)
         bar_top = min(y0, yv)

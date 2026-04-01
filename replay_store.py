@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .trace_models import RunTrace
+from .signal_ledger import normalize_ticker
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +96,12 @@ class ReplayStore:
             logger.warning(f"Replay trace not found: {trace_path}")
             return None
 
-        with open(trace_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        try:
+            with open(trace_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning("Corrupt replay trace %s: %s", trace_path, e)
+            return None
         return RunTrace.from_dict(data)
 
     def list_runs(self, ticker: str = None, limit: int = 50) -> List[dict]:
@@ -112,7 +117,7 @@ class ReplayStore:
                     continue
                 try:
                     entry = json.loads(line)
-                    if ticker and entry.get("ticker") != ticker:
+                    if ticker and normalize_ticker(entry.get("ticker", "")) != normalize_ticker(ticker):
                         continue
                     entries.append(entry)
                 except json.JSONDecodeError:
@@ -130,3 +135,52 @@ class ReplayStore:
             trace_path.unlink()
             return True
         return False
+
+    def reconcile(self) -> int:
+        """Find trace files missing from manifest and append entries.
+
+        Repairs split-brain state where trace was written but manifest
+        append failed (e.g., crash between the two operations in save()).
+        """
+        known_ids: set = set()
+        if self._manifest_path.exists():
+            with open(self._manifest_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        known_ids.add(json.loads(line).get("run_id", ""))
+                    except json.JSONDecodeError:
+                        pass
+
+        repaired = 0
+        skip_prefixes = ("market_context", "recap")
+        for p in sorted(self.storage_dir.glob("*.json")):
+            run_id = p.stem
+            if run_id in known_ids or any(run_id.startswith(sp) for sp in skip_prefixes):
+                continue
+            try:
+                trace = self.load(run_id)
+                if trace is None:
+                    continue
+                entry = {
+                    "run_id": trace.run_id,
+                    "ticker": trace.ticker,
+                    "trade_date": trace.trade_date,
+                    "started_at": trace.started_at.isoformat() if trace.started_at else "",
+                    "total_nodes": trace.total_nodes,
+                    "error_count": trace.error_count,
+                    "research_action": trace.research_action,
+                    "was_vetoed": trace.was_vetoed,
+                    "veto_source": trace.veto_source,
+                    "compliance_status": trace.compliance_status,
+                }
+                line = json.dumps(entry, ensure_ascii=False) + "\n"
+                with open(self._manifest_path, "a", encoding="utf-8") as f:
+                    f.write(line)
+                repaired += 1
+                logger.info("Reconciled orphan trace: %s", run_id)
+            except Exception as e:
+                logger.warning("Failed to reconcile %s: %s", run_id, e)
+        return repaired

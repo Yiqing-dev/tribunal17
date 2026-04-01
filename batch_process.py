@@ -89,10 +89,20 @@ def _load_market_agent_outputs(results_dir: Path) -> dict:
 
 def _build_market_context(agent_outputs: dict, trade_date: str) -> dict:
     """Parse market agent outputs and assemble market_context."""
-    macro = parse_macro_output(agent_outputs.get("macro_analyst", ""))
-    breadth = parse_breadth_output(agent_outputs.get("market_breadth_agent", ""))
-    sector = parse_sector_output(agent_outputs.get("sector_rotation_agent", ""))
-    return assemble_market_context(macro, breadth, sector, trade_date)
+    macro_text = agent_outputs.get("macro_analyst", "")
+    breadth_text = agent_outputs.get("market_breadth_agent", "")
+    sector_text = agent_outputs.get("sector_rotation_agent", "")
+    macro = parse_macro_output(macro_text)
+    breadth = parse_breadth_output(breadth_text)
+    sector = parse_sector_output(sector_text)
+    return assemble_market_context(
+        macro, breadth, sector, trade_date,
+        raw_texts={
+            "macro": macro_text,
+            "breadth": breadth_text,
+            "sector": sector_text,
+        },
+    )
 
 
 def _build_ths_to_sw_map() -> dict:
@@ -425,7 +435,7 @@ def process_all(trade_date: str = ""):
               f"breadth={market_context.get('breadth_state')}")
 
     # --- Step 3: Persist market_context ---
-    if market_context:
+    if market_context is not None:
         _REPLAYS_DIR.mkdir(parents=True, exist_ok=True)
         ctx_path = _REPLAYS_DIR / f"market_context_{today}.json"
         ctx_path.write_text(json.dumps(market_context, ensure_ascii=False, indent=2),
@@ -521,7 +531,7 @@ def process_all(trade_date: str = ""):
 
     # --- Step 7: Generate market report ---
     market_report_path = None
-    if market_context:
+    if market_context is not None:
         try:
             from .renderers.report_renderer import generate_market_report
             market_report_path = generate_market_report(

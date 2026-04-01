@@ -201,14 +201,21 @@ def parse_verification_result(text: str) -> VerificationResult:
         elif check["status"] == "WARN":
             result.warnings.append(check)
 
-    # If no structured result found, try to infer from text
+    # If no structured result found, only infer FAIL (conservative).
+    # A substring match for "PASS" is too risky — words like "PASSAGE",
+    # "bypass", or "passed the threshold" would cause a false positive.
     if result.overall == "UNKNOWN":
         text_upper = text.upper()
         if "FAIL" in text_upper and "CAN_PROCEED" not in text_upper:
             result.overall = "FAIL"
             result.can_proceed = False
-        elif "PASS" in text_upper:
-            result.overall = "PASS"
-            result.can_proceed = True
+        else:
+            result.warnings.append({
+                "metric": "_parse_fallback",
+                "akshare": "",
+                "websearch": "",
+                "status": "WARN",
+                "note": "No structured VERIFICATION block found; defaulting to UNKNOWN/cannot proceed.",
+            })
 
     return result

@@ -45,13 +45,8 @@ class TestInferDirection:
         assert infer_direction(action) in ("up", "down", "flat")
 
     @pytest.mark.parametrize("action", ["", "UNKNOWN", "STRONG_BUY", "SHORT", "WAIT"])
-    def test_unknown_defaults_to_flat(self, action):
-        assert infer_direction(action) == "flat"
-
-    def test_confidence_param_accepted(self):
-        """Confidence is accepted but currently unused."""
-        assert infer_direction("BUY", confidence=0.9) == "up"
-        assert infer_direction("BUY", confidence=0.1) == "up"
+    def test_unknown_defaults_to_abstain(self, action):
+        assert infer_direction(action) == "abstain"
 
 
 # ── evaluate_signal ──────────────────────────────────────────────────────

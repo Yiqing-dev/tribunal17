@@ -181,9 +181,11 @@ class IndexSummary:
     turnover_delta_yi: float = 0
     turnover_prev_yi: float = 0
     northbound_flow_yi: float = 0
+    northbound_status: str = ""  # "available", "flow_suspended", "error", ""
     advancers: int = 0
     decliners: int = 0
     flat: int = 0
+    flat_estimated: bool = False
 
 
 @dataclass
@@ -357,6 +359,7 @@ def collect_index_summary(trade_date: str = "") -> IndexSummary:
 
     # Breadth from spot data
     advancers = decliners = flat = 0
+    flat_is_estimated = False
     turnover_total = 0
     try:
         with em_proxy_session():
@@ -381,7 +384,8 @@ def collect_index_summary(trade_date: str = "") -> IndexSummary:
                     advancers = int(ths_df["上涨家数"].sum())
                     decliners = int(ths_df["下跌家数"].sum())
                     total = advancers + decliners
-                    flat = max(0, 5500 - total)  # approximate
+                    flat = max(0, 5500 - total)  # approximate; see flat_estimated flag
+                    flat_is_estimated = True
                     logger.info(f"  [BREADTH] THS fallback: {advancers}涨/{decliners}跌")
                 if "总成交额" in ths_df.columns and turnover_total == 0:
                     turnover_total = float(ths_df["总成交额"].sum())
@@ -408,16 +412,31 @@ def collect_index_summary(trade_date: str = "") -> IndexSummary:
 
     turnover_delta = turnover_total - turnover_prev if turnover_prev > 0 else 0
 
-    # Northbound
+    # Northbound — use stock_hsgt_fund_flow_summary_em (legacy
+    # stock_hsgt_north_net_flow_in_em was removed from akshare Aug 2024).
     nb_flow = 0
+    nb_status = ""
     try:
         with em_proxy_session():
-            df = ak.stock_hsgt_north_net_flow_in_em(symbol="北上")
+            df = ak.stock_hsgt_fund_flow_summary_em()
         if df is not None and not df.empty:
-            latest = df.iloc[-1]
-            nb_flow = (_safe_float(latest.get("当日净流入", latest.get("value", 0))) or 0) / 1e8
-    except Exception:
-        pass
+            nb = df[df["资金方向"] == "北向"]
+            if not nb.empty:
+                total_net_buy = sum(
+                    (_safe_float(r.get("成交净买额")) or 0) for _, r in nb.iterrows()
+                )
+                if abs(total_net_buy) > 1e4:
+                    nb_flow = total_net_buy / 1e8
+                    nb_status = "available"
+                else:
+                    nb_status = "flow_suspended"
+                    logger.info(
+                        "Northbound net flow data zeroed out "
+                        "(post-2024-08 policy suspension)"
+                    )
+    except Exception as e:
+        nb_status = "error"
+        logger.warning("Failed to fetch northbound flow summary: %s", e)
 
     return IndexSummary(
         date=trade_date,
@@ -426,9 +445,11 @@ def collect_index_summary(trade_date: str = "") -> IndexSummary:
         turnover_delta_yi=round(turnover_delta, 2),
         turnover_prev_yi=round(turnover_prev, 2),
         northbound_flow_yi=round(nb_flow, 2),
+        northbound_status=nb_status,
         advancers=advancers,
         decliners=decliners,
         flat=flat,
+        flat_estimated=flat_is_estimated,
     )
 
 

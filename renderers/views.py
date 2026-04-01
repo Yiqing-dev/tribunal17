@@ -486,6 +486,7 @@ class SnapshotView:
     action_class: str = ""          # CSS: buy / hold / sell / veto
     action_explanation: str = ""    # Product-level Chinese explanation
     confidence: float = -1.0
+    confidence_defaulted: bool = False  # True when PM confidence was defaulted to 0.5
     one_line_summary: str = ""      # From PM structured conclusion or excerpt
 
     # Block 2: Core drivers (top 2-3)
@@ -844,6 +845,10 @@ class SnapshotView:
             action_class=css,
             action_explanation=explanation,
             confidence=trace.final_confidence,
+            confidence_defaulted=any(
+                "confidence defaulted" in str(w)
+                for w in (pm_out or {}).get("parse_warnings", [])
+            ),
             one_line_summary=one_line,
             core_drivers=core_drivers,
             main_risks=main_risks,
@@ -892,6 +897,7 @@ class ResearchView:
     action_class: str = ""
     action_explanation: str = ""
     confidence: float = -1.0
+    confidence_defaulted: bool = False  # True when PM confidence was defaulted to 0.5
     was_vetoed: bool = False
     veto_source: str = ""
     risk_score: Optional[int] = None
@@ -1057,6 +1063,7 @@ class ResearchView:
                 "base_trigger": scn_sd.get("base_case_trigger", ""),
                 "bull_trigger": scn_sd.get("bull_case_trigger", ""),
                 "bear_trigger": scn_sd.get("bear_case_trigger", ""),
+                "probs_defaulted": scn_sd.get("probs_defaulted", False),
             }
 
         # ── Risk flags detail: prefer structured data ──
@@ -1106,6 +1113,10 @@ class ResearchView:
             action_class=css,
             action_explanation=explanation,
             confidence=trace.final_confidence,
+            confidence_defaulted=any(
+                "confidence defaulted" in str(w)
+                for w in pm_out.get("parse_warnings", [])
+            ),
             was_vetoed=trace.was_vetoed,
             veto_source=getattr(trace, "veto_source", ""),
             risk_score=risk_out.get("risk_score"),
@@ -1683,6 +1694,7 @@ class MarketView:
     consecutive_boards: Dict = field(default_factory=dict)     # {"1": [...], "2": [...]}
     limit_sector_attribution: Dict = field(default_factory=dict)  # {sector: {count, stocks}}
     sector_stocks: Dict = field(default_factory=dict)  # {sector: [{ticker,name,pct_change,market_cap_yi}]}
+    breadth_estimated: bool = False  # True when advance/decline derived from ratio fallback
 
     @classmethod
     def build(
@@ -1715,9 +1727,12 @@ class MarketView:
 
         # Adaptive fallback: when snapshot breadth APIs failed, derive from
         # market_context (LLM agents always extract real numbers)
+        breadth_estimated = False
         if advance == 0 and decline == 0 and ctx:
             total_hint = getattr(market_snapshot, "total_stocks", 0) if market_snapshot else 0
             advance, decline = _extract_breadth_counts(ctx, total_hint)
+            if advance > 0 or decline > 0:
+                breadth_estimated = True
 
         pcm = ctx.get("position_cap_multiplier", 1.0)
         if isinstance(pcm, str):
@@ -1757,4 +1772,5 @@ class MarketView:
                 (board_data or {}).get("consecutive_boards", {})),
             limit_sector_attribution=(board_data or {}).get("limit_sector_attribution", {}),
             sector_stocks=(board_data or {}).get("sector_stocks", {}),
+            breadth_estimated=breadth_estimated,
         )

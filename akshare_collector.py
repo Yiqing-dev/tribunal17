@@ -555,7 +555,7 @@ def _collect_price_history(b: AkshareBundle):
     Fallback: stock_zh_a_daily (Sina backend) when EM is down.
     """
     ak = _get_ak()
-    end = datetime.now()
+    end = datetime.strptime(b.trade_date[:10], "%Y-%m-%d") if b.trade_date else datetime.now()
     start = end - timedelta(days=60)  # fetch extra for MA calc
 
     df = None
@@ -842,7 +842,7 @@ def _collect_research_reports(b: AkshareBundle):
 def _collect_lhb(b: AkshareBundle):
     """stock_lhb_detail_em — dragon-tiger board records (30 days)."""
     ak = _get_ak()
-    end = datetime.now()
+    end = datetime.strptime(b.trade_date[:10], "%Y-%m-%d") if b.trade_date else datetime.now()
     start = end - timedelta(days=30)
     df = ak.stock_lhb_detail_em(
         start_date=start.strftime("%Y%m%d"),
