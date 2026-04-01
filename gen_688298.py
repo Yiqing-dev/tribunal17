@@ -81,7 +81,7 @@ def main():
             from subagent_pipeline.renderers.debate_renderer import generate_committee_report
             from subagent_pipeline.replay_store import ReplayStore
             store = ReplayStore(storage_dir=str(REPLAYS_DIR))
-            trace = store.load_run(run_id)
+            trace = store.load(run_id)
             if trace:
                 cp = generate_committee_report(trace, output_dir=str(REPORTS_DIR))
                 if cp:

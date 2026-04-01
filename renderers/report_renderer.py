@@ -4185,6 +4185,7 @@ _TREEMAP_ENGINE_JS = r"""
   c.style.overflow = 'hidden';
   c.style.cursor = 'default';
   c.style.borderRadius = '12px';
+  function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');};
 
   /* Build tree */
   var nodes = {}, rootId = null;
@@ -4286,8 +4287,8 @@ _TREEMAP_ENGINE_JS = r"""
       if (rw > 32 && rh > 16) {
         var txt = n.text || n.label;
         var parts = txt.split('<br>');
-        var nameStr = parts[0] || '';
-        var pctStr = parts[1] || '';
+        var nameStr = escHtml(parts[0] || '');
+        var pctStr = escHtml(parts[1] || '');
         var html = '';
         if (rw > 50 && rh > 28) {
           html = '<div style="font-weight:600;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:'+(rw-8)+'px">' + nameStr + '</div>';
@@ -4302,7 +4303,7 @@ _TREEMAP_ENGINE_JS = r"""
 
       (function(n, t) {
         t.addEventListener('mouseenter', function() {
-          tip.innerHTML = n.hover || n.label;
+          tip.innerHTML = escHtml(n.hover || n.label);
           tip.style.display = 'block';
           t.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.5)';
           t.style.zIndex = '5';
@@ -4358,7 +4359,7 @@ def _render_inline_treemap(div_id: str, data: dict, max_depth: int = 2,
                            height: int = 520) -> str:
     """Render a self-contained treemap using inline JS (no CDN)."""
     import json as _json
-    data_json = _json.dumps(data, ensure_ascii=False)
+    data_json = _json.dumps(data, ensure_ascii=True)
     return (
         f'<div id="{div_id}" style="width:100%;height:{height}px;'
         f'border-radius:12px;overflow:hidden;background:linear-gradient(135deg,#f0eded,#e8e6e4)"></div>\n'

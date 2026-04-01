@@ -188,6 +188,8 @@ class RunTrace:
             # in that case, preserve the Research Manager's direction.
             if nt.node_name == "Research Manager" and nt.research_action:
                 self.research_action = nt.research_action
+                if nt.confidence >= 0:
+                    self._pm_confidence = nt.confidence
             elif nt.node_name == "Risk Judge" and nt.research_action:
                 self.research_action = nt.research_action
                 # Only overwrite confidence if the node provides a meaningful value
@@ -214,6 +216,11 @@ class RunTrace:
                             break
             if nt.compliance_status:
                 self.compliance_status = nt.compliance_status
+
+        # PM confidence as third-priority fallback: if neither Risk Judge
+        # nor ResearchOutput provided a valid confidence, use PM's.
+        if self.final_confidence < 0 and hasattr(self, '_pm_confidence'):
+            self.final_confidence = self._pm_confidence
 
         self.total_evidence_ids = sorted(all_evidence)
         self.total_claim_ids = sorted(all_claims)

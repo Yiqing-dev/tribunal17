@@ -638,9 +638,9 @@ def _collect_valuation_history(b: AkshareBundle):
     # Fill current metrics if spot failed
     if rows:
         latest = rows[-1]
-        if not b.pe_ttm:
+        if b.pe_ttm is None:
             b.pe_ttm = latest.get("pe_ttm")
-        if not b.pb:
+        if b.pb is None:
             b.pb = latest.get("pb")
 
 
@@ -1085,6 +1085,7 @@ class MarketSnapshot:
             "limit_up_count": self.limit_up_count,
             "limit_down_count": self.limit_down_count,
             "total_stocks": self.total_stocks,
+            "turnover_total_yi": self.turnover_total_yi,
             "stock_spots": self.stock_spots,
             "markdown_report": self.markdown_report,
             "apis_succeeded": self.apis_succeeded,

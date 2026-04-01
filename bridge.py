@@ -441,6 +441,7 @@ def parse_claims(text: str, direction: str = "bullish") -> List[Dict]:
             # Normalize: if agent used 1-10 scale despite 0.0-1.0 instruction
             if claim["confidence"] > 1.0:
                 claim["confidence"] = claim["confidence"] / 10.0
+            claim["confidence"] = max(0.0, min(1.0, claim["confidence"]))
         else:
             claim["confidence"] = 0.5
 

@@ -887,12 +887,15 @@ def load_backtest_report(path: str) -> Optional[BacktestReport]:
         return None
     with open(p, "r", encoding="utf-8") as f:
         data = json.load(f)
-    config = BacktestConfig(**data.get("config", {}))
+    import dataclasses as _dc
+    _cfg_fields = {f.name for f in _dc.fields(BacktestConfig)}
+    _sum_fields = {f.name for f in _dc.fields(BacktestSummary)}
+    config = BacktestConfig(**{k: v for k, v in data.get("config", {}).items() if k in _cfg_fields})
     results = [BacktestResult.from_dict(r) for r in data.get("results", [])]
     shadow = [BacktestResult.from_dict(r) for r in data.get("shadow_results", [])]
-    overall = BacktestSummary(**data.get("overall_summary", {}))
+    overall = BacktestSummary(**{k: v for k, v in data.get("overall_summary", {}).items() if k in _sum_fields})
     per_ticker = {
-        k: BacktestSummary(**v)
+        k: BacktestSummary(**{kk: vv for kk, vv in v.items() if kk in _sum_fields})
         for k, v in data.get("per_ticker_summaries", {}).items()
     }
     return BacktestReport(
