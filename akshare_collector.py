@@ -697,7 +697,7 @@ def _collect_financial_summary(b: AkshareBundle):
 def _collect_financial_ratios(b: AkshareBundle):
     """stock_financial_report_sina — income statement for revenue/profit growth."""
     ak = _get_ak()
-    prefix = "sh" if b.ticker.startswith("6") else "sz"
+    prefix = "sh" if b.ticker.startswith("6") else ("bj" if b.ticker.startswith(("8", "4")) else "sz")
     stock_code = f"{prefix}{b.ticker}"
     # akshare >=1.10 uses Chinese names; map to internal keys
     _REPORT_MAP = {"利润表": "lrb", "资产负债表": "zcfzb", "现金流量表": "xjllb"}
@@ -878,7 +878,7 @@ def _collect_lhb(b: AkshareBundle):
 # Markdown formatter
 # ──────────────────────────────────────────────────────────────────────
 
-def _fmt_num(v, unit="", decimals=2) -> str:
+def _fmt_num(v, decimals=2) -> str:
     if v is None:
         return "—"
     if abs(v) >= 1e8:

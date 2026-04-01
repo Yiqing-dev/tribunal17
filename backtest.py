@@ -949,7 +949,7 @@ def _fetch_benchmark_return(signal_date: str, window_days: int) -> Optional[floa
         if d.get("day", "") <= signal_date:
             signal_close = float(d.get("close", 0))
             break
-    if not signal_close:
+    if signal_close is None:
         return None
 
     forward_bars = [d for d in data if d.get("day", "") > signal_date]

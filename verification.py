@@ -206,7 +206,7 @@ def parse_verification_result(text: str) -> VerificationResult:
     # "bypass", or "passed the threshold" would cause a false positive.
     if result.overall == "UNKNOWN":
         text_upper = text.upper()
-        if "FAIL" in text_upper and "CAN_PROCEED" not in text_upper:
+        if re.search(r'\bFAIL\b', text_upper) and "CAN_PROCEED" not in text_upper:
             result.overall = "FAIL"
             result.can_proceed = False
         else:

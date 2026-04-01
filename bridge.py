@@ -1504,7 +1504,10 @@ def _compute_5d_return(price_history: Optional[List[float]], window: int = 5) ->
     """
     if not price_history or len(price_history) < window + 1:
         return None
-    return (price_history[-1] - price_history[-(window + 1)]) / price_history[-(window + 1)]
+    start_price = price_history[-(window + 1)]
+    if not start_price:
+        return None
+    return (price_history[-1] - start_price) / start_price
 
 
 def _try_fetch_prices(ticker: str, days: int = 30) -> List[float]:

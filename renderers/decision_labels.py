@@ -297,8 +297,10 @@ NODE_STATUS_LABELS = {
 
 FRESHNESS_STATUS_LABELS = {
     "FRESH": "新鲜", "fresh": "新鲜",
-    "LAGGING": "滞后", "STALE": "过期",
-    "UNAVAILABLE": "不可用", "RECOVERED": "已恢复",
+    "LAGGING": "滞后", "lagging": "滞后",
+    "STALE": "过期", "stale": "过期",
+    "UNAVAILABLE": "不可用", "unavailable": "不可用",
+    "RECOVERED": "已恢复", "recovered": "已恢复",
 }
 
 

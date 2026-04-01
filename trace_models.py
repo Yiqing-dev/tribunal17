@@ -291,5 +291,5 @@ class RunMetrics:
 def compute_hash(text: str) -> str:
     """SHA-256 hash truncated to 16 hex chars."""
     if not text:
-        return ""
+        return "0" * 16
     return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16]

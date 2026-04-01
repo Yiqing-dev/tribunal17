@@ -293,7 +293,7 @@ def _col_name(df, *candidates):
 def _collect_index_history(code: str, name: str, days: int = 60) -> IndexInfo:
     """Collect index OHLCV history and compute technicals."""
     ak = _get_ak()
-    df = ak.stock_zh_index_daily(symbol=code)
+    df = _retry_call(ak.stock_zh_index_daily, symbol=code)
     if df is None or df.empty:
         return IndexInfo(code=code, name=name)
 

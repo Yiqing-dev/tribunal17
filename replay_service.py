@@ -339,8 +339,8 @@ class ReplayService:
         compliance_nodes = [nt for nt in trace.node_traces if nt.compliance_status]
         if compliance_nodes:
             total_rules = sum(len(nt.compliance_rules_fired) for nt in compliance_nodes)
-            # We check 5 rules per node; capture rate = rules fired / (5 * nodes)
-            expected_rules = 5 * len(compliance_nodes)
+            # subagent_pipeline runs P1 + P5 = 2 rules (not the full 5-rule engine)
+            expected_rules = 2 * len(compliance_nodes)
             m.compliance_reason_capture_rate = total_rules / expected_rules if expected_rules else 0.0
 
         # --- Replay completeness ---
