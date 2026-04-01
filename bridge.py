@@ -1150,6 +1150,12 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
                 (opposing if isinstance(opposing, list) else [])
             ))
 
+            # Claim consumption: PM references bull/bear claims (C-bull-NNN, C-bear-NNN)
+            claim_refs = list(dict.fromkeys(
+                re.findall(r'\bC-(?:bull|bear)-\d+\b', text)
+            ))
+            nt.claim_ids_referenced = claim_refs
+
             nt.structured_data = {
                 "conclusion": synth.get("conclusion", ""),
                 "base_case": synth.get("base_case", ""),
@@ -1434,9 +1440,8 @@ def build_run_trace(
     compliance_status = "allow"
     rules_fired = []
 
-    # P1: source tier — check if evidence block was produced
-    has_evidence = any(nt.node_name in ("Evidence Block",) or
-                       bool(nt.evidence_ids_referenced) for nt in trace.node_traces)
+    # P1: source tier — check if any node references evidence
+    has_evidence = any(bool(nt.evidence_ids_referenced) for nt in trace.node_traces)
     rules_fired.append("P1_source_tier")
     if not has_evidence:
         compliance_reasons.append("P1: 无证据链引用")

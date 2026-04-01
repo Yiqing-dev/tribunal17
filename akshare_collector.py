@@ -1331,9 +1331,25 @@ def _collect_breadth(ms: MarketSnapshot, watchlist: list = None):
         ms.advance_count = len(advances)
         ms.decline_count = len(declines)
 
-        # Count limit-up and limit-down (simplified: >=9.9% or <=-9.9%)
-        ms.limit_up_count = len(df[df[pct_col] >= 9.9])
-        ms.limit_down_count = len(df[df[pct_col] <= -9.9])
+        # Count limit-up and limit-down with board-specific thresholds:
+        # ST: ±4.9%, ChiNext(3xx)/STAR(68x): ±19.9%, main board: ±9.9%
+        code_col = "代码" if "代码" in df.columns else "股票代码"
+        name_col = "名称" if "名称" in df.columns else "股票名称"
+        limit_up = 0
+        limit_down = 0
+        for _, r in df.iterrows():
+            pct = r.get(pct_col, 0) or 0
+            code = str(r.get(code_col, ""))
+            name = str(r.get(name_col, ""))
+            is_st = "ST" in name
+            is_chinext_star = code.startswith("3") or code.startswith("68")
+            threshold = 4.9 if is_st else (19.9 if is_chinext_star else 9.9)
+            if pct >= threshold:
+                limit_up += 1
+            elif pct <= -threshold:
+                limit_down += 1
+        ms.limit_up_count = limit_up
+        ms.limit_down_count = limit_down
 
     # Extract spot data for watchlist stocks
     if watchlist:

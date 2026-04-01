@@ -112,10 +112,14 @@ class NodeTrace:
     @classmethod
     def from_dict(cls, d: dict) -> "NodeTrace":
         """Deserialize from dict."""
+        d = dict(d)  # shallow copy — avoid mutating caller's dict
         if "timestamp" in d and isinstance(d["timestamp"], str):
             d["timestamp"] = datetime.fromisoformat(d["timestamp"])
         if "status" in d and isinstance(d["status"], str):
-            d["status"] = NodeStatus(d["status"])
+            try:
+                d["status"] = NodeStatus(d["status"])
+            except ValueError:
+                d["status"] = NodeStatus.WARN
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
@@ -227,6 +231,7 @@ class RunTrace:
 
     @classmethod
     def from_dict(cls, d: dict) -> "RunTrace":
+        d = dict(d)  # shallow copy — avoid mutating caller's dict
         node_dicts = d.pop("node_traces", [])
         had_started_at = "started_at" in d
         for ts_field in ("started_at", "completed_at"):

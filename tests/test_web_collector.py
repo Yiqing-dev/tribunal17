@@ -101,6 +101,13 @@ macro_narrative = 美股上涨
         r = parse_global_macro_output(text)
         assert r["overnight_markets"] == "test value"
 
+    def test_long_text_no_marker_returns_empty(self):
+        """Text >2000 chars without GLOBAL_MACRO_OUTPUT block should return empty."""
+        text = "This is prose without any structured block. " * 100  # ~4500 chars
+        assert len(text) > 2000
+        r = parse_global_macro_output(text)
+        assert all(v == "" for v in r.values())
+
 
 # ── SNAPSHOT_RECOVERY parser ─────────────────────────────────────────
 

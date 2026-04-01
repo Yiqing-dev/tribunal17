@@ -33,6 +33,7 @@ class BacktestConfig:
     eval_window_days: int = 10          # Forward trading days to evaluate
     neutral_band_pct: float = 2.0       # +/- band for neutral classification
     min_age_days: int = 1               # Minimum calendar days since signal
+    max_runs: int = 0                   # Max runs to evaluate (0 = no limit)
     engine_version: str = "v1"
 
 
@@ -534,7 +535,7 @@ def compute_summary(
     if decided > 0:
         summary.win_rate_pct = round(len(wins) / decided * 100, 1)
 
-    # Average returns
+    # Average returns — overall across all actions (see avg_buy/sell_return_pct for per-action)
     all_returns = [r.stock_return_pct for r in completed]
     summary.avg_stock_return_pct = round(sum(all_returns) / len(all_returns), 2)
 
@@ -631,7 +632,7 @@ def run_backtest(
 
     from .replay_store import ReplayStore
     store = ReplayStore(storage_dir=storage_dir)
-    runs = store.list_runs(ticker=ticker, limit=500)
+    runs = store.list_runs(ticker=ticker, limit=config.max_runs or 10000)
 
     today = datetime.now()
     results = []
@@ -783,6 +784,10 @@ def run_backtest_from_ledger(
 ) -> BacktestReport:
     """Run backtest using signal ledger as input (faster, no RunTrace loading).
 
+    Differences from run_backtest():
+    - Deduplicates by (ticker, trade_date) — same as run_backtest.
+    - Does NOT perform shadow VETO analysis (no RunTrace to look up pre-veto action).
+
     Args:
         ledger_path: Path to signal ledger JSONL.
         config: Backtest configuration.
@@ -824,6 +829,13 @@ def run_backtest_from_ledger(
         )
         results.append(result)
 
+    # Deduplicate: keep latest per (ticker, trade_date)
+    seen: Dict[tuple, BacktestResult] = {}
+    for r in results:
+        key = (r.ticker, r.trade_date)
+        if key not in seen or r.run_id > seen[key].run_id:
+            seen[key] = r
+    results = list(seen.values())
     results.sort(key=lambda r: r.trade_date, reverse=True)
 
     overall = compute_summary(results, scope="overall", config=config)
@@ -984,6 +996,8 @@ def run_multi_window_backtest(
     multi = MultiWindowReport(windows=windows, generated_at=datetime.now().isoformat())
 
     for w in windows:
+        # min_age_days=0: intentional — multi-window includes all signals to show
+        # how evaluation window length affects results across the full sample
         config = BacktestConfig(eval_window_days=w, neutral_band_pct=2.0, min_age_days=0)
         report = run_backtest_from_ledger(
             ledger_path=ledger_path,

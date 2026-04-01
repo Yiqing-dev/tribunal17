@@ -12,7 +12,10 @@ The agents return structured text that gets merged into market_context.
 
 from __future__ import annotations
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 from typing import Dict, List, Optional
 
 
