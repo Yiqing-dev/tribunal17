@@ -595,6 +595,20 @@ Fallbacks degrade gracefully — some fields (e.g., limit counts from THS, net_p
 - All agents with model assignments have a corresponding pipeline stage
 - Non-LLM agents (in stages but not in models) are auto-detected, not hardcoded
 
+## Critical Data Integrity Rules
+
+These rules exist because of past bugs that produced silently wrong reports. Violating them will produce misleading data.
+
+### Market Report Data Flow
+1. **Snapshot must be persisted at L1**: `snapshot.to_json()` → `market_snapshot.json`. L5/L6 must load via `MarketSnapshot.from_json()` and pass to renderers. Never pass `market_snapshot=None` — it causes limit_up/limit_down to show 0.
+2. **Sectors sorted by 涨跌幅, not 主力净流入**: EM's net_inflow metric often contradicts actual price direction (e.g., +15亿 inflow but -1.28% price). `_collect_sector_flow()` sorts by price change. `generate_market_report()` overrides `sector_momentum` with snapshot ground-truth data.
+3. **Board data from recap**: Pass `board_data` (from `recap_{date}.json`) to renderers for limit-up/limit-down stock detail lists.
+
+### Signal Direction Integrity
+4. **Risk Judge does not default to HOLD**: If RISK_OUTPUT omits `research_action`, the PM's direction is preserved. Never hardcode a default action.
+5. **AVOID ≠ SELL**: TRADE_PLAN bias=AVOID means "don't participate" (risk_cleared=FALSE or VETO). It maps to HOLD, not SELL.
+6. **Stale threshold is 0.02**: Confidence is on a 0.0–1.0 scale. The stale-signal threshold in `opinion_tracker.py` is `abs(confidence_delta) < 0.02`, not 2.0.
+
 ## Known Limitations
 
 ### Naming quirks
@@ -606,22 +620,23 @@ Fallbacks degrade gracefully — some fields (e.g., limit counts from THS, net_p
 - **Turnover delta estimation**: `recap_collector` estimates previous-day total market turnover using Shanghai index volume ratio as proxy. This is approximate (misses ChiNext/STAR/Shenzhen-only stocks) but sufficient for directional delta.
 - **Fail-open batch processing**: `batch_process.process_all()` continues processing remaining tickers when one fails. Individual failures are logged but don't block the batch.
 - **Confidence sentinel -1.0**: `NodeTrace.confidence` and `RunTrace.final_confidence` use `-1.0` to mean "not set". `RunTrace.finalize()` skips nodes with `confidence < 0` when picking the final confidence. Do not change to `None` — 7+ files compare numerically.
+- **Publishing Compliance is lightweight**: The subagent_pipeline runs P1 (evidence presence) and P5 (veto consistency) checks. The full 5-rule engine lives in `tradingagents/publishing_compliance.py` (parent project, not importable due to zero-external-import policy). Compliance node seq=18 (after research_output=17).
 
 ## Tests
 
-Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 506 tests total, no API keys needed:
+Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 384+ tests, no API keys needed:
 
 ```bash
 # All tests
 pytest subagent_pipeline/tests/ -q
 
 # Single module
-pytest subagent_pipeline/tests/test_market_layer.py -v   # 78 tests
+pytest subagent_pipeline/tests/test_market_layer.py -v   # 108 tests
 pytest subagent_pipeline/tests/test_daily_recap.py -v    # 96 tests
 pytest subagent_pipeline/tests/test_debate.py -v         # 84 tests
 pytest subagent_pipeline/tests/test_trade_plan.py -v     # 31 tests
 pytest subagent_pipeline/tests/test_dashboard.py -v      # 125 tests
-pytest subagent_pipeline/tests/test_opinion_tracker.py -v # 61 tests
+pytest subagent_pipeline/tests/test_opinion_tracker.py -v # 65 tests
 
 # Single test
 pytest subagent_pipeline/tests/test_trade_plan.py::TestViewIntegration::test_no_trade_plan_no_card -v
