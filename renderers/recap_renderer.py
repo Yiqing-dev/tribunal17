@@ -924,6 +924,14 @@ def _render_index_svg(points: list, code: str = "") -> str:
         f' style="max-height:{total_h}px" xmlns="http://www.w3.org/2000/svg">'
         f'{"".join(candles)}'
         f'{ma5}{ma14}{ma30}'
+        f'<g class="ma-legend" transform="translate({w - 160}, 12)">'
+        f'<line x1="0" y1="0" x2="16" y2="0" stroke="#fbbf24" stroke-width="1.5"/>'
+        f'<text x="20" y="4" font-size="9" fill="#fbbf24">MA5</text>'
+        f'<line x1="50" y1="0" x2="66" y2="0" stroke="#60a5fa" stroke-width="1.5"/>'
+        f'<text x="70" y="4" font-size="9" fill="#60a5fa">MA14</text>'
+        f'<line x1="104" y1="0" x2="120" y2="0" stroke="#ff6b9d" stroke-width="1.5"/>'
+        f'<text x="124" y="4" font-size="9" fill="#ff6b9d">MA30</text>'
+        f'</g>'
         f'{axis}{div_line}'
         f'{"".join(macd_bars)}{dif_line}{dea_line}'
         f'<g class="rsi-group"{rsi_style}>{rsi_els}</g>'
@@ -977,8 +985,15 @@ def _render_sector_heatmap(data: dict) -> str:
                 f'{sign}{pct:.2f}%</text>'
             )
 
+        size_val = node.get(size_key, 0)
+        tooltip = f'{name} {sign}{pct:.2f}% | {size_label.split("=")[1]} {size_val:.1f}亿'
+        leaders = node.get("leaders", [])
+        if leaders:
+            top3 = ", ".join(l.get("name", "") for l in leaders[:3])
+            tooltip += f' | 领涨: {top3}'
         svg_parts.append(
             f'<g class="shm-node" data-idx="{idx}">'
+            f'<title>{_esc(tooltip)}</title>'
             f'<rect x="{rx}" y="{ry}" width="{rw}" height="{rh}" '
             f'fill="{color}" stroke="var(--bg)" stroke-width="2" rx="3"/>'
             f'{text_el}</g>'
@@ -1596,8 +1611,9 @@ def render_daily_recap(data) -> str:
       {consec}
       {red_close}
       <footer class="recap-footer">
-        <span>TradingAgents · 每日复盘 · {date_str}</span>
-        <span>采集耗时 {elapsed:.1f}s · v0.2.0</span>
+        <span>TradingAgents \u00b7 \u6bcf\u65e5\u590d\u76d8 \u00b7 {date_str}
+        {' \u00b7 <a href="market-' + date_str.replace('-','') + '.html" style="color:var(--accent);text-decoration:none;">\u2192 \u5e02\u573a\u6307\u6325\u53f0</a>' if date_str else ''}</span>
+        <span>\u91c7\u96c6\u8017\u65f6 {elapsed:.1f}s \u00b7 v0.2.0</span>
       </footer>
     </div>
     {sector_drawer}

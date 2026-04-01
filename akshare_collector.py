@@ -1059,6 +1059,7 @@ class MarketSnapshot:
     limit_up_count: int = 0
     limit_down_count: int = 0
     total_stocks: int = 0
+    turnover_total_yi: float = 0  # Total market turnover in 亿
 
     # Spot data for watchlist stocks (for heatmap)
     stock_spots: dict = field(default_factory=dict)  # {ticker: {name, price, pct_change, market_cap, ...}}
@@ -1205,6 +1206,7 @@ def _collect_concept_flow(ms: MarketSnapshot):
                 "name": str(r.get("板块名称", "")),
                 "change_pct": _safe_float(r.get("涨跌幅")),
                 "total_market_cap": _safe_float(r.get("总市值")),
+                "net_inflow": _safe_float(r.get("主力净流入")),
             })
         ms.concept_fund_flow = rows
     except Exception:
@@ -1351,6 +1353,11 @@ def _collect_breadth(ms: MarketSnapshot, watchlist: list = None):
         ms.limit_up_count = limit_up
         ms.limit_down_count = limit_down
 
+    # Total market turnover
+    amt_col = "成交额" if "成交额" in df.columns else "总成交额"
+    if amt_col in df.columns:
+        ms.turnover_total_yi = round(float(df[amt_col].sum()) / 1e8, 2)
+
     # Extract spot data for watchlist stocks
     if watchlist:
         for ticker in watchlist:
@@ -1415,6 +1422,8 @@ def _build_market_markdown(ms: MarketSnapshot) -> str:
     ratio = ms.advance_count / total if total > 0 else 0
     lines.append(f"- 上涨家数: {ms.advance_count} / 下跌家数: {ms.decline_count} (涨跌比 {ratio:.2f})")
     lines.append(f"- 涨停: {ms.limit_up_count} / 跌停: {ms.limit_down_count}")
+    if ms.turnover_total_yi > 0:
+        lines.append(f"- 全市场成交额: {ms.turnover_total_yi:.0f}亿")
     lines.append(f"- 全市场股票数: {ms.total_stocks}")
     lines.append("")
 
@@ -1473,11 +1482,13 @@ def _build_market_markdown(ms: MarketSnapshot) -> str:
     # Concept flow
     if ms.concept_fund_flow:
         lines.append("## 概念板块 (Top 10)")
-        lines.append("| 板块 | 涨跌幅 |")
-        lines.append("|------|--------|")
+        lines.append("| 板块 | 涨跌幅 | 主力净流入 |")
+        lines.append("|------|--------|----------|")
         for c in ms.concept_fund_flow[:10]:
             pct = c.get("change_pct", 0) or 0
-            lines.append(f"| {c['name']} | {pct:.2f}% |")
+            net = c.get("net_inflow", 0) or 0
+            net_str = f"+{net/1e8:.2f}亿" if net > 0 else (f"{net/1e8:.2f}亿" if net else "—")
+            lines.append(f"| {c['name']} | {pct:.2f}% | {net_str} |")
         lines.append("")
 
     return "\n".join(lines)

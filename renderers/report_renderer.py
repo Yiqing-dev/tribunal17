@@ -4939,7 +4939,7 @@ def _render_sentiment_ecosystem(view: MarketView) -> str:
     <div class="mkt-glass mkt-anim mkt-d2">
       <div class="mkt-sec-head">
         <div class="mkt-sec-title">\u60c5\u7eea\u6e29\u5ea6\u8ba1</div>
-        <div class="mkt-sec-sub">{_esc(emotion_label)}</div>
+        <div class="mkt-sec-sub">{_esc(emotion_label)} ({emotion})</div>
       </div>
       <div class="thermo-track">
         <div class="thermo-needle" style="left:{emotion}%"></div>
@@ -5084,12 +5084,44 @@ def _render_sector_engine(view: MarketView) -> str:
               <div class="sector-attr-stocks">{_esc(stock_names)}</div>
             </div>"""
 
+        # Mini donut for top sectors
+        import math as _m
+        _donut = ""
+        _counts = []
+        for _s, _info in list(attr.items())[:6]:
+            _c = _info.get("count", 0) if isinstance(_info, dict) else (len(_info) if isinstance(_info, list) else 0)
+            if _c > 0:
+                _counts.append((_s, _c))
+        _total = sum(c for _, c in _counts)
+        if _total > 0:
+            _palette = ["#f87171", "#fbbf24", "#60a5fa", "#34d399", "#a78bfa", "#fb923c"]
+            _arcs = ""
+            _legend = ""
+            _start = 0
+            _cx, _cy, _r = 50, 50, 38
+            for _i, (_s, _c) in enumerate(_counts):
+                _frac = _c / _total
+                _end = _start + _frac * 2 * _m.pi
+                _large = 1 if _frac > 0.5 else 0
+                _x1, _y1 = _cx + _r * _m.sin(_start), _cy - _r * _m.cos(_start)
+                _x2, _y2 = _cx + _r * _m.sin(_end), _cy - _r * _m.cos(_end)
+                _col = _palette[_i % len(_palette)]
+                _arcs += f'<path d="M{_x1:.1f},{_y1:.1f} A{_r},{_r} 0 {_large} 1 {_x2:.1f},{_y2:.1f}" fill="none" stroke="{_col}" stroke-width="12"/>'
+                _legend += f'<span style="color:{_col};font-size:.75rem;">\u25cf {_esc(_s)}({_c})</span> '
+                _start = _end
+            _donut = (
+                f'<div style="display:flex;align-items:center;gap:1rem;margin-bottom:.6rem;">'
+                f'<svg viewBox="0 0 100 100" width="80" height="80">{_arcs}</svg>'
+                f'<div style="line-height:1.8">{_legend}</div></div>'
+            )
+
         attr_html = f"""
       <div style="margin-top:1rem">
         <div class="mkt-sec-head">
           <div class="mkt-sec-title">\u6da8\u505c\u677f\u5757\u5f52\u5c5e</div>
           <div class="mkt-sec-sub">\u6743\u91cd\u5e26\u52a8 vs \u9898\u6750\u6269\u6563</div>
         </div>
+        {_donut}
         <div class="sector-attr-grid">
           {attr_cards}
         </div>
@@ -5102,7 +5134,7 @@ def _render_sector_engine(view: MarketView) -> str:
     <div class="mkt-glass mkt-anim mkt-d3">
       <div class="mkt-sec-head">
         <div class="mkt-sec-title">\u4e3b\u7ebf\u677f\u5757\u5f15\u64ce</div>
-        <div class="mkt-sec-sub">\u70ed\u529b\u56fe \u00b7 \u9886\u6da8/\u9000\u6f6e \u00b7 \u8d44\u91d1\u6d41\u5411</div>
+        <div class="mkt-sec-sub">\u9762\u79ef=\u677f\u5757\u6210\u4ea4\u989d \u989c\u8272=\u6da8\u8dcc\u5e45 | \u9886\u6da8/\u9000\u6f6e \u00b7 \u8d44\u91d1\u6d41\u5411</div>
       </div>
       <div class="sector-engine-grid">
         <div>
@@ -5509,7 +5541,8 @@ def render_market_page(view: MarketView) -> str:
       {battle_brief}
 
       <div class="mkt-footer">
-        <div>{_BRAND_LOGO_SM} TradingAgents \u00b7 \u5e02\u573a\u6307\u6325\u53f0</div>
+        <div>{_BRAND_LOGO_SM} TradingAgents \u00b7 \u5e02\u573a\u6307\u6325\u53f0
+        {' \u00b7 <a href="recap-' + view.trade_date.replace('-','') + '.html" style="color:var(--accent);text-decoration:none;">\u2192 \u6bcf\u65e5\u590d\u76d8</a>' if view.trade_date else ''}</div>
         <div>\u4ea4\u6613\u65e5 {_esc(view.trade_date)} \u00b7 v0.2.0</div>
       </div>
     </div>"""

@@ -119,11 +119,11 @@ SECTOR_OUTPUT:
 sector_leaders = [sector1, sector2, sector3]
 avoid_sectors = [sector1, sector2]
 rotation_phase = <early/mid/late>
-sector_momentum = [{{"name": "sector", "flow": "net_inflow_yi", "direction": "in/out"}}]
+sector_momentum = [{{"name": "板块名", "flow": "33.92", "direction": "in"}}, {{"name": "板块名", "flow": "-8.20", "direction": "out"}}]
 ```
 
 Note: sector_leaders and avoid_sectors should be Chinese sector names (e.g. 核电, 半导体, 新能源).
-sector_momentum should be valid JSON array.
+sector_momentum should be valid JSON array. The "flow" value MUST be a plain number (e.g. "33.92" or "-8.20"), do NOT include units like "亿" or "+" prefix.
 
 {LANGUAGE_ZH}"""
 
