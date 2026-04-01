@@ -216,5 +216,22 @@ def validate_pipeline_config() -> None:
                 f"Model assigned to agent '{agent}' but it has no pipeline stage"
             )
 
+    # Cycle detection (topological sort attempt)
+    dep_map = {s["stage"]: set(s.get("depends_on", [])) for s in PIPELINE_STAGES}
+    visited: set = set()
+    temp: set = set()
+    def _visit(node):
+        if node in temp:
+            raise ValueError(f"Cycle detected in pipeline DAG involving stage {node}")
+        if node in visited:
+            return
+        temp.add(node)
+        for dep in dep_map.get(node, []):
+            _visit(dep)
+        temp.remove(node)
+        visited.add(node)
+    for s in dep_map:
+        _visit(s)
+
 
 validate_pipeline_config()

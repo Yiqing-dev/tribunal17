@@ -533,7 +533,7 @@ def _collect_spot(b: AkshareBundle):
         logger.warning(f"  [spot_quote] EM failed ({e}), trying XQ fallback")
 
     # Fallback: XQ individual spot
-    prefix = "SH" if b.ticker.startswith("6") else "SZ"
+    prefix = "SH" if b.ticker.startswith("6") else ("BJ" if b.ticker.startswith(("8", "4")) else "SZ")
     spot = ak.stock_individual_spot_xq(symbol=f"{prefix}{b.ticker}")
     if spot is None or spot.empty:
         raise ValueError("spot_quote: both EM and XQ failed")
@@ -593,12 +593,6 @@ def _collect_price_history(b: AkshareBundle):
     if df is None or df.empty:
         raise ValueError("price_history: both EM and Sina failed")
 
-    # Normalize column names — EM uses Chinese, Sina uses English
-    col_map = {
-        "日期": "date", "开盘": "open", "收盘": "close",
-        "最高": "high", "最低": "low", "成交量": "volume",
-        "成交额": "amount", "涨跌幅": "change_pct", "换手率": "turnover",
-    }
     rows = []
     for _, r in df.iterrows():
         # Try Chinese column names (EM), fall back to English (Sina)

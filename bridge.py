@@ -1182,10 +1182,11 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
             nt.parse_confidence = 0.4
             nt.parse_warnings = ["SYNTHESIS_OUTPUT block not found"]
             nt.status = NodeStatus.WARN
-            # Try to infer action from text
-            if '买入' in text or 'BUY' in text.upper():
+            # Try to infer action from text (word boundary to avoid "不建议买入" etc.)
+            text_up = text.upper()
+            if re.search(r'\bBUY\b', text_up) or re.search(r'(?<![不勿])买入', text):
                 nt.research_action = "BUY"
-            elif '卖出' in text or 'SELL' in text.upper():
+            elif re.search(r'\bSELL\b', text_up) or re.search(r'(?<![不勿])卖出', text):
                 nt.research_action = "SELL"
             else:
                 nt.research_action = "HOLD"

@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import random
+import re
 import time
 from contextlib import ExitStack, contextmanager
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -237,7 +238,7 @@ def build_rotating_get(
 
                 except _RETRIABLE_EXC as e:
                     last_exc = e
-                    tag = str(proxy)[:40] if proxy else "direct"
+                    tag = re.sub(r'://[^@]+@', '://***@', str(proxy))[:40] if proxy else "direct"
                     logger.debug("Proxy %s failed for %s: %s", tag, url[:60], e)
                     time.sleep(random.uniform(*backoff))
                     continue

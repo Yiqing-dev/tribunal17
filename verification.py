@@ -184,7 +184,7 @@ def parse_verification_result(text: str) -> VerificationResult:
         r'akshare_value\s*=\s*(.+?)\n'
         r'websearch_value\s*=\s*(.+?)\n'
         r'status\s*=\s*(PASS|FAIL|WARN)\s*\n'
-        r'note\s*=\s*(.+?)(?=\n(?:CHECK:|VERIFICATION|$))',
+        r'note\s*=\s*(.+?)(?=\n(?:CHECK:|VERIFICATION|$)|\Z)',
         re.IGNORECASE | re.DOTALL,
     )
     for m in check_pattern.finditer(text):

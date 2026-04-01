@@ -276,10 +276,10 @@ class SignalLedger:
     ) -> List[SignalRecord]:
         """Append signals for multiple run_ids. Auto-fills entry_price from spot_data."""
         spot_data = spot_data or {}
+        from .replay_store import ReplayStore
+        store = ReplayStore(storage_dir=storage_dir)
         records = []
         for rid in run_ids:
-            from .replay_store import ReplayStore
-            store = ReplayStore(storage_dir=storage_dir)
             trace = store.load(rid)
             if trace is None:
                 continue
@@ -320,8 +320,7 @@ class SignalLedger:
         if not self.path.exists():
             return []
 
-        records = []
-        seen_keys = set()  # (ticker, trade_date) for dedup
+        dedup: dict = {}  # (ticker, trade_date) → SignalRecord
 
         with open(self.path, "r", encoding="utf-8") as f:
             for line in f:
@@ -332,13 +331,6 @@ class SignalLedger:
                     d = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-
-                # Dedup: keep last record per ticker+date
-                key = (d.get("ticker", ""), d.get("trade_date", ""))
-                if key in seen_keys:
-                    # Replace previous
-                    records = [r for r in records if (r.ticker, r.trade_date) != key]
-                seen_keys.add(key)
 
                 try:
                     rec = SignalRecord.from_dict(d)
@@ -355,8 +347,10 @@ class SignalLedger:
                 if before and rec.trade_date > before:
                     continue
 
-                records.append(rec)
+                # Dedup: keep last record per ticker+date (O(1) dict replace)
+                dedup[(rec.ticker, rec.trade_date)] = rec
 
+        records = list(dedup.values())
         # Most recent first
         records.sort(key=lambda r: r.trade_date, reverse=True)
 

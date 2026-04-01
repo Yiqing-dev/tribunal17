@@ -652,7 +652,7 @@ def _html_wrap(title: str, body: str, tier_label: str, extra_css: str = "",
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>{title}</title>
+<title>{_esc(title)}</title>
 <style>{_BASE_CSS}{extra_css}</style>
 {extra_head}
 </head>
