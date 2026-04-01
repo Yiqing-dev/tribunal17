@@ -158,8 +158,8 @@ def _fetch_proxies(api_url: str, original_get: Callable,
 _RETRIABLE_EXC: Tuple[type, ...] = (
     ProxyError, ConnectTimeout, ReadTimeout, SSLError,
     ConnectionError, ChunkedEncodingError,
-    # Also catch the low-level RemoteDisconnected that causes the EM failures
-    OSError,
+    # Low-level network errors (narrowed from OSError)
+    ConnectionResetError, BrokenPipeError,
 )
 
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "

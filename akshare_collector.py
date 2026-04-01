@@ -47,7 +47,7 @@ def _retry_call(fn, *args, max_retries=2, base_delay=1.0, **kwargs):
             is_transient = any(kw in err_str for kw in (
                 "timeout", "timed out", "connection", "rate limit",
                 "too many requests", "503", "429", "retry",
-                "reset by peer", "broken pipe", "no tables found",
+                "reset by peer", "broken pipe",
             ))
             if not is_transient or attempt == max_retries:
                 raise
@@ -90,6 +90,7 @@ class AkshareBundle:
     fund_flow_5d: list = field(default_factory=list)
     valuation_30d: list = field(default_factory=list)
     northbound_history: list = field(default_factory=list)
+    northbound_stale_days: int = 0
 
     # ── Structured lists ──
     top10_shareholders: list = field(default_factory=list)
@@ -186,7 +187,7 @@ class AkshareBundle:
 
         # Northbound
         if self.northbound_history:
-            stale = getattr(self, '_northbound_stale_days', 0)
+            stale = getattr(self, 'northbound_stale_days', 0)
             if stale > 180:
                 parts.append("\n## 北向资金持股（⚠️ 历史数据，已停止实时披露）")
                 parts.append(f"> 注意：北向资金逐日持股数据自2024年8月起已停止实时披露（监管政策调整）。"
@@ -347,7 +348,7 @@ class AkshareBundle:
 
         # Northbound (sentiment view — same staleness annotation as technical view)
         if self.northbound_history:
-            stale = getattr(self, '_northbound_stale_days', 0)
+            stale = getattr(self, 'northbound_stale_days', 0)
             if stale > 180:
                 parts.append("\n## 北向资金持股（⚠️ 历史数据，已停止实时披露）")
                 parts.append(f"> 注意：北向资金逐日持股数据自2024年8月起已停止实时披露（监管政策调整）。"
@@ -579,7 +580,11 @@ def _collect_price_history(b: AkshareBundle):
     if df is None or df.empty:
         prefix = "sh" if b.ticker.startswith("6") else "sz"
         sina_symbol = f"{prefix}{b.ticker}"
-        df = ak.stock_zh_a_daily(symbol=sina_symbol, adjust="qfq")
+        try:
+            df = _retry_call(ak.stock_zh_a_daily, symbol=sina_symbol, adjust="qfq")
+        except Exception as e_sina:
+            logger.warning(f"  [price_history] Sina fallback also failed: {e_sina}")
+            df = None
         if df is not None and not df.empty:
             # Sina returns full history — trim to last 60 days
             df = df.tail(60)
@@ -618,8 +623,16 @@ def _collect_price_history(b: AkshareBundle):
 def _collect_valuation_history(b: AkshareBundle):
     """stock_zh_valuation_baidu — PE/PB time series."""
     ak = _get_ak()
-    pe_df = ak.stock_zh_valuation_baidu(symbol=b.ticker, indicator="市盈率(TTM)")
-    pb_df = ak.stock_zh_valuation_baidu(symbol=b.ticker, indicator="市净率")
+    pe_df = None
+    pb_df = None
+    try:
+        pe_df = ak.stock_zh_valuation_baidu(symbol=b.ticker, indicator="市盈率(TTM)")
+    except Exception as e:
+        logger.warning(f"  [valuation] Baidu PE failed: {e}")
+    try:
+        pb_df = ak.stock_zh_valuation_baidu(symbol=b.ticker, indicator="市净率")
+    except Exception as e:
+        logger.warning(f"  [valuation] Baidu PB failed: {e}")
 
     # Merge PE and PB on date
     pe_map = {str(r["date"]): _safe_float(r["value"]) for _, r in pe_df.iterrows()} if pe_df is not None else {}
@@ -801,7 +814,7 @@ def _collect_northbound(b: AkshareBundle):
             pass
     b.northbound_history = rows
     # Tag staleness on the bundle so markdown renderer can annotate
-    b._northbound_stale_days = stale_days
+    b.northbound_stale_days = stale_days
 
 
 def _collect_news(b: AkshareBundle):
@@ -950,7 +963,7 @@ def _build_markdown(b: AkshareBundle) -> str:
 
     # ── Northbound ──
     if b.northbound_history:
-        stale = getattr(b, '_northbound_stale_days', 0)
+        stale = getattr(b, 'northbound_stale_days', 0)
         if stale > 180:
             lines.append("## 北向资金持股（⚠️ 历史数据，已停止实时披露）")
             lines.append(f"> 注意：北向资金逐日持股数据自2024年8月起已停止实时披露（监管政策调整）。"

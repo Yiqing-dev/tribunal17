@@ -1106,10 +1106,16 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
                 or "bull_prob" not in scenario
                 or "bear_prob" not in scenario
             )
+            _bp = float(scenario.get("base_prob", 0.5))
+            _blp = float(scenario.get("bull_prob", 0.25))
+            _brp = float(scenario.get("bear_prob", 0.25))
+            _ptotal = _bp + _blp + _brp
+            if _ptotal > 0 and abs(_ptotal - 1.0) > 0.01:
+                _bp, _blp, _brp = _bp / _ptotal, _blp / _ptotal, _brp / _ptotal
             nt.structured_data = {
-                "base_prob": scenario.get("base_prob", 0.5),
-                "bull_prob": scenario.get("bull_prob", 0.25),
-                "bear_prob": scenario.get("bear_prob", 0.25),
+                "base_prob": round(_bp, 3),
+                "bull_prob": round(_blp, 3),
+                "bear_prob": round(_brp, 3),
                 "base_case_trigger": scenario.get("base_trigger", ""),
                 "bull_case_trigger": scenario.get("bull_trigger", ""),
                 "bear_case_trigger": scenario.get("bear_trigger", ""),

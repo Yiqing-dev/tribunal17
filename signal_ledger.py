@@ -497,7 +497,7 @@ def repair_ledger(
     if not os.path.exists(ledger_path):
         return report
 
-    with open(ledger_path, "r") as f:
+    with open(ledger_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     repaired_lines = []

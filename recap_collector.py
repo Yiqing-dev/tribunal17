@@ -394,7 +394,12 @@ def collect_index_summary(trade_date: str = "") -> IndexSummary:
                     flat_is_estimated = True
                     logger.info(f"  [BREADTH] THS fallback: {advancers}涨/{decliners}跌")
                 if "总成交额" in ths_df.columns and turnover_total == 0:
-                    turnover_total = float(ths_df["总成交额"].sum())
+                    raw_ths_turnover = float(ths_df["总成交额"].sum())
+                    # THS returns turnover in same unit as EM (元); normalize to 亿
+                    if raw_ths_turnover > 1e10:  # > 100亿 in raw means it's in 元
+                        turnover_total = raw_ths_turnover / 1e8
+                    else:
+                        turnover_total = raw_ths_turnover  # already in 亿
         except Exception as e2:
             logger.warning(f"  [FAIL] THS breadth fallback: {e2}")
 
@@ -770,7 +775,7 @@ def collect_red_close_screen(
         return RedCloseScreen(window_natural_days=window)
 
     top = spot_df.nlargest(pool_size, mc_col)
-    end = datetime.now()
+    end = datetime.strptime(trade_date[:10], "%Y-%m-%d") if trade_date else datetime.now()
     start = end - timedelta(days=window + 5)
     start_str = start.strftime("%Y%m%d")
     end_str = end.strftime("%Y%m%d")
@@ -784,10 +789,12 @@ def collect_red_close_screen(
         if not code or len(code) != 6:
             continue
         try:
-            hist = ak.stock_zh_a_hist(
-                symbol=code, period="daily", adjust="qfq",
-                start_date=start_str, end_date=end_str,
-            )
+            with em_proxy_session():
+                hist = _retry_call(
+                    ak.stock_zh_a_hist,
+                    symbol=code, period="daily", adjust="qfq",
+                    start_date=start_str, end_date=end_str,
+                )
             if hist is None or len(hist) < 2:
                 continue
 

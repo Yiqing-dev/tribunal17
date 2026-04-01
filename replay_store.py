@@ -99,8 +99,8 @@ class ReplayStore:
         try:
             with open(trace_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        except (json.JSONDecodeError, ValueError) as e:
-            logger.warning("Corrupt replay trace %s: %s", trace_path, e)
+        except (json.JSONDecodeError, ValueError, FileNotFoundError, OSError) as e:
+            logger.warning("Failed to load replay trace %s: %s", trace_path, e)
             return None
         return RunTrace.from_dict(data)
 
@@ -178,7 +178,17 @@ class ReplayStore:
                 }
                 line = json.dumps(entry, ensure_ascii=False) + "\n"
                 with open(self._manifest_path, "a", encoding="utf-8") as f:
-                    f.write(line)
+                    try:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    except OSError:
+                        pass
+                    try:
+                        f.write(line)
+                    finally:
+                        try:
+                            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                        except OSError:
+                            pass
                 repaired += 1
                 logger.info("Reconciled orphan trace: %s", run_id)
             except Exception as e:
