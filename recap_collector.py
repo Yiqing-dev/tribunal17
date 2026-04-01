@@ -273,6 +273,12 @@ class DailyRecapData:
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=2, default=str)
 
+    @classmethod
+    def from_json(cls, json_str: str) -> "DailyRecapData":
+        """Deserialize from JSON string."""
+        d = json.loads(json_str) if isinstance(json_str, str) else json_str
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
 
 # ── Collectors ───────────────────────────────────────────────────────
 

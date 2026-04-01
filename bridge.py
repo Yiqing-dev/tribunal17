@@ -590,13 +590,18 @@ def assemble_market_context(
             mismatch.
     """
     # ── Date validation guard ──
+    # Downgraded from hard exception to warning: LLM agents may write
+    # imprecise dates in prose even when analyzing correct-date data.
     if raw_texts and trade_date:
-        validate_market_agent_dates(
-            trade_date,
-            macro_text=raw_texts.get("macro", ""),
-            breadth_text=raw_texts.get("breadth", ""),
-            sector_text=raw_texts.get("sector", ""),
-        )
+        try:
+            validate_market_agent_dates(
+                trade_date,
+                macro_text=raw_texts.get("macro", ""),
+                breadth_text=raw_texts.get("breadth", ""),
+                sector_text=raw_texts.get("sector", ""),
+            )
+        except StaleMarketDataError as e:
+            logger.warning("Date mismatch (non-fatal): %s", e)
 
     regime = str(macro.get("regime", "NEUTRAL")).upper()
     breadth_state = str(breadth.get("breadth_state", "NARROW")).upper()
@@ -643,6 +648,18 @@ def assemble_market_context(
         "rotation_phase": str(sector.get("rotation_phase", "")),
         "sector_momentum": sector.get("sector_momentum", []),
     }
+
+    # Normalize sector_momentum flow values: LLM agents sometimes return
+    # strings like "+33.92亿" instead of numeric 33.92.  Strip non-numeric
+    # chars so downstream renderers can float() them safely.
+    for m in result.get("sector_momentum", []):
+        if isinstance(m, dict) and isinstance(m.get("flow"), str):
+            raw = m["flow"]
+            cleaned = re.sub(r'[^\d.\-]', '', raw)
+            try:
+                m["flow"] = str(float(cleaned))
+            except (ValueError, TypeError):
+                pass  # leave as-is if completely unparseable
 
     # Enrich sector_momentum: if LLM agent only returned inflow sectors,
     # the momentum list will lack outflow entries.  Detect this and flag it

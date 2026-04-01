@@ -262,14 +262,16 @@ class TestStaleMarketDateValidation:
         from subagent_pipeline.bridge import validate_market_agent_dates
         validate_market_agent_dates("2026-03-26", macro_text="just some text")
 
-    def test_assemble_with_raw_texts_stale_raises(self):
-        from subagent_pipeline.bridge import assemble_market_context, StaleMarketDataError
-        with pytest.raises(StaleMarketDataError):
-            assemble_market_context(
-                {"regime": "RISK_ON"}, {}, {},
-                trade_date="2026-03-26",
-                raw_texts={"macro": "# \u62a5\u544a \u2014 2026\u5e743\u670824\u65e5"},
-            )
+    def test_assemble_with_raw_texts_stale_warns(self):
+        """Stale date is now a warning, not an exception."""
+        from subagent_pipeline.bridge import assemble_market_context
+        # Should NOT raise — downgraded to logger.warning
+        ctx = assemble_market_context(
+            {"regime": "RISK_ON"}, {}, {},
+            trade_date="2026-03-26",
+            raw_texts={"macro": "# \u62a5\u544a \u2014 2026\u5e743\u670824\u65e5"},
+        )
+        assert ctx["regime"] == "RISK_ON"
 
     def test_assemble_with_raw_texts_matching_passes(self):
         from subagent_pipeline.bridge import assemble_market_context
