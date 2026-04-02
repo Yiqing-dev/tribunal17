@@ -18,84 +18,20 @@ from .debate_view import (
     TimelineEntry, DebateRound, VerdictView,
 )
 from .decision_labels import safe_badge_class
-
-
-# ── Escape ────────────────────────────────────────────────────────────
-
-def _esc(text) -> str:
-    if not text:
-        return ""
-    return (str(text)
-            .replace("&", "&amp;").replace("<", "&lt;")
-            .replace(">", "&gt;").replace('"', "&quot;"))
+from .shared_css import _BASE_CSS
+from .shared_utils import _esc
 
 
 # ── CSS ───────────────────────────────────────────────────────────────
 
 _DEBATE_CSS = """
-/* ── AI Investment Committee — Unified Theme v3 ── */
+/* ── Debate-specific additions (base theme from shared_css._BASE_CSS) ── */
 :root {
-  --bg: #070e1b;
-  --fg: #dde6f0;
-  --card: rgba(11, 20, 35, 0.85);
-  --border: rgba(100, 150, 180, 0.18);
-  --green: #34d399;
-  --red: #f87171;
-  --yellow: #fbbf24;
-  --blue: #60a5fa;
-  --purple: #a78bfa;
-  --muted: #8fa3b8;
-  --surface: rgba(14, 24, 40, 0.92);
   --glow-green: rgba(52, 211, 153, 0.15);
   --glow-red: rgba(248, 113, 113, 0.15);
   --glow-blue: rgba(96, 165, 250, 0.12);
   --glow-yellow: rgba(251, 191, 36, 0.12);
   --glow-purple: rgba(167, 139, 250, 0.12);
-  --white: #f1f7fd;
-  --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
-  --signal-buy: var(--green);
-  --signal-sell: var(--red);
-  --signal-hold: var(--yellow);
-  --signal-veto: var(--red);
-  --state-success: var(--green);
-  --state-danger: var(--red);
-  --state-warning: var(--yellow);
-  --state-info: var(--blue);
-  --elev-1: 0 4px 12px rgba(0,0,0,0.15);
-  --elev-2: 0 12px 28px rgba(0,0,0,0.25);
-  --elev-3: 0 22px 54px rgba(0,0,0,0.35);
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --dur-fast: 200ms;
-  --dur-med: 360ms;
-  --sp-1: 0.5rem; --sp-2: 1rem; --sp-3: 1.5rem; --sp-4: 2rem; --sp-6: 3rem;
-}
-* { margin: 0; padding: 0; box-sizing: border-box; }
-::selection { background: rgba(96, 165, 250, 0.25); color: var(--white); }
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(100, 150, 180, 0.2); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(100, 150, 180, 0.35); }
-body {
-  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", -apple-system,
-               BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-  background:
-    radial-gradient(ellipse at 15% 20%, rgba(251,191,36,0.10), transparent 32%),
-    radial-gradient(ellipse at 85% 18%, rgba(96,165,250,0.08), transparent 30%),
-    radial-gradient(ellipse at 50% 110%, rgba(52,211,153,0.08), transparent 38%),
-    linear-gradient(180deg, #091420 0%, #070e1b 55%, #050c17 100%);
-  background-attachment: fixed;
-  color: var(--fg); line-height: 1.75; min-height: 100vh;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
-body::before {
-  content: "";
-  position: fixed; inset: 0;
-  background-image:
-    linear-gradient(rgba(96,165,250,.012) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(96,165,250,.012) 1px, transparent 1px);
-  background-size: 64px 64px;
-  pointer-events: none; z-index: 0;
 }
 .debate-shell { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 1.5rem; display: grid; gap: 1.25rem; }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
@@ -1078,7 +1014,7 @@ def render_debate_page(view: DebateView) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{_esc(title)}</title>
-<style>{_DEBATE_CSS}</style>
+<style>{_BASE_CSS}{_DEBATE_CSS}</style>
 </head>
 <body>
 <div class="debate-shell">
