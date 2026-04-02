@@ -61,7 +61,7 @@ from subagent_pipeline.config import PIPELINE_CONFIG, _today
 
 # 解析口令参数
 ticker = "{ticker}"        # 如 "601985"
-ticker_name = "{name}"     # 如 "中国核电"
+ticker_name = "{name}"     # 如 "中国核电"（可留空，Step 0 自动填充）
 trade_date = "{date}"      # 如 "2026-03-19"，缺省用 _today()
 
 RESULTS = Path("agent_artifacts/results")
@@ -71,6 +71,26 @@ RESULTS.mkdir(parents=True, exist_ok=True)
 REPORTS.mkdir(parents=True, exist_ok=True)
 REPLAYS.mkdir(parents=True, exist_ok=True)
 ```
+
+---
+
+### L0+L1 日期新鲜度检查
+
+在进入 L2 个股分析前，**必须**检查 L0/L1 市场层是否已在当天运行过：
+
+```python
+# 检查 market_context 日期是否匹配 trade_date
+ctx_path = REPLAYS / f"market_context_{trade_date}.json"
+if ctx_path.exists():
+    market_context = json.loads(ctx_path.read_text(encoding="utf-8"))
+    market_context_block = (RESULTS / "market_context_block.txt").read_text(encoding="utf-8")
+    print(f"[CHECK] 当日 L1 市场上下文已存在，跳过 L0+L1")
+else:
+    print(f"[CHECK] 未找到 {trade_date} 的市场上下文，需先执行 L0+L1")
+    # → 执行下面的 L0 和 L1 步骤
+```
+
+若 `market_context_{trade_date}.json` 不存在或日期不匹配，**必须先完成 L0+L1** 再进入 L2。
 
 ---
 
@@ -147,9 +167,12 @@ Path(RESULTS / "market_snapshot.json").write_text(snapshot.to_json())
 ```python
 from subagent_pipeline.akshare_collector import collect
 bundle = collect(ticker=ticker, trade_date=trade_date)
-ticker_name = bundle.name or ticker_name  # akshare 自动填充
+# ticker_name 统一从 bundle 获取，后续所有步骤使用此变量
+ticker_name = bundle.name or ticker_name or ticker
 akshare_md = bundle.markdown_report       # 属性，非方法
 ```
+
+**重要**: `ticker_name` 从此处开始作为唯一来源，传递给所有后续 Agent（Step 5 `research_manager`、Step 7 `risk_manager`、Step 8 `research_output` 的 `company_name` 参数）。
 
 打印：`[L2.0] {ticker} {ticker_name} 数据采集完毕，{len(bundle.apis_succeeded)}/{len(bundle.apis_succeeded)+len(bundle.apis_failed)} API OK`
 
@@ -299,16 +322,30 @@ run_id = paths["run_id"]
 
 打印：`[L3] 封卷成册 — run_id={run_id}`
 
----
+**⚠️ L3 完成后，必须立即执行 L4 + 信号入账（每只股票都要做）：**
 
-### L4 — 委员会辩论报告
+### L4 — 委员会辩论报告（每股必做）
 
 ```python
 from subagent_pipeline.renderers.debate_renderer import generate_committee_report
 from subagent_pipeline.replay_store import ReplayStore
 store = ReplayStore(storage_dir=str(REPLAYS))
 trace = store.load(run_id)
-generate_committee_report(trace, output_dir=str(REPORTS))
+if trace:
+    generate_committee_report(trace, output_dir=str(REPORTS))
+    print(f"[L4] 委员会报告生成完毕")
+```
+
+### 信号入账（每股必做，L4 之后立即执行）
+
+```python
+from subagent_pipeline.signal_ledger import SignalLedger
+ledger = SignalLedger()
+rec = ledger.append_from_trace(run_id, storage_dir=str(REPLAYS))
+if rec:
+    print(f"[LEDGER] 信号已入账: {rec.ticker} {rec.action} conf={rec.confidence}")
+else:
+    print(f"[LEDGER] 信号入账失败（action 无效或 trace 不存在）")
 ```
 
 ---
