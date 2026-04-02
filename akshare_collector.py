@@ -541,6 +541,7 @@ def _collect_spot(b: AkshareBundle):
     b.current_price = _safe_float(vals.get("现价"))
     b.prev_close = _safe_float(vals.get("昨收"))
     b.pe_ttm = _safe_float(vals.get("市盈率(动)", 0))
+    b.pb = _safe_float(vals.get("市净率", 0))
     b.turnover_rate = _safe_float(vals.get("周转率", 0))
     if not b.name:
         b.name = str(vals.get("名称", ""))
@@ -1217,8 +1218,8 @@ def _collect_concept_flow(ms: MarketSnapshot):
                 "net_inflow": _safe_float(r.get("主力净流入")),
             })
         ms.concept_fund_flow = rows
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("concept_flow collection failed: %s", e)
 
 
 def _collect_northbound_market(ms: MarketSnapshot):

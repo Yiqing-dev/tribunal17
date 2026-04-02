@@ -413,8 +413,8 @@ def collect_index_summary(trade_date: str = "") -> IndexSummary:
         if sh_idx:
             pts = sh_idx.get("points", [])
             if len(pts) >= 2:
-                today_amt = pts[-1].get("volume", 0) or pts[-1].get("amount", 0)
-                prev_amt = pts[-2].get("volume", 0) or pts[-2].get("amount", 0)
+                today_amt = pts[-1].get("amount", 0) or pts[-1].get("volume", 0)
+                prev_amt = pts[-2].get("amount", 0) or pts[-2].get("volume", 0)
                 if prev_amt > 0 and today_amt > 0 and turnover_total > 0:
                     ratio = today_amt / prev_amt
                     turnover_prev = turnover_total / ratio

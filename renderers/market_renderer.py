@@ -799,7 +799,7 @@ def _render_inline_treemap(div_id: str, data: dict, max_depth: int = 2,
                            height: int = 520) -> str:
     """Render a self-contained treemap using inline JS (no CDN)."""
     import json as _json
-    data_json = _json.dumps(data, ensure_ascii=True)
+    data_json = _json.dumps(data, ensure_ascii=True).replace("</", "<\\/")
     return (
         f'<div id="{div_id}" style="width:100%;height:{height}px;'
         f'border-radius:12px;overflow:hidden;background:linear-gradient(135deg,#f0eded,#e8e6e4)"></div>\n'

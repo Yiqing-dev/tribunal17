@@ -1,4 +1,4 @@
-"""All 14 agent prompt templates, extracted from TradingAgents and adapted for subagent use.
+"""All 17 agent prompt templates, extracted from TradingAgents and adapted for subagent use.
 
 Each prompt is a function that returns a fully-rendered string ready to feed to a subagent.
 Placeholders like {ticker} are filled at call time.
@@ -1004,6 +1004,7 @@ Risk Debate History:
 def research_output(
     company_name: str,
     investment_plan: str,
+    current_date: str = "",
     past_memory: str = "",
     ticker: str = "",
     akshare_md: str = "",
@@ -1023,9 +1024,10 @@ def research_output(
 - 止损价: 参考近10日最低价下方或关键支撑位
 - 目标位: 参考历史阻力位或估值合理区间
 """
+    _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
     return f"""**ROLE**: You are the [Research Output Synthesizer] (Pro v2).
 **OBJECTIVE**: Generate the Final Trade Card, Trade Plan (public entry/exit framework), and Order Proposal based on Risk Manager's Veto/Approval.
-
+{_date_line}
 {common_input_block(company_name, **kw)}
 
 {_price_ref}

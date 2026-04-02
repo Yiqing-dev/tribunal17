@@ -728,7 +728,10 @@ class SnapshotView:
             if nd_out:
                 nd_sd = nd_out.get("structured_data") or {}
                 raw_score = nd_sd.get("pillar_score")
-                score = int(raw_score) if raw_score is not None else -1
+                try:
+                    score = int(raw_score) if raw_score is not None else -1
+                except (ValueError, TypeError):
+                    score = -1
                 if score < 0:
                     continue
                 score = min(max(score, 0), 4)

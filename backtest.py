@@ -600,12 +600,15 @@ def _extract_trade_plan_prices(trace_dict: Dict) -> Tuple[float, float]:
                 first_tp = tp_list[0]
                 if isinstance(first_tp, dict):
                     zone = first_tp.get("price_zone", [])
-                    if zone and len(zone) >= 2:
-                        tgt = (float(zone[0]) + float(zone[1])) / 2
-                    elif zone:
-                        tgt = float(zone[0])
-                    elif "price" in first_tp:
-                        tgt = float(first_tp["price"])
+                    try:
+                        if zone and len(zone) >= 2:
+                            tgt = (float(zone[0]) + float(zone[1])) / 2
+                        elif zone:
+                            tgt = float(zone[0])
+                        elif "price" in first_tp:
+                            tgt = float(first_tp["price"])
+                    except (ValueError, TypeError):
+                        tgt = 0.0
             return sl, tgt
     return 0.0, 0.0
 
@@ -949,7 +952,7 @@ def _fetch_benchmark_return(signal_date: str, window_days: int) -> Optional[floa
         if d.get("day", "") <= signal_date:
             signal_close = float(d.get("close", 0))
             break
-    if signal_close is None:
+    if not signal_close or signal_close <= 0:
         return None
 
     forward_bars = [d for d in data if d.get("day", "") > signal_date]

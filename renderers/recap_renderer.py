@@ -1141,7 +1141,7 @@ def _render_red_close_panel(data: dict) -> str:
 def _render_recap_js(data: dict) -> str:
     """All interactive JS — tabs, toggles, drawer, ladder expand, CSV copy."""
     hm_data = data.get("sector_heatmap", {})
-    data_json = _json.dumps(hm_data, ensure_ascii=False)
+    data_json = _json.dumps(hm_data, ensure_ascii=True).replace("</", "<\\/")
 
     return f"""
     <script>

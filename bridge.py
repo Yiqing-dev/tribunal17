@@ -395,7 +395,7 @@ def parse_claims(text: str, direction: str = "bullish") -> List[Dict]:
     parts = re.split(r'\n(?:#{1,4}\s*)?CLAIM(?:\s*\d+|\s*\[[\w-]+\])?[：:]\s*', text)
     for i, part in enumerate(parts[1:], start=1):  # skip text before first CLAIM
         claim = {
-            "claim_id": f"clm-{direction[0]}{i:03d}",
+            "claim_id": f"clm-{'u' if direction == 'bullish' else 'r'}{i:03d}",
             "direction": direction,
         }
         # Extract claim text (first line)
@@ -684,8 +684,10 @@ def format_market_context_block(ctx: Dict[str, Any]) -> str:
     """Format market_context dict as a text block for injection into per-ticker prompts."""
     if not ctx:
         return ""
-    leaders = ", ".join(ctx.get("sector_leaders", [])) or "无"
-    avoid = ", ".join(ctx.get("avoid_sectors", [])) or "无"
+    def _safe_join(items):
+        return ", ".join(str(x.get("name", x)) if isinstance(x, dict) else str(x) for x in items) or "无"
+    leaders = _safe_join(ctx.get("sector_leaders", []))
+    avoid = _safe_join(ctx.get("avoid_sectors", []))
     block = (
         f"市场 Regime: {ctx.get('regime', 'NEUTRAL')}\n"
         f"市场天气: {ctx.get('market_weather', '')}\n"
@@ -1156,9 +1158,9 @@ def _parse_research_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
             (opposing if isinstance(opposing, list) else [])
         ))
 
-        # Claim consumption: PM references bull/bear claims (C-bull-NNN, C-bear-NNN)
+        # Claim consumption: PM references claims (clm-uNNN for bull, clm-rNNN for bear)
         claim_refs = list(dict.fromkeys(
-            re.findall(r'\bC-(?:bull|bear)-\d+\b', text)
+            re.findall(r'\bclm-[ur]\d+\b', text)
         ))
         nt.claim_ids_referenced = claim_refs
 
@@ -1181,11 +1183,19 @@ def _parse_research_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
         nt.parse_confidence = 0.4
         nt.parse_warnings = ["SYNTHESIS_OUTPUT block not found"]
         nt.status = NodeStatus.WARN
-        # Try to infer action from text (word boundary to avoid "不建议买入" etc.)
+        # Try to infer action from text — 5-char window negation check
+        _NEG = re.compile(r'(?:不要|不宜|不建议|切勿|勿|避免|谨慎|别|禁止)')
+        def _has_positive(text, kw):
+            for m in re.finditer(re.escape(kw), text):
+                window = text[max(0, m.start()-5):m.start()]
+                if _NEG.search(window):
+                    continue
+                return True
+            return False
         text_up = text.upper()
-        if re.search(r'\bBUY\b', text_up) or re.search(r'(?<![不勿])买入', text):
+        if re.search(r'\bBUY\b', text_up) or _has_positive(text, '买入'):
             nt.research_action = "BUY"
-        elif re.search(r'\bSELL\b', text_up) or re.search(r'(?<![不勿])卖出', text):
+        elif re.search(r'\bSELL\b', text_up) or _has_positive(text, '卖出'):
             nt.research_action = "SELL"
         else:
             nt.research_action = "HOLD"

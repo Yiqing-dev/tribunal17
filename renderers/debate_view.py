@@ -344,7 +344,8 @@ def build_debate_view(run_trace) -> DebateView:
         avatar = COMMITTEE_ROSTER[ak][2]
         sl, sc = STANCE_LABELS.get(stance, ("", ""))
         claims = sd.get("supporting_claims", [])
-        summary = claims[0]["text"][:120] if claims else _one_line_summary(ak, sd, excerpt)
+        first_text = (claims[0].get("text") or "") if claims else ""
+        summary = first_text[:120] if first_text else _one_line_summary(ak, sd, excerpt)
         ev_refs = []
         for c in claims[:3]:
             ev_refs.extend(c.get("supports", []))

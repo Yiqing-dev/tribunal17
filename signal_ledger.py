@@ -551,7 +551,7 @@ def repair_ledger(
         dir_name = os.path.dirname(ledger_path) or "."
         fd, tmp_path = tempfile.mkstemp(suffix=".jsonl", dir=dir_name)
         try:
-            with os.fdopen(fd, "w") as tmp_f:
+            with os.fdopen(fd, "w", encoding="utf-8") as tmp_f:
                 for rl in repaired_lines:
                     tmp_f.write(rl + "\n")
             os.replace(tmp_path, ledger_path)

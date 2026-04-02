@@ -228,6 +228,8 @@ class RunTrace:
     def to_dict(self) -> dict:
         d = {}
         for k, v in self.__dict__.items():
+            if k.startswith("_"):
+                continue  # skip private/internal attrs like _pm_confidence
             if k == "node_traces":
                 d[k] = [nt.to_dict() for nt in v]
             elif isinstance(v, datetime):

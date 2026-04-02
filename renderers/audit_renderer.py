@@ -114,8 +114,8 @@ def render_audit(view: AuditView) -> str:
             rows += f"""<tr>
               <td>{_esc(vf.get('key', ''))}</td>
               <td><span class="badge {cls}">{_esc(label)}</span></td>
-              <td>{vf.get('system_lag_min', '\u65e0')}</td>
-              <td>{vf.get('doc_lag_min', '\u65e0')}</td>
+              <td>{_esc(str(vf.get('system_lag_min', '\u65e0')))}</td>
+              <td>{_esc(str(vf.get('doc_lag_min', '\u65e0')))}</td>
             </tr>"""
         stale_alert = '' if view.freshness_ok else '<div style="color:var(--red); margin-bottom:.5rem;">\u68c0\u6d4b\u5230\u8fc7\u671f\u6570\u636e\u6e90</div>'
         freshness_html = f"""

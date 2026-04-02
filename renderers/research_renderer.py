@@ -480,7 +480,7 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
             if action_raw:
                 action_cn = get_soft_action_label(action_raw)
                 thesis_cn = get_thesis_label(thesis_raw) if thesis_raw else ""
-                thesis_badge = f' \u00b7 \u8bba\u9898{thesis_cn}' if thesis_cn and thesis_cn != "\u65e0" else ""
+                thesis_badge = f' \u00b7 \u8bba\u9898{_esc(thesis_cn)}' if thesis_cn and thesis_cn != "\u65e0" else ""
                 parts.append(f'<strong>{_esc(action_cn)} ({confidence:.0%})</strong>{thesis_badge}')
             if isinstance(risk, dict) and risk.get('flags'):
                 cats = risk.get('categories', [])
