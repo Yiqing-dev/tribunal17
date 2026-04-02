@@ -193,8 +193,8 @@ model=sonnet → `{ticker}_catalyst_report.txt`
 
 **Round 1**（并行，无 debate_history）：
 ```
-prompts.bull_researcher(ticker, market_report, sentiment_report, news_report, fundamentals_report, evidence_block=evidence_block)
-prompts.bear_researcher(ticker, market_report, sentiment_report, news_report, fundamentals_report, evidence_block=evidence_block)
+prompts.bull_researcher(ticker, market_report, sentiment_report, news_report, fundamentals_report, evidence_block=evidence_block, current_date=trade_date)
+prompts.bear_researcher(ticker, market_report, sentiment_report, news_report, fundamentals_report, evidence_block=evidence_block, current_date=trade_date)
 ```
 
 打印：`[L2.3] 第一轮交锋完毕`
@@ -202,8 +202,8 @@ prompts.bear_researcher(ticker, market_report, sentiment_report, news_report, fu
 **Round 2 — 二轮交锋，各执其词！**（并行）：
 ```
 debate_history = f"=== Round 1 ===\nBull:\n{bull_r1}\n\nBear:\n{bear_r1}"
-prompts.bull_researcher(ticker, ..., debate_history=debate_history, last_bear_argument=bear_r1, evidence_block=evidence_block)
-prompts.bear_researcher(ticker, ..., debate_history=debate_history, last_bull_argument=bull_r1, evidence_block=evidence_block)
+prompts.bull_researcher(ticker, ..., debate_history=debate_history, last_bear_argument=bear_r1, evidence_block=evidence_block, current_date=trade_date)
+prompts.bear_researcher(ticker, ..., debate_history=debate_history, last_bull_argument=bull_r1, evidence_block=evidence_block, current_date=trade_date)
 ```
 
 辩论完成后合并：
@@ -217,7 +217,7 @@ bear_merged = f"=== Round 1 ===\n{bear_r1}\n\n=== Round 2 ===\n{bear_r2}"
 #### Step 4 — 推演阁，沙盘列阵！（情景推演，串行）
 
 ```
-prompts.scenario_agent(ticker, bull_history=bull_merged, bear_history=bear_merged)
+prompts.scenario_agent(ticker, bull_history=bull_merged, bear_history=bear_merged, current_date=trade_date)
 ```
 model=sonnet → `{ticker}_scenario_report.txt`
 
@@ -226,7 +226,8 @@ model=sonnet → `{ticker}_scenario_report.txt`
 ```
 prompts.research_manager(ticker, debate_input=combined_debate,
     scenario_block=scenario_output,
-    market_context_block=market_context_block)
+    market_context_block=market_context_block,
+    current_date=trade_date)
 ```
 model=**opus**。`combined_debate` = bull_merged + bear_merged + catalyst。
 
@@ -235,12 +236,12 @@ model=**opus**。`combined_debate` = bull_merged + bear_merged + catalyst。
 **并行** 启动 3 个 Agent（model=sonnet）：
 
 ```
-prompts.aggressive_debator(research_conclusion=pm_output, market_report=..., sentiment_report=..., news_report=..., fundamentals_report=...)
-prompts.conservative_debator(research_conclusion=pm_output, ...)
-prompts.neutral_debator(research_conclusion=pm_output, ...)
+prompts.aggressive_debator(research_conclusion=pm_output, market_report=..., sentiment_report=..., news_report=..., fundamentals_report=..., evidence_block=evidence_block, current_date=trade_date)
+prompts.conservative_debator(research_conclusion=pm_output, ..., evidence_block=evidence_block, current_date=trade_date)
+prompts.neutral_debator(research_conclusion=pm_output, ..., evidence_block=evidence_block, current_date=trade_date)
 ```
 
-注意：风控辩手**不传** `market_context_block`。
+注意：风控辩手**不传** `market_context_block`，但传 `evidence_block` 和 `current_date`。
 
 #### Step 7 — 御史台，判印！（风控总监，串行）
 
@@ -248,7 +249,8 @@ prompts.neutral_debator(research_conclusion=pm_output, ...)
 prompts.risk_manager(company_name=ticker_name, trader_plan=pm_output,
     risk_debate_history=combined_risk_debate,
     evidence_block=evidence_block,
-    market_context_block=market_context_block)
+    market_context_block=market_context_block,
+    current_date=trade_date)
 ```
 model=**opus**。
 

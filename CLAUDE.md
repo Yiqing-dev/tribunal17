@@ -58,7 +58,7 @@ subagent_pipeline/
 ├── prompts.py             17 agent prompt functions, each returns rendered string
 │
 │  ── Transform Layer ──
-├── bridge.py              Text → RunTrace: 17 parsers + evidence block builder + 3-tier report gen
+├── bridge.py              Text → RunTrace: 17 parsers + _AGENT_PARSERS dispatch dict + report gen
 ├── heatmap.py             HeatmapNode / HeatmapData: pure data aggregation for treemap
 ├── proxy_pool.py          EM API proxy rotation: em_proxy_session() context manager, build_rotating_get()
 ├── backtest.py            Signal accuracy verification: forward bar eval, win rate, direction accuracy
@@ -78,12 +78,19 @@ subagent_pipeline/
 │
 │  ── Vendored: Renderers ──
 ├── renderers/
-│   ├── report_renderer.py   3-tier HTML + pool report + market report
-│   ├── debate_renderer.py   Committee debate HTML
-│   ├── recap_renderer.py    Daily recap cockpit HTML
-│   ├── views.py             View models (data contract for templates)
-│   ├── debate_view.py       Debate-specific view models
-│   └── decision_labels.py   Node name → Chinese labels
+│   ├── shared_css.py          Shared CSS tokens, JS helpers, brand logos (single source)
+│   ├── shared_utils.py        15 shared utility functions (_esc, _html_wrap, _pct_to_hex, etc.)
+│   ├── snapshot_renderer.py   Tier 1 — single-screen conclusion card
+│   ├── research_renderer.py   Tier 2 — full research war room
+│   ├── audit_renderer.py      Tier 3 — evidence chain audit
+│   ├── pool_renderer.py       Divergence pool report
+│   ├── market_renderer.py     Market command center report
+│   ├── report_renderer.py     Facade — re-exports all above + generate_all_tiers/brief
+│   ├── debate_renderer.py     Committee debate HTML
+│   ├── recap_renderer.py      Daily recap cockpit HTML
+│   ├── views.py               View models (data contract for templates)
+│   ├── debate_view.py         Debate-specific view models
+│   └── decision_labels.py     Node name → Chinese labels
 │
 │
 │  ── Web Enhancement ──
@@ -256,9 +263,9 @@ Round 2: bull gets `last_bear_argument=bear_r1`, bear gets `last_bull_argument=b
 
 ```
 prompts.bull_researcher(ticker, market_report, sentiment_report, news_report, fundamentals_report,
-                        debate_history=..., last_bear_argument=..., evidence_block=...)
+                        debate_history=..., last_bear_argument=..., evidence_block=..., current_date=trade_date)
 prompts.bear_researcher(ticker, market_report, sentiment_report, news_report, fundamentals_report,
-                        debate_history=..., last_bull_argument=..., evidence_block=...)
+                        debate_history=..., last_bull_argument=..., evidence_block=..., current_date=trade_date)
 ```
 
 **IMPORTANT**: bridge expects merged outputs per direction:
@@ -270,7 +277,7 @@ bear_merged = f"=== Round 1 ===\n{bear_r1}\n\n=== Round 2 ===\n{bear_r2}"
 **Step 4 — Scenario Agent (sequential, depends on Step 3):**
 
 ```
-prompts.scenario_agent(ticker, bull_history=bull_merged, bear_history=bear_merged)
+prompts.scenario_agent(ticker, bull_history=bull_merged, bear_history=bear_merged, current_date=trade_date)
 ```
 
 **Step 5 — Research Manager (sequential, depends on Steps 2+3+4):**
@@ -278,7 +285,8 @@ prompts.scenario_agent(ticker, bull_history=bull_merged, bear_history=bear_merge
 ```
 prompts.research_manager(ticker, debate_input=combined_debate,
                          scenario_block=scenario_output,
-                         market_context_block=market_context_block)
+                         market_context_block=market_context_block,
+                         current_date=trade_date)
 ```
 
 Model=opus. `debate_input` = concatenated bull+bear+catalyst.
@@ -287,12 +295,13 @@ Model=opus. `debate_input` = concatenated bull+bear+catalyst.
 
 ```
 prompts.aggressive_debator(research_conclusion=pm_output, market_report=..., sentiment_report=...,
-                           news_report=..., fundamentals_report=...)
-prompts.conservative_debator(research_conclusion=pm_output, ...)
-prompts.neutral_debator(research_conclusion=pm_output, ...)
+                           news_report=..., fundamentals_report=...,
+                           evidence_block=evidence_block, current_date=trade_date)
+prompts.conservative_debator(research_conclusion=pm_output, ..., evidence_block=evidence_block, current_date=trade_date)
+prompts.neutral_debator(research_conclusion=pm_output, ..., evidence_block=evidence_block, current_date=trade_date)
 ```
 
-**Note**: Risk debaters do NOT take `market_context_block`.
+**Note**: Risk debaters take `evidence_block` and `current_date` but do NOT take `market_context_block`.
 Each debater outputs a `RISK_DEBATER_OUTPUT:` block (recommendation, position_size_pct, key_risk) parsed by `bridge.parse_risk_debater_output()`.
 
 **Step 7 — Risk Manager (sequential, depends on Steps 5+6):**
@@ -301,7 +310,8 @@ Each debater outputs a `RISK_DEBATER_OUTPUT:` block (recommendation, position_si
 prompts.risk_manager(company_name=ticker_name, trader_plan=pm_output,
                      risk_debate_history=combined_risk_debate,
                      evidence_block=evidence_block,
-                     market_context_block=market_context_block)
+                     market_context_block=market_context_block,
+                     current_date=trade_date)
 ```
 
 Model=opus.
@@ -525,13 +535,13 @@ All parsers use priority: exact JSON → `key=value` lines → regex fallback. D
 ### Add new agent
 1. `prompts.py`: New prompt function returning string. Include a structured output block (e.g. `MY_OUTPUT:` with `key = value` lines) for bridge parsing.
 2. `config.py`: Add to `PIPELINE_STAGES` (with `depends_on`) and `PIPELINE_CONFIG["models"]`. Import-time validation will catch mismatches.
-3. `bridge.py`: Add parser function, `elif` in `_populate_structured_data()`, entries in `AGENT_NODE_MAP` and `AGENT_SEQ`.
+3. `bridge.py`: Add parser function `_parse_xxx(agent_key, text, nt)`, add entry to `_AGENT_PARSERS` dispatch dict, add entries in `AGENT_NODE_MAP` and `AGENT_SEQ`.
 
 ### Add data source
 `akshare_collector.py`: Add `_collect_xxx(bundle)`, call in `collect()` via `_COLLECTORS` list, add field to `AkshareBundle`. API calls are automatically retried via `_retry_call`.
 
 ### Modify report rendering
-Renderers are in `renderers/` directory (vendored locally). `bridge.py` builds RunTrace and calls `generate_report()`.
+Renderers are split into focused modules under `renderers/`. Edit the specific renderer (e.g. `snapshot_renderer.py` for Tier 1, `market_renderer.py` for market page). Shared utilities are in `shared_utils.py`, CSS tokens in `shared_css.py`. `report_renderer.py` is a facade that re-exports everything — downstream imports are unchanged.
 
 ### Modify evidence extraction
 `bridge._extract_evidence_items()` controls what gets pulled from analyst reports into the Evidence Bundle. Add new extraction patterns there. Max 8 items per report, 32 total.
