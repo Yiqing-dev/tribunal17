@@ -493,9 +493,12 @@ def bull_researcher(
     last_bear_argument: str = "",
     evidence_block: str = "",
     past_memory: str = "",
+    current_date: str = "",
 ) -> str:
     """Bull Analyst — 5 dimensions, structured claims, evidence protocol."""
+    _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
     return f"""You are a Bull Analyst. Build a rigorous, evidence-based investment case for BUYING the stock.
+{_date_line}
 
 **You must analyze across 5 dimensions (score each 1-10):**
 1. **基本面健康度** (Fundamental Health): Gross margin trend, ROE, cash flow quality. Find the strongest positive signals.
@@ -535,9 +538,12 @@ def bear_researcher(
     last_bull_argument: str = "",
     evidence_block: str = "",
     past_memory: str = "",
+    current_date: str = "",
 ) -> str:
     """Bear Analyst — 5 risk dimensions, structured claims, evidence protocol."""
+    _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
     return f"""You are a Bear Analyst. Build a rigorous, evidence-based case AGAINST investing in the stock.
+{_date_line}
 
 **You must analyze across 5 dimensions (score each 1-10 for RISK):**
 1. **基本面风险** (Fundamental Risk): Declining margins, deteriorating ROE, cash burn, debt pressure. Find the weakest signals.
@@ -577,10 +583,13 @@ def scenario_agent(
     bull_history: str,
     bear_history: str,
     evidence_block: str = "",
+    current_date: str = "",
     **kw,
 ) -> str:
     """Quantitative Scenario Analyst (Pro v2) — probabilistic scenario tree."""
+    _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
     return f"""**ROLE**: You are the [Quantitative Scenario Analyst] (Pro v2).
+{_date_line}
 **OBJECTIVE**: Review the Bull vs Bear debate for {ticker} and construct a probabilistic Scenario Tree (Base/Bull/Bear).
 
 {common_input_block(ticker, **kw)}
@@ -628,9 +637,11 @@ def research_manager(
     ledger_block: str = "",
     past_memory: str = "",
     market_context_block: str = "",
+    current_date: str = "",
     **kw,
 ) -> str:
     """Research Manager / Investment Committee CIRO (Pro v2) — final synthesis."""
+    _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
     _mkt_ctx = ""
     if market_context_block:
         _mkt_ctx = f"""
@@ -652,7 +663,7 @@ def research_manager(
 """
     return f"""**ROLE**: You are the [Research Manager / Investment Committee CIRO] (Pro v2).
 **OBJECTIVE**: Synthesize structured claims from Bull/Bear analysts into a definitive, actionable decision. Arbitrate conflicts using strict evidence rules.
-
+{_date_line}
 {common_input_block(ticker, **kw)}
 {_mkt_ctx}
 {ledger_block}
@@ -735,9 +746,14 @@ def aggressive_debator(
     debate_history: str = "",
     last_conservative: str = "",
     last_neutral: str = "",
+    current_date: str = "",
+    evidence_block: str = "",
 ) -> str:
     """Aggressive Risk Analyst — maximize upside."""
+    _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
+    _evidence_section = f"\n\n**EVIDENCE BUNDLE:**\n{evidence_block}\n" if evidence_block else ""
     return f"""You are the Aggressive Risk Analyst. Your role is to maximize UPSIDE from the research conclusion.
+{_date_line}
 
 **Your unique perspective (differentiated from Neutral and Conservative):**
 - Focus on **asymmetric risk-reward**: Where is the upside potential 3:1 or better?
@@ -763,7 +779,7 @@ Research Conclusion: {research_conclusion}
 Market: {market_report}
 Sentiment: {sentiment_report}
 News: {news_report}
-Fundamentals: {fundamentals_report}
+Fundamentals: {fundamentals_report}{_evidence_section}
 Debate History: {debate_history}
 Conservative's Last Argument: {last_conservative}
 Neutral's Last Argument: {last_neutral}
@@ -779,9 +795,14 @@ def conservative_debator(
     debate_history: str = "",
     last_aggressive: str = "",
     last_neutral: str = "",
+    current_date: str = "",
+    evidence_block: str = "",
 ) -> str:
     """Conservative Risk Analyst — protect capital."""
+    _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
+    _evidence_section = f"\n\n**EVIDENCE BUNDLE:**\n{evidence_block}\n" if evidence_block else ""
     return f"""You are the Conservative Risk Analyst. Your role is to protect CAPITAL and prevent catastrophic loss.
+{_date_line}
 
 **Your unique perspective (differentiated from Aggressive and Neutral):**
 - Focus on **maximum drawdown control**: What is the worst-case loss scenario? Quantify it.
@@ -810,7 +831,7 @@ Research Conclusion: {research_conclusion}
 Market: {market_report}
 Sentiment: {sentiment_report}
 News: {news_report}
-Fundamentals: {fundamentals_report}
+Fundamentals: {fundamentals_report}{_evidence_section}
 Debate History: {debate_history}
 Aggressive's Last Argument: {last_aggressive}
 Neutral's Last Argument: {last_neutral}
@@ -826,9 +847,14 @@ def neutral_debator(
     debate_history: str = "",
     last_aggressive: str = "",
     last_conservative: str = "",
+    current_date: str = "",
+    evidence_block: str = "",
 ) -> str:
     """Neutral Risk Analyst — optimal risk-adjusted strategy."""
+    _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
+    _evidence_section = f"\n\n**EVIDENCE BUNDLE:**\n{evidence_block}\n" if evidence_block else ""
     return f"""You are the Neutral Risk Analyst. Your role is to find the OPTIMAL risk-adjusted strategy.
+{_date_line}
 
 **Your unique perspective (differentiated from Aggressive and Conservative):**
 - Focus on **risk-adjusted returns**: Sharpe ratio thinking — maximize return per unit of risk taken.
@@ -857,7 +883,7 @@ Research Conclusion: {research_conclusion}
 Market: {market_report}
 Sentiment: {sentiment_report}
 News: {news_report}
-Fundamentals: {fundamentals_report}
+Fundamentals: {fundamentals_report}{_evidence_section}
 Debate History: {debate_history}
 Aggressive's Last Argument: {last_aggressive}
 Conservative's Last Argument: {last_conservative}
@@ -881,9 +907,11 @@ def risk_manager(
     max_dd: float = 0.06,
     base_currency: str = "CNY",
     market_context_block: str = "",
+    current_date: str = "",
     **kw,
 ) -> str:
     """Risk Control Officer (Pro v2) — VETO power, R1-R4 framework."""
+    _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
     _mkt_ctx = ""
     if market_context_block:
         _mkt_ctx = f"""
@@ -896,7 +924,7 @@ def risk_manager(
 """
     return f"""**ROLE**: You are the [Risk Control Officer] (Pro v2).
 **OBJECTIVE**: Review the Manager's Preliminary Decision for {company_name}. You have VETO power.
-
+{_date_line}
 {common_input_block(company_name, **kw)}
 {_mkt_ctx}
 【Global Constraints】

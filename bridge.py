@@ -955,10 +955,8 @@ def build_node_trace(
     return nt
 
 
-def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
-    """Fill NodeTrace fields based on agent type."""
-
-    # ── Stage 0.8: Market Agents ──
+def _parse_market_agent(agent_key: str, text: str, nt: NodeTrace) -> None:
+    """Parse market-level agents: macro_analyst, market_breadth_agent, sector_rotation_agent."""
     if agent_key == "macro_analyst":
         parsed = parse_macro_output(text)
         if parsed:
@@ -968,7 +966,6 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
             nt.parse_confidence = 0.5
             nt.parse_warnings = ["MACRO_OUTPUT block not found"]
             nt.status = NodeStatus.WARN
-        return
 
     elif agent_key == "market_breadth_agent":
         parsed = parse_breadth_output(text)
@@ -979,7 +976,6 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
             nt.parse_confidence = 0.5
             nt.parse_warnings = ["BREADTH_OUTPUT block not found"]
             nt.status = NodeStatus.WARN
-        return
 
     elif agent_key == "sector_rotation_agent":
         parsed = parse_sector_output(text)
@@ -990,343 +986,376 @@ def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
             nt.parse_confidence = 0.5
             nt.parse_warnings = ["SECTOR_OUTPUT block not found"]
             nt.status = NodeStatus.WARN
-        return
 
-    # ── Stage 1: Analysts (pillar_score) ──
-    if agent_key in ("market_analyst", "fundamentals_analyst",
-                      "news_analyst", "sentiment_analyst"):
-        score = parse_pillar_score(text)
-        if score is not None:
-            nt.structured_data = {"pillar_score": score}
-        else:
-            nt.parse_status = "fallback_used"
-            nt.parse_confidence = 0.5
-            nt.parse_warnings = ["pillar_score not found"]
-            nt.status = NodeStatus.WARN
+
+def _parse_analyst(agent_key: str, text: str, nt: NodeTrace) -> None:
+    """Parse Stage 1 analysts: market_analyst, fundamentals_analyst, news_analyst, sentiment_analyst."""
+    score = parse_pillar_score(text)
+    if score is not None:
+        nt.structured_data = {"pillar_score": score}
+    else:
+        nt.parse_status = "fallback_used"
+        nt.parse_confidence = 0.5
+        nt.parse_warnings = ["pillar_score not found"]
+        nt.status = NodeStatus.WARN
+    nt.evidence_ids_referenced = parse_evidence_citations(text)
+
+    # Fundamentals analyst: extract financial metrics as vendor fallback
+    if agent_key == "fundamentals_analyst":
+        extracted = _extract_financial_metrics(text)
+        if extracted:
+            if nt.structured_data is None:
+                nt.structured_data = {}
+            nt.structured_data["metrics_fallback"] = extracted
+
+
+def _parse_catalyst(agent_key: str, text: str, nt: NodeTrace) -> None:
+    """Parse Stage 2 catalyst_agent."""
+    catalysts = parse_catalyst_json(text)
+    if catalysts:
+        nt.structured_data = {"catalysts": catalysts}
         nt.evidence_ids_referenced = parse_evidence_citations(text)
+    else:
+        nt.parse_status = "fallback_used"
+        nt.parse_confidence = 0.5
+        nt.parse_warnings = ["CATALYST_OUTPUT block not found or invalid"]
+        nt.status = NodeStatus.WARN
 
-        # Fundamentals analyst: extract financial metrics as vendor fallback
-        if agent_key == "fundamentals_analyst":
-            extracted = _extract_financial_metrics(text)
-            if extracted:
-                if nt.structured_data is None:
-                    nt.structured_data = {}
-                nt.structured_data["metrics_fallback"] = extracted
 
-    # ── Stage 2: Catalyst Agent ──
-    elif agent_key == "catalyst_agent":
-        catalysts = parse_catalyst_json(text)
-        if catalysts:
-            nt.structured_data = {"catalysts": catalysts}
-            nt.evidence_ids_referenced = parse_evidence_citations(text)
-        else:
-            nt.parse_status = "fallback_used"
-            nt.parse_confidence = 0.5
-            nt.parse_warnings = ["CATALYST_OUTPUT block not found or invalid"]
-            nt.status = NodeStatus.WARN
+def _parse_researcher(agent_key: str, text: str, nt: NodeTrace) -> None:
+    """Parse Stage 3 bull_researcher / bear_researcher."""
+    direction = "bullish" if agent_key == "bull_researcher" else "bearish"
+    claims = parse_claims(text, direction)
+    evidence = parse_evidence_citations(text)
+    dim_scores = _extract_dimension_scores(text)
+    overall_conf = _extract_overall_confidence(text, direction)
 
-    # ── Stage 3: Bull/Bear Researchers ──
-    elif agent_key in ("bull_researcher", "bear_researcher"):
-        direction = "bullish" if agent_key == "bull_researcher" else "bearish"
-        claims = parse_claims(text, direction)
-        evidence = parse_evidence_citations(text)
-        dim_scores = _extract_dimension_scores(text)
-        overall_conf = _extract_overall_confidence(text, direction)
+    nt.evidence_ids_referenced = evidence
 
-        nt.evidence_ids_referenced = evidence
-
-        # Build structured claims with dimension info
-        supporting_claims = []
-        for c in claims:
-            sc = {
-                "claim_id": c["claim_id"],
-                "text": c["text"],
-                "dimension": "",
-                "dimension_score": None,
-                "confidence": c["confidence"],
-                "invalidation": c.get("invalidation", ""),
-                "direction": direction,
-                "supports": c.get("supports", []),
-                "opposes": [],
-            }
-            # Try to match claim to a dimension by keyword
-            for dim_key, dim_name in [
-                ("fundamentals", "基本面"), ("valuation", "估值"),
-                ("technicals", "技术"), ("sentiment", "资金"),
-                ("catalysts", "催化"), ("growth", "成长"),
-            ]:
-                if dim_name in c.get("text", "") or dim_key in c.get("text", "").lower():
-                    sc["dimension"] = dim_key
-                    sc["dimension_score"] = dim_scores.get(dim_key)
-                    break
-            supporting_claims.append(sc)
-
-        # Claim attribution stats
-        attributed = sum(1 for c in supporting_claims if c.get("supports"))
-        total = len(supporting_claims)
-        nt.claims_produced = total
-        nt.claims_attributed = attributed
-        nt.claims_unattributed = total - attributed
-        nt.claim_ids_produced = [c["claim_id"] for c in supporting_claims]
-
-        # Extract thesis (last sentence with confidence)
-        thesis = ""
-        for line in reversed(text.split('\n')):
-            stripped = line.strip()
-            if ('论点' in stripped or 'thesis' in stripped.lower()
-                    or '结论' in stripped or '总结' in stripped):
-                thesis = stripped[:200]
+    # Build structured claims with dimension info
+    supporting_claims = []
+    for c in claims:
+        sc = {
+            "claim_id": c["claim_id"],
+            "text": c["text"],
+            "dimension": "",
+            "dimension_score": None,
+            "confidence": c["confidence"],
+            "invalidation": c.get("invalidation", ""),
+            "direction": direction,
+            "supports": c.get("supports", []),
+            "opposes": [],
+        }
+        # Try to match claim to a dimension by keyword
+        for dim_key, dim_name in [
+            ("fundamentals", "基本面"), ("valuation", "估值"),
+            ("technicals", "技术"), ("sentiment", "资金"),
+            ("catalysts", "催化"), ("growth", "成长"),
+        ]:
+            if dim_name in c.get("text", "") or dim_key in c.get("text", "").lower():
+                sc["dimension"] = dim_key
+                sc["dimension_score"] = dim_scores.get(dim_key)
                 break
-        if not thesis:
-            thesis = f"{direction}方观点（{total}条论据）"
+        supporting_claims.append(sc)
+
+    # Claim attribution stats
+    attributed = sum(1 for c in supporting_claims if c.get("supports"))
+    total = len(supporting_claims)
+    nt.claims_produced = total
+    nt.claims_attributed = attributed
+    nt.claims_unattributed = total - attributed
+    nt.claim_ids_produced = [c["claim_id"] for c in supporting_claims]
+
+    # Extract thesis (last sentence with confidence)
+    thesis = ""
+    for line in reversed(text.split('\n')):
+        stripped = line.strip()
+        if ('论点' in stripped or 'thesis' in stripped.lower()
+                or '结论' in stripped or '总结' in stripped):
+            thesis = stripped[:200]
+            break
+    if not thesis:
+        thesis = f"{direction}方观点（{total}条论据）"
+
+    nt.structured_data = {
+        "thesis": thesis,
+        "direction": direction,
+        "overall_confidence": overall_conf,
+        "dimension_scores": dim_scores,
+        "supporting_claims": supporting_claims,
+        "opposing_claims": [],
+        "unresolved_conflicts": [],
+        "missing_evidence": [],
+    }
+
+    if not claims:
+        nt.parse_status = "fallback_used"
+        nt.parse_confidence = 0.6
+        nt.parse_warnings = ["No structured CLAIM blocks found"]
+        nt.status = NodeStatus.WARN
+
+
+def _parse_scenario(agent_key: str, text: str, nt: NodeTrace) -> None:
+    """Parse Stage 4 scenario_agent."""
+    scenario = parse_scenario_output(text)
+    if scenario:
+        probs_defaulted = (
+            "base_prob" not in scenario
+            or "bull_prob" not in scenario
+            or "bear_prob" not in scenario
+        )
+        _bp = float(scenario.get("base_prob", 0.5))
+        _blp = float(scenario.get("bull_prob", 0.25))
+        _brp = float(scenario.get("bear_prob", 0.25))
+        _ptotal = _bp + _blp + _brp
+        if _ptotal > 0 and abs(_ptotal - 1.0) > 0.01:
+            _bp, _blp, _brp = _bp / _ptotal, _blp / _ptotal, _brp / _ptotal
+        nt.structured_data = {
+            "base_prob": round(_bp, 3),
+            "bull_prob": round(_blp, 3),
+            "bear_prob": round(_brp, 3),
+            "base_case_trigger": scenario.get("base_trigger", ""),
+            "bull_case_trigger": scenario.get("bull_trigger", ""),
+            "bear_case_trigger": scenario.get("bear_trigger", ""),
+            "probs_defaulted": probs_defaulted,
+        }
+        if probs_defaulted:
+            warnings = list(nt.parse_warnings or [])
+            warnings.append("scenario probabilities partially defaulted (50/25/25)")
+            nt.parse_warnings = warnings
+    else:
+        nt.parse_status = "fallback_used"
+        nt.parse_confidence = 0.5
+        nt.parse_warnings = ["SCENARIO_OUTPUT block not found"]
+        nt.status = NodeStatus.WARN
+
+
+def _parse_research_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
+    """Parse Stage 5 research_manager (PM)."""
+    synth = parse_synthesis_output(text)
+    if synth:
+        action = str(synth.get("research_action", "HOLD")).upper()
+        nt.research_action = action
+        _conf_defaulted = "confidence" not in synth
+        try:
+            nt.confidence = float(synth.get("confidence", 0.5))
+        except (ValueError, TypeError):
+            nt.confidence = 0.5
+            _conf_defaulted = True
+        if _conf_defaulted:
+            warnings = list(nt.parse_warnings or [])
+            warnings.append("confidence defaulted to 0.5 (not provided by PM)")
+            nt.parse_warnings = warnings
+        nt.thesis_effect = str(synth.get("thesis_effect", "unchanged"))
+
+        # Evidence references
+        supporting = synth.get("supporting_evidence", [])
+        opposing = synth.get("opposing_evidence", [])
+        nt.evidence_ids_referenced = list(dict.fromkeys(
+            (supporting if isinstance(supporting, list) else []) +
+            (opposing if isinstance(opposing, list) else [])
+        ))
+
+        # Claim consumption: PM references bull/bear claims (C-bull-NNN, C-bear-NNN)
+        claim_refs = list(dict.fromkeys(
+            re.findall(r'\bC-(?:bull|bear)-\d+\b', text)
+        ))
+        nt.claim_ids_referenced = claim_refs
 
         nt.structured_data = {
-            "thesis": thesis,
-            "direction": direction,
-            "overall_confidence": overall_conf,
-            "dimension_scores": dim_scores,
-            "supporting_claims": supporting_claims,
-            "opposing_claims": [],
-            "unresolved_conflicts": [],
-            "missing_evidence": [],
+            "conclusion": synth.get("conclusion", ""),
+            "base_case": synth.get("base_case", ""),
+            "bull_case": synth.get("bull_case", ""),
+            "bear_case": synth.get("bear_case", ""),
+            "invalidation_conditions": _split_if_string(
+                synth.get("invalidation", "")
+            ),
+            "open_questions": _split_if_string(
+                synth.get("open_questions", "")
+            ),
+            "supporting_evidence_ids": supporting if isinstance(supporting, list) else [],
+            "opposing_evidence_ids": opposing if isinstance(opposing, list) else [],
+        }
+    else:
+        nt.parse_status = "fallback_used"
+        nt.parse_confidence = 0.4
+        nt.parse_warnings = ["SYNTHESIS_OUTPUT block not found"]
+        nt.status = NodeStatus.WARN
+        # Try to infer action from text (word boundary to avoid "不建议买入" etc.)
+        text_up = text.upper()
+        if re.search(r'\bBUY\b', text_up) or re.search(r'(?<![不勿])买入', text):
+            nt.research_action = "BUY"
+        elif re.search(r'\bSELL\b', text_up) or re.search(r'(?<![不勿])卖出', text):
+            nt.research_action = "SELL"
+        else:
+            nt.research_action = "HOLD"
+        nt.confidence = 0.5
+
+
+def _parse_risk_debater(agent_key: str, text: str, nt: NodeTrace) -> None:
+    """Parse Stage 5b risk debaters: aggressive, conservative, neutral."""
+    nt.evidence_ids_referenced = parse_evidence_citations(text)
+    debater_data = parse_risk_debater_output(text)
+    if debater_data:
+        nt.structured_data = debater_data
+        if debater_data.get("recommendation"):
+            nt.research_action = str(debater_data["recommendation"]).upper()
+    else:
+        nt.parse_status = "fallback_used"
+        nt.parse_confidence = 0.5
+        nt.parse_warnings = ["RISK_DEBATER_OUTPUT block not found"]
+        nt.status = NodeStatus.WARN
+
+
+def _parse_risk_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
+    """Parse Stage 6 risk_manager (Judge)."""
+    risk = parse_risk_output(text)
+    if risk:
+        nt.risk_score = _safe_int(risk.get("risk_score"))
+        nt.risk_cleared = risk.get("risk_cleared", False)
+        if "risk_cleared" not in risk:
+            warnings = list(nt.parse_warnings or [])
+            warnings.append("risk_cleared not explicitly provided, defaulted to False")
+            nt.parse_warnings = warnings
+        nt.max_position_pct = _safe_float(risk.get("max_position_pct", -1.0))
+
+        # Only set research_action if Risk Judge explicitly provides one.
+        # Default was "HOLD" which silently overrode PM's BUY/SELL direction.
+        raw_action = risk.get("research_action")
+        action = str(raw_action).upper() if raw_action else ""
+        nt.research_action = action if action else ""
+        # Risk Judge may or may not provide its own confidence.
+        # Use -1.0 sentinel so RunTrace.finalize() can prefer Research
+        # Manager's confidence (see trace_models.py finalize(): "if
+        # nt.confidence >= 0" guard).  Do NOT change to None — 7+ files
+        # compare against this value numerically.
+        raw_conf = risk.get("confidence")
+        nt.confidence = _safe_float(raw_conf) if raw_conf is not None else -1.0
+        nt.vetoed = action == "VETO" or not nt.risk_cleared
+        if action == "VETO":
+            nt.veto_source = "agent_veto"
+        elif not nt.risk_cleared:
+            nt.veto_source = "risk_gate"
+
+        # Risk flags
+        if risk.get("_risk_flags_parse_failed"):
+            warnings = list(nt.parse_warnings or [])
+            warnings.append("risk_flags JSON parse failed, flags may be incomplete")
+            nt.parse_warnings = warnings
+        flags = risk.get("risk_flags", [])
+        nt.risk_flag_count = len(flags)
+        nt.risk_flag_categories = list(dict.fromkeys(
+            f.get("category", "") for f in flags if f.get("category")
+        ))
+
+        nt.structured_data = {
+            "conclusion": f"风险评分 {nt.risk_score}/10，"
+                          + ("审查通过" if nt.risk_cleared else "审查未通过"),
+            "invalidation_conditions": [],
+            "risk_flags": [
+                {
+                    "flag_id": f"rf-{i+1:03d}",
+                    "category": f.get("category", ""),
+                    "severity": f.get("severity", "medium").lower()
+                           if str(f.get("severity", "medium")).lower()
+                           in ("low", "medium", "high", "critical")
+                           else "medium",
+                    "description": f.get("description", ""),
+                    "bound_evidence_ids": (
+                        [f.get("evidence", "")] if isinstance(f.get("evidence"), str)
+                        else f.get("evidence", [])
+                    ),
+                    "mitigant": f.get("mitigant", ""),
+                }
+                for i, f in enumerate(flags)
+            ],
         }
 
-        if not claims:
-            nt.parse_status = "fallback_used"
-            nt.parse_confidence = 0.6
-            nt.parse_warnings = ["No structured CLAIM blocks found"]
-            nt.status = NodeStatus.WARN
-
-    # ── Stage 4: Scenario Agent ──
-    elif agent_key == "scenario_agent":
-        scenario = parse_scenario_output(text)
-        if scenario:
-            probs_defaulted = (
-                "base_prob" not in scenario
-                or "bull_prob" not in scenario
-                or "bear_prob" not in scenario
-            )
-            _bp = float(scenario.get("base_prob", 0.5))
-            _blp = float(scenario.get("bull_prob", 0.25))
-            _brp = float(scenario.get("bear_prob", 0.25))
-            _ptotal = _bp + _blp + _brp
-            if _ptotal > 0 and abs(_ptotal - 1.0) > 0.01:
-                _bp, _blp, _brp = _bp / _ptotal, _blp / _ptotal, _brp / _ptotal
-            nt.structured_data = {
-                "base_prob": round(_bp, 3),
-                "bull_prob": round(_blp, 3),
-                "bear_prob": round(_brp, 3),
-                "base_case_trigger": scenario.get("base_trigger", ""),
-                "bull_case_trigger": scenario.get("bull_trigger", ""),
-                "bear_case_trigger": scenario.get("bear_trigger", ""),
-                "probs_defaulted": probs_defaulted,
-            }
-            if probs_defaulted:
-                warnings = list(nt.parse_warnings or [])
-                warnings.append("scenario probabilities partially defaulted (50/25/25)")
-                nt.parse_warnings = warnings
-        else:
-            nt.parse_status = "fallback_used"
-            nt.parse_confidence = 0.5
-            nt.parse_warnings = ["SCENARIO_OUTPUT block not found"]
-            nt.status = NodeStatus.WARN
-
-    # ── Stage 5: Research Manager (PM) ──
-    elif agent_key == "research_manager":
-        synth = parse_synthesis_output(text)
-        if synth:
-            action = str(synth.get("research_action", "HOLD")).upper()
-            nt.research_action = action
-            _conf_defaulted = "confidence" not in synth
-            try:
-                nt.confidence = float(synth.get("confidence", 0.5))
-            except (ValueError, TypeError):
-                nt.confidence = 0.5
-                _conf_defaulted = True
-            if _conf_defaulted:
-                warnings = list(nt.parse_warnings or [])
-                warnings.append("confidence defaulted to 0.5 (not provided by PM)")
-                nt.parse_warnings = warnings
-            nt.thesis_effect = str(synth.get("thesis_effect", "unchanged"))
-
-            # Evidence references
-            supporting = synth.get("supporting_evidence", [])
-            opposing = synth.get("opposing_evidence", [])
-            nt.evidence_ids_referenced = list(dict.fromkeys(
-                (supporting if isinstance(supporting, list) else []) +
-                (opposing if isinstance(opposing, list) else [])
-            ))
-
-            # Claim consumption: PM references bull/bear claims (C-bull-NNN, C-bear-NNN)
-            claim_refs = list(dict.fromkeys(
-                re.findall(r'\bC-(?:bull|bear)-\d+\b', text)
-            ))
-            nt.claim_ids_referenced = claim_refs
-
-            nt.structured_data = {
-                "conclusion": synth.get("conclusion", ""),
-                "base_case": synth.get("base_case", ""),
-                "bull_case": synth.get("bull_case", ""),
-                "bear_case": synth.get("bear_case", ""),
-                "invalidation_conditions": _split_if_string(
-                    synth.get("invalidation", "")
-                ),
-                "open_questions": _split_if_string(
-                    synth.get("open_questions", "")
-                ),
-                "supporting_evidence_ids": supporting if isinstance(supporting, list) else [],
-                "opposing_evidence_ids": opposing if isinstance(opposing, list) else [],
-            }
-        else:
-            nt.parse_status = "fallback_used"
-            nt.parse_confidence = 0.4
-            nt.parse_warnings = ["SYNTHESIS_OUTPUT block not found"]
-            nt.status = NodeStatus.WARN
-            # Try to infer action from text (word boundary to avoid "不建议买入" etc.)
-            text_up = text.upper()
-            if re.search(r'\bBUY\b', text_up) or re.search(r'(?<![不勿])买入', text):
-                nt.research_action = "BUY"
-            elif re.search(r'\bSELL\b', text_up) or re.search(r'(?<![不勿])卖出', text):
-                nt.research_action = "SELL"
-            else:
-                nt.research_action = "HOLD"
-            nt.confidence = 0.5
-
-    # ── Stage 5b: Risk Debators ──
-    elif agent_key in ("aggressive_debator", "conservative_debator", "neutral_debator"):
         nt.evidence_ids_referenced = parse_evidence_citations(text)
-        debater_data = parse_risk_debater_output(text)
-        if debater_data:
-            nt.structured_data = debater_data
-            if debater_data.get("recommendation"):
-                nt.research_action = str(debater_data["recommendation"]).upper()
-        else:
-            nt.parse_status = "fallback_used"
-            nt.parse_confidence = 0.5
-            nt.parse_warnings = ["RISK_DEBATER_OUTPUT block not found"]
-            nt.status = NodeStatus.WARN
+    else:
+        nt.parse_status = "fallback_used"
+        nt.parse_confidence = 0.3
+        nt.parse_warnings = ["RISK_OUTPUT block not found"]
+        nt.status = NodeStatus.WARN
+        nt.risk_score = 5
+        nt.risk_cleared = False
 
-    # ── Stage 6: Risk Manager (Judge) ──
-    elif agent_key == "risk_manager":
-        risk = parse_risk_output(text)
-        if risk:
-            nt.risk_score = _safe_int(risk.get("risk_score"))
-            nt.risk_cleared = risk.get("risk_cleared", False)
-            if "risk_cleared" not in risk:
-                warnings = list(nt.parse_warnings or [])
-                warnings.append("risk_cleared not explicitly provided, defaulted to False")
-                nt.parse_warnings = warnings
-            nt.max_position_pct = _safe_float(risk.get("max_position_pct", -1.0))
 
-            # Only set research_action if Risk Judge explicitly provides one.
-            # Default was "HOLD" which silently overrode PM's BUY/SELL direction.
-            raw_action = risk.get("research_action")
-            action = str(raw_action).upper() if raw_action else ""
-            nt.research_action = action if action else ""
-            # Risk Judge may or may not provide its own confidence.
-            # Use -1.0 sentinel so RunTrace.finalize() can prefer Research
-            # Manager's confidence (see trace_models.py finalize(): "if
-            # nt.confidence >= 0" guard).  Do NOT change to None — 7+ files
-            # compare against this value numerically.
-            raw_conf = risk.get("confidence")
-            nt.confidence = _safe_float(raw_conf) if raw_conf is not None else -1.0
-            nt.vetoed = action == "VETO" or not nt.risk_cleared
-            if action == "VETO":
-                nt.veto_source = "agent_veto"
-            elif not nt.risk_cleared:
-                nt.veto_source = "risk_gate"
-
-            # Risk flags
-            if risk.get("_risk_flags_parse_failed"):
-                warnings = list(nt.parse_warnings or [])
-                warnings.append("risk_flags JSON parse failed, flags may be incomplete")
-                nt.parse_warnings = warnings
-            flags = risk.get("risk_flags", [])
-            nt.risk_flag_count = len(flags)
-            nt.risk_flag_categories = list(dict.fromkeys(
-                f.get("category", "") for f in flags if f.get("category")
-            ))
-
-            nt.structured_data = {
-                "conclusion": f"风险评分 {nt.risk_score}/10，"
-                              + ("审查通过" if nt.risk_cleared else "审查未通过"),
-                "invalidation_conditions": [],
-                "risk_flags": [
-                    {
-                        "flag_id": f"rf-{i+1:03d}",
-                        "category": f.get("category", ""),
-                        "severity": f.get("severity", "medium").lower()
-                               if str(f.get("severity", "medium")).lower()
-                               in ("low", "medium", "high", "critical")
-                               else "medium",
-                        "description": f.get("description", ""),
-                        "bound_evidence_ids": (
-                            [f.get("evidence", "")] if isinstance(f.get("evidence"), str)
-                            else f.get("evidence", [])
-                        ),
-                        "mitigant": f.get("mitigant", ""),
-                    }
-                    for i, f in enumerate(flags)
-                ],
-            }
-
-            nt.evidence_ids_referenced = parse_evidence_citations(text)
-        else:
-            nt.parse_status = "fallback_used"
-            nt.parse_confidence = 0.3
-            nt.parse_warnings = ["RISK_OUTPUT block not found"]
-            nt.status = NodeStatus.WARN
-            nt.risk_score = 5
-            nt.risk_cleared = False
-
-    # ── Stage 7: Research Output (Trade Card + Trade Plan) ──
-    elif agent_key == "research_output":
-        tradecard = parse_tradecard_json(text)
-        trade_plan = parse_trade_plan_json(text)
-        sd: Dict[str, Any] = {}
-        if tradecard:
-            sd["tradecard"] = tradecard
-            # Propagate action and confidence from TRADECARD to NodeTrace
-            # so RunTrace.finalize() can pick them up as a fallback.
-            # Prompt spec uses "side" but some agents output "action" — accept both.
-            tc_action = str(
-                tradecard.get("action") or tradecard.get("side", "")
+def _parse_research_output(agent_key: str, text: str, nt: NodeTrace) -> None:
+    """Parse Stage 7 research_output (Trade Card + Trade Plan)."""
+    tradecard = parse_tradecard_json(text)
+    trade_plan = parse_trade_plan_json(text)
+    sd: Dict[str, Any] = {}
+    if tradecard:
+        sd["tradecard"] = tradecard
+        # Propagate action and confidence from TRADECARD to NodeTrace
+        # so RunTrace.finalize() can pick them up as a fallback.
+        # Prompt spec uses "side" but some agents output "action" — accept both.
+        tc_action = str(
+            tradecard.get("action") or tradecard.get("side", "")
+        ).upper()
+        if tc_action in ("BUY", "HOLD", "SELL", "VETO"):
+            nt.research_action = tc_action
+        tc_conf = tradecard.get("confidence")
+        if tc_conf is not None:
+            nt.confidence = _confidence_to_float(tc_conf)
+    if trade_plan:
+        sd["trade_plan"] = trade_plan
+        # If TRADECARD didn't provide action/confidence, try TRADE_PLAN
+        if not nt.research_action:
+            tp_action = str(
+                trade_plan.get("action") or trade_plan.get("bias", "")
             ).upper()
-            if tc_action in ("BUY", "HOLD", "SELL", "VETO"):
-                nt.research_action = tc_action
-            tc_conf = tradecard.get("confidence")
-            if tc_conf is not None:
-                nt.confidence = _confidence_to_float(tc_conf)
-        if trade_plan:
-            sd["trade_plan"] = trade_plan
-            # If TRADECARD didn't provide action/confidence, try TRADE_PLAN
-            if not nt.research_action:
-                tp_action = str(
-                    trade_plan.get("action") or trade_plan.get("bias", "")
-                ).upper()
-                # Normalize TRADE_PLAN bias values to action.
-                # AVOID means "don't participate" (risk_cleared=FALSE or VETO),
-                # NOT a directional sell.  Map to HOLD to preserve non-participation.
-                _BIAS_TO_ACTION = {"LONG": "BUY", "WAIT": "HOLD", "AVOID": "HOLD"}
-                tp_action = _BIAS_TO_ACTION.get(tp_action, tp_action)
-                if tp_action in ("BUY", "HOLD", "SELL", "VETO"):
-                    nt.research_action = tp_action
-            if nt.confidence < 0:
-                tp_conf = trade_plan.get("confidence")
-                if tp_conf is not None:
-                    nt.confidence = _confidence_to_float(tp_conf)
-        if sd:
-            nt.structured_data = sd
-        # Both JSON blocks missing → mark as degraded output
-        if not tradecard and not trade_plan:
-            warnings = list(nt.parse_warnings or [])
-            warnings.append("TRADECARD_JSON and TRADE_PLAN_JSON both missing or unparseable")
-            nt.parse_warnings = warnings
-            nt.parse_status = "fallback_used"
-            nt.parse_confidence = 0.1
-            nt.status = NodeStatus.WARN
+            # Normalize TRADE_PLAN bias values to action.
+            # AVOID means "don't participate" (risk_cleared=FALSE or VETO),
+            # NOT a directional sell.  Map to HOLD to preserve non-participation.
+            _BIAS_TO_ACTION = {"LONG": "BUY", "WAIT": "HOLD", "AVOID": "HOLD"}
+            tp_action = _BIAS_TO_ACTION.get(tp_action, tp_action)
+            if tp_action in ("BUY", "HOLD", "SELL", "VETO"):
+                nt.research_action = tp_action
+        if nt.confidence < 0:
+            tp_conf = trade_plan.get("confidence")
+            if tp_conf is not None:
+                nt.confidence = _confidence_to_float(tp_conf)
+    if sd:
+        nt.structured_data = sd
+    # Both JSON blocks missing → mark as degraded output
+    if not tradecard and not trade_plan:
+        warnings = list(nt.parse_warnings or [])
+        warnings.append("TRADECARD_JSON and TRADE_PLAN_JSON both missing or unparseable")
+        nt.parse_warnings = warnings
+        nt.parse_status = "fallback_used"
+        nt.parse_confidence = 0.1
+        nt.status = NodeStatus.WARN
 
-    return
+
+# ── Dispatch table for _populate_structured_data ──────────────────────────
+_AGENT_PARSERS = {
+    "macro_analyst": _parse_market_agent,
+    "market_breadth_agent": _parse_market_agent,
+    "sector_rotation_agent": _parse_market_agent,
+    "market_analyst": _parse_analyst,
+    "fundamentals_analyst": _parse_analyst,
+    "news_analyst": _parse_analyst,
+    "sentiment_analyst": _parse_analyst,
+    "catalyst_agent": _parse_catalyst,
+    "bull_researcher": _parse_researcher,
+    "bear_researcher": _parse_researcher,
+    "scenario_agent": _parse_scenario,
+    "research_manager": _parse_research_manager,
+    "aggressive_debator": _parse_risk_debater,
+    "conservative_debator": _parse_risk_debater,
+    "neutral_debator": _parse_risk_debater,
+    "risk_manager": _parse_risk_manager,
+    "research_output": _parse_research_output,
+}
+
+
+def _populate_structured_data(agent_key: str, text: str, nt: NodeTrace) -> None:
+    """Fill NodeTrace fields based on agent type."""
+    handler = _AGENT_PARSERS.get(agent_key)
+    if handler:
+        handler(agent_key, text, nt)
 
 
 def _split_if_string(val) -> list:
