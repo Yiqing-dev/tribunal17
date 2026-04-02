@@ -882,10 +882,10 @@ def _fmt_num(v, decimals=2) -> str:
     if v is None:
         return "—"
     if abs(v) >= 1e8:
-        return f"{v / 1e8:.{decimals}f}亿{unit}"
+        return f"{v / 1e8:.{decimals}f}亿"
     if abs(v) >= 1e4:
-        return f"{v / 1e4:.{decimals}f}万{unit}"
-    return f"{v:.{decimals}f}{unit}"
+        return f"{v / 1e4:.{decimals}f}万"
+    return f"{v:.{decimals}f}"
 
 
 def _build_markdown(b: AkshareBundle) -> str:
