@@ -236,8 +236,15 @@ def parse_global_macro_output(text: str) -> Dict[str, str]:
         block_text = block_match.group(1)
 
     for key in result:
-        pattern = rf"^{key}\s*=\s*(.+?)$"
-        m = re.search(pattern, block_text, re.MULTILINE)
+        if key == "macro_narrative":
+            # macro_narrative may span multiple lines — greedily capture to end of block
+            m = re.search(
+                rf"^macro_narrative\s*=\s*(.*?)(?=\n\w+\s*=|\Z)",
+                block_text, re.MULTILINE | re.DOTALL,
+            )
+        else:
+            pattern = rf"^{key}\s*=\s*(.+?)$"
+            m = re.search(pattern, block_text, re.MULTILINE)
         if m:
             result[key] = m.group(1).strip()
 
@@ -315,6 +322,7 @@ def merge_global_macro_into_context(
     if not global_macro:
         return market_context
 
+    market_context = dict(market_context)
     market_context["global_macro"] = {
         "te_china_index": global_macro.get("te_china_index", ""),
         "te_macro_indicators": global_macro.get("te_macro_indicators", ""),
@@ -621,7 +629,12 @@ def format_top10_shareholders_md(data: Dict) -> str:
     lines.append("|---------|----------|--------|----------|")
     for s in data["shareholders"]:
         change = s.get("change_wan", 0)
-        change_str = f"+{change:.0f}" if change > 0 else f"{change:.0f}"
+        if change > 0:
+            change_str = f"+{change:.0f}"
+        elif change < 0:
+            change_str = f"{change:.0f}"
+        else:
+            change_str = "不变"
         lines.append(
             f"| {s['name']} | {s['shares_wan']:.0f} | {s['pct']:.2f} | {change_str} |"
         )

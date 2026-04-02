@@ -87,6 +87,7 @@ h3 {
 }
 
 /* ── Glass Card ── */
+/* box-shadow set via S4 elevation system (var(--elev-1/2/3)) */
 .card {
   position: relative;
   background: linear-gradient(180deg, rgba(12, 23, 35, 0.94), rgba(8, 16, 25, 0.92));
@@ -94,13 +95,10 @@ h3 {
   border-radius: 20px;
   padding: 1.25rem 1.3rem;
   margin-bottom: 1rem;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255,255,255,0.04);
   backdrop-filter: blur(12px);
-  transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
 }
 .card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255,255,255,0.06);
   border-color: rgba(255, 255, 255, 0.1);
 }
 
@@ -436,14 +434,7 @@ details:not([open])>summary h2::after{content:" \u25b8"}
   }
 }
 
-/* ── V1: Card hierarchy ── */
-.card {
-  box-shadow: 0 8px 20px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.03);
-}
-.card:hover {
-  box-shadow: 0 12px 28px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.05);
-}
-.hero { box-shadow: 0 22px 54px rgba(0,0,0,0.26), 0 0 0 1px rgba(255,255,255,0.06); }
+/* ── V1: Card hierarchy — now handled by S4 elevation system ── */
 
 /* ── V3: Numeric alignment ── */
 td.num, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }

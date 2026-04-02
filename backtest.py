@@ -11,6 +11,7 @@ Usage:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -20,6 +21,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def _ts_hash() -> str:
+    """Return a 6-char hash suffix from the current timestamp to avoid overwrites."""
+    ts = datetime.now().isoformat()
+    return hashlib.sha256(ts.encode()).hexdigest()[:6]
+
 
 # Per-ticker Sina kline cache (avoids repeated API calls for same ticker)
 _sina_cache: Dict[str, List[Dict]] = {}
@@ -864,7 +872,7 @@ def save_backtest_report(report: BacktestReport, output_dir: str = "data/reports
     """Save backtest report as JSON."""
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"backtest-{datetime.now().strftime('%Y%m%d')}.json"
+    path = out_dir / f"backtest-{datetime.now().strftime('%Y%m%d')}_{_ts_hash()}.json"
 
     import tempfile, os
     fd, tmp = tempfile.mkstemp(dir=str(out_dir), suffix=".tmp", prefix=".bt-")
@@ -1274,7 +1282,7 @@ def generate_multi_window_report(
     html.append(_BT_JS)
     html.append('</div></body></html>')
 
-    path = out_dir / f"backtest-multi-{datetime.now().strftime('%Y%m%d')}.html"
+    path = out_dir / f"backtest-multi-{datetime.now().strftime('%Y%m%d')}_{_ts_hash()}.html"
     path.write_text("\n".join(html), encoding="utf-8")
     logger.info(f"Generated multi-window backtest report: {path}")
     return str(path)
@@ -1470,7 +1478,7 @@ def generate_backtest_report(
     html_parts.append('</div></body></html>')
     html = "\n".join(html_parts)
 
-    path = out_dir / f"backtest-{datetime.now().strftime('%Y%m%d')}.html"
+    path = out_dir / f"backtest-{datetime.now().strftime('%Y%m%d')}_{_ts_hash()}.html"
     path.write_text(html, encoding="utf-8")
     logger.info(f"Generated backtest report: {path}")
     return str(path)

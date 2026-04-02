@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -49,7 +50,22 @@ class ReplayStore:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(trace.to_dict(), f, ensure_ascii=False, indent=2)
-            os.replace(tmp_path, str(trace_path))
+            # os.replace can raise PermissionError on Windows when the
+            # target file is momentarily locked by antivirus or indexer.
+            # Retry up to 3 times with a brief delay.
+            for attempt in range(3):
+                try:
+                    os.replace(tmp_path, str(trace_path))
+                    break
+                except PermissionError:
+                    if attempt < 2:
+                        logger.warning(
+                            "PermissionError replacing %s, retrying (%d/3)",
+                            trace_path, attempt + 1,
+                        )
+                        time.sleep(0.2 * (attempt + 1))
+                    else:
+                        raise
         except BaseException:
             try:
                 os.unlink(tmp_path)

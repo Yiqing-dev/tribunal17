@@ -743,7 +743,7 @@ _TREEMAP_ENGINE_JS = r"""
 
       (function(n, t) {
         t.addEventListener('mouseenter', function() {
-          tip.innerHTML = escHtml(n.hover || n.label);
+          tip.innerHTML = escHtml(n.hover || n.label).replace('&lt;br&gt;', '<br>');
           tip.style.display = 'block';
           t.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.5)';
           t.style.zIndex = '5';
@@ -1951,8 +1951,7 @@ def render_market_page(view: MarketView) -> str:
       </div>
     </div>"""
 
-    # Late import to avoid circular dependency with report_renderer
-    from .report_renderer import _POOL_CSS
+    from .pool_renderer import _POOL_CSS
 
     return _html_wrap(
         f"\u5e02\u573a\u6307\u6325\u53f0 \u2014 {view.trade_date}",

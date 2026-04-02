@@ -513,8 +513,8 @@ def collect_sector_heatmap(trade_date: str = "", spot_df=None) -> SectorHeatmapD
                         try:
                             with em_proxy_session():
                                 cons = ak.stock_board_industry_cons_em(symbol=name)
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.warning("EM sector constituents failed for %s: %s", name, exc)
                         # Fallback: SW index constituents (skip if spot_df is None)
                         if (cons is None or cons.empty) and not hasattr(
                             collect_sector_heatmap, "_sw_map_failed"
@@ -523,7 +523,8 @@ def collect_sector_heatmap(trade_date: str = "", spot_df=None) -> SectorHeatmapD
                                 try:
                                     from .akshare_collector import _build_ths_to_sw_map
                                     collect_sector_heatmap._sw_map = _build_ths_to_sw_map()
-                                except Exception:
+                                except Exception as exc:
+                                    logger.warning("SW map build failed: %s", exc)
                                     collect_sector_heatmap._sw_map = {}
                                     collect_sector_heatmap._sw_map_failed = True
                             sw_code = collect_sector_heatmap._sw_map.get(name)
@@ -533,8 +534,8 @@ def collect_sector_heatmap(trade_date: str = "", spot_df=None) -> SectorHeatmapD
                                     if sw_cons is not None and not sw_cons.empty:
                                         sw_cons = sw_cons.rename(columns={"证券代码": "代码"})
                                         cons = sw_cons
-                                except Exception:
-                                    pass
+                                except Exception as exc:
+                                    logger.warning("SW index constituents failed for %s (%s): %s", name, sw_code, exc)
                     if cons is not None and not cons.empty and spot_df is not None:
                         codes = cons["代码"].astype(str).tolist() if "代码" in cons.columns else []
                         if codes:
@@ -567,8 +568,8 @@ def collect_sector_heatmap(trade_date: str = "", spot_df=None) -> SectorHeatmapD
                                             "name": str(s.get("名称", "")),
                                             "pct_change": round(_safe_float(s.get("涨跌幅")) or 0, 2),
                                         })
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("Sector constituent collection failed for %s: %s", name, exc)
 
                 nodes.append(asdict(SectorNode(
                     sector=name,
@@ -606,6 +607,7 @@ def collect_limit_board(trade_date: str = "", spot_df=None) -> LimitBoardSummary
             code = str(r.get("代码", ""))
             is_chinext = code.startswith("3") or code.startswith("68")
             is_st = "ST" in str(r.get("名称", ""))
+            # NOTE: Threshold logic duplicated in akshare_collector._collect_breadth — see M-14
             limit_threshold = 4.9 if is_st else (19.9 if is_chinext else 9.9)
 
             amt = (_safe_float(r.get("成交额")) or 0) / 1e8
@@ -667,10 +669,10 @@ def _fetch_prev_day_board_dist(trade_date: str = "") -> Dict[int, int]:
         Dict mapping board_level → count for the previous trading day.
     """
     ak = _get_ak()
-    # Try the previous trading day (skip weekends simply by trying recent days)
+    # Try the previous trading day (skip weekends and week-long holidays)
     from datetime import datetime as _dt
     base = _dt.strptime(trade_date, "%Y-%m-%d") if trade_date else _dt.now()
-    for offset in range(1, 5):
+    for offset in range(1, 11):
         prev = base - timedelta(days=offset)
         prev_str = prev.strftime("%Y%m%d")
         try:

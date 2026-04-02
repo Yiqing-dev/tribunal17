@@ -206,7 +206,7 @@ At the very end of your response, you MUST output the score line exactly as:
 {_data_block}
 {_search_guidance}
 
-For reference, the current date is {current_date}. The company we want to look at is {ticker}.
+For reference, the current date is {current_date}. The target company for this analysis is {ticker}.
 {ASTOCK_RULES}
 {LANGUAGE_ZH}"""
 
@@ -284,7 +284,7 @@ At the very end of your response, you MUST output the score line exactly as:
 {_data_block}
 {_search_guidance}
 
-For reference, the current date is {current_date}. The company we want to look at is {ticker}.
+For reference, the current date is {current_date}. The target company for this analysis is {ticker}.
 {ASTOCK_RULES}
 {LANGUAGE_ZH}"""
 
@@ -351,7 +351,7 @@ At the very end of your response, you MUST output the score line exactly as:
 {_data_block}
 {_search_guidance}
 
-For reference, the current date is {current_date}. We are looking at the company {ticker}.
+For reference, the current date is {current_date}. The target company for this analysis is {ticker}.
 {ASTOCK_RULES}
 {LANGUAGE_ZH}"""
 
@@ -419,7 +419,7 @@ At the very end of your response, you MUST output the score line exactly as:
 {_data_block}
 {_search_guidance}
 
-For reference, the current date is {current_date}. The current company we want to analyze is {ticker}.
+For reference, the current date is {current_date}. The target company for this analysis is {ticker}.
 {ASTOCK_RULES}
 {LANGUAGE_ZH}"""
 

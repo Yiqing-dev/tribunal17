@@ -161,6 +161,23 @@ def get_risk_label(category: str) -> str:
     return category
 
 
+# ── Severity Labels ──────────────────────────────────────────────────────
+
+SEVERITY_LABELS = {
+    "critical": "严重",
+    "high":     "高",
+    "medium":   "中",
+    "low":      "低",
+}
+
+SEVERITY_CSS = {
+    "critical": "veto",
+    "high":     "sell",
+    "medium":   "hold",
+    "low":      "muted",
+}
+
+
 def get_severity_label(severity: str) -> str:
     """Return Chinese label for a severity level."""
     return SEVERITY_LABELS.get((severity or "").lower(), severity or "")
@@ -182,23 +199,6 @@ THESIS_EFFECT_LABELS = {
 def get_thesis_label(effect: str) -> str:
     """Return Chinese label for a thesis effect."""
     return THESIS_EFFECT_LABELS.get(effect, effect or "无")
-
-
-# ── Severity Labels ──────────────────────────────────────────────────────
-
-SEVERITY_LABELS = {
-    "critical": "严重",
-    "high":     "高",
-    "medium":   "中",
-    "low":      "低",
-}
-
-SEVERITY_CSS = {
-    "critical": "veto",
-    "high":     "sell",
-    "medium":   "hold",
-    "low":      "muted",
-}
 
 # ── CSS Class Whitelist ────────────────────────────────────────────────────
 

@@ -5,8 +5,10 @@ Usage:
 """
 
 import json
+import os
 import re
 import sys
+import tempfile
 from datetime import date
 from pathlib import Path
 from .bridge import (
@@ -417,9 +419,20 @@ def process_all(trade_date: str = ""):
                 print(f"  [BOARD] Sector stocks: {len(sector_stocks)} sectors, "
                       f"{total_st} stocks total")
 
-            # Save
-            board_path.write_text(json.dumps(board_data, ensure_ascii=False, indent=2),
-                                  encoding="utf-8")
+            # Save atomically (temp file + rename)
+            fd, tmp = tempfile.mkstemp(
+                dir=str(board_path.parent), suffix=".tmp", prefix=".board-"
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(board_data, f, ensure_ascii=False, indent=2)
+                os.replace(tmp, str(board_path))
+            except BaseException:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
             print(f"  [BOARD] Saved: {len(board_data.get('sectors', []))} sectors, "
                   f"{len(board_data.get('limit_ups', []))} limit-ups")
         except Exception as e:

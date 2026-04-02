@@ -390,6 +390,11 @@ OUTPUTS["aggressive_debator"] = """
 
 反驳保守方: 板块轮动风险被过度放大，核电不是概念炒作而是实质业绩驱动。
 
+RISK_DEBATER_OUTPUT:
+recommendation = BUY
+position_size_pct = 0.05
+key_risk = 板块轮动风险被高估，政策驱动确定性强
+
 CITED_EVIDENCE: [E4, E9, E10]
 """
 
@@ -409,6 +414,11 @@ OUTPUTS["conservative_debator"] = """
 
 反驳激进方: 5-6%仓位过于集中，核电单一板块暴露过大。
 
+RISK_DEBATER_OUTPUT:
+recommendation = BUY
+position_size_pct = 0.03
+key_risk = 估值溢价30%叠加杠杆资金中高水平
+
 CITED_EVIDENCE: [E7, E13]
 """
 
@@ -427,6 +437,11 @@ OUTPUTS["neutral_debator"] = """
 - 推荐: BUY, 初始仓位2%, 目标仓位4%
 
 最终建议: 风险调整后的最优策略是分批建仓4%，而非一次性5%。
+
+RISK_DEBATER_OUTPUT:
+recommendation = BUY
+position_size_pct = 0.04
+key_risk = 短期轮动风险需分批建仓对冲
 
 CITED_EVIDENCE: [E4, E7, E12]
 """
