@@ -116,14 +116,15 @@ class HeatmapData:
             # Sector status
             sector_status = "中性"
             if sector:
-                for leader in leaders:
-                    if leader in sector or sector in leader:
-                        sector_status = "主线板块"
-                        break
                 for av in avoid:
                     if av in sector or sector in av:
                         sector_status = "退潮板块"
                         break
+                if sector_status != "退潮板块":
+                    for leader in leaders:
+                        if leader in sector or sector in leader:
+                            sector_status = "主线板块"
+                            break
 
             node = HeatmapNode(
                 id=row.ticker,

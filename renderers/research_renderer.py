@@ -268,9 +268,6 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
       </div>
     </div>"""
 
-    # ── Detailed financial data ──
-    research_chart_html = ""
-
     # ── Bull/Bear case panels -- claim cards if structured, fallback excerpt ──
     def _case_panel(title: str, claims: list, excerpt: str, evidence: list, color: str) -> str:
         ev_html = ", ".join(_esc(e) for e in evidence[:10]) or "\u65e0\u5f15\u7528"
@@ -509,7 +506,6 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     <p class="subtitle">{_esc(view.trade_date)} &middot; \u6df1\u5ea6\u7814\u7a76\u62a5\u544a</p>
     <div class="banner">\u672c\u62a5\u544a\u7531 AI \u591a\u667a\u80fd\u4f53\u7cfb\u7edf\u81ea\u52a8\u751f\u6210\uff0c\u4ec5\u4f9b\u7814\u7a76\u53c2\u8003\uff0c\u4e0d\u6784\u6210\u6295\u8d44\u5efa\u8bae\u3002\u4f7f\u7528\u524d\u8bf7\u7ed3\u5408\u4eba\u5de5\u5224\u65ad\u3002</div>
     {exec_summary}
-    {research_chart_html}
     <details open><summary><h2>\u591a\u7a7a\u5206\u6790</h2></summary>
     <div class="cols reveal reveal-d1">{bull_html}{bear_html}</div>
     </details>

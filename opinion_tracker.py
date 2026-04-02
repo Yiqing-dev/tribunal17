@@ -416,31 +416,48 @@ def extract_snapshot(trace: RunTrace) -> DailySnapshot:
         if nt.node_name in _PILLAR_MAP:
             score = sd.get("pillar_score")
             if score is not None:
-                setattr(snap, _PILLAR_MAP[nt.node_name], int(score))
+                try:
+                    setattr(snap, _PILLAR_MAP[nt.node_name], int(score))
+                except (ValueError, TypeError):
+                    pass
 
         # Bull researcher
         elif nt.node_name == "Bull Researcher":
             snap.bull_thesis = sd.get("thesis", "")
-            snap.bull_overall_confidence = float(
-                sd.get("overall_confidence", 0.0)
-            )
+            try:
+                snap.bull_overall_confidence = float(
+                    sd.get("overall_confidence", 0.0)
+                )
+            except (ValueError, TypeError):
+                snap.bull_overall_confidence = 0.0
             for c in sd.get("supporting_claims", []):
+                try:
+                    _conf = float(c.get("confidence", 0.5))
+                except (ValueError, TypeError):
+                    _conf = 0.5
                 snap.bull_claims.append({
                     "text": str(c.get("text", ""))[:200],
-                    "confidence": float(c.get("confidence", 0.5)),
+                    "confidence": _conf,
                     "dimension": c.get("dimension", ""),
                 })
 
         # Bear researcher
         elif nt.node_name == "Bear Researcher":
             snap.bear_thesis = sd.get("thesis", "")
-            snap.bear_overall_confidence = float(
-                sd.get("overall_confidence", 0.0)
-            )
+            try:
+                snap.bear_overall_confidence = float(
+                    sd.get("overall_confidence", 0.0)
+                )
+            except (ValueError, TypeError):
+                snap.bear_overall_confidence = 0.0
             for c in sd.get("supporting_claims", []):
+                try:
+                    _conf = float(c.get("confidence", 0.5))
+                except (ValueError, TypeError):
+                    _conf = 0.5
                 snap.bear_claims.append({
                     "text": str(c.get("text", ""))[:200],
-                    "confidence": float(c.get("confidence", 0.5)),
+                    "confidence": _conf,
                     "dimension": c.get("dimension", ""),
                 })
 
@@ -458,7 +475,10 @@ def extract_snapshot(trace: RunTrace) -> DailySnapshot:
         # Risk Judge
         elif nt.node_name == "Risk Judge":
             if nt.risk_score is not None:
-                snap.risk_score = int(nt.risk_score)
+                try:
+                    snap.risk_score = int(nt.risk_score)
+                except (ValueError, TypeError):
+                    pass
             snap.risk_cleared = bool(nt.risk_cleared)
             snap.risk_flags = list(nt.risk_flag_categories or [])
 
@@ -852,12 +872,12 @@ def _diff_claims(
                 break
 
     added = [
-        curr_claims[j]["text"]
+        curr_claims[j].get("text", "")
         for j in range(len(curr_claims))
         if j not in matched_curr
     ]
     dropped = [
-        prev_claims[i]["text"]
+        prev_claims[i].get("text", "")
         for i in range(len(prev_claims))
         if i not in matched_prev
     ]

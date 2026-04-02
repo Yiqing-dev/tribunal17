@@ -16,7 +16,8 @@ from .shared_css import _BASE_CSS
 def _esc(text: str) -> str:
     """Escape HTML special characters."""
     return (text.replace("&", "&amp;").replace("<", "&lt;")
-            .replace(">", "&gt;").replace('"', "&quot;"))
+            .replace(">", "&gt;").replace('"', "&quot;")
+            .replace("'", "&#39;"))
 
 
 def _html_wrap(title: str, body: str, tier_label: str, extra_css: str = "",

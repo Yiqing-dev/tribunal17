@@ -189,7 +189,8 @@ class BannerView:
             compliance_status=status,
             compliance_class=badge_map.get(status, "unknown"),
             timestamp=trace.started_at.strftime("%Y-%m-%d %H:%M:%S")
-            if isinstance(trace.started_at, datetime) else str(trace.started_at),
+            if isinstance(trace.started_at, datetime)
+            else ("\u2014" if trace.started_at is None else str(trace.started_at)),
         )
 
 

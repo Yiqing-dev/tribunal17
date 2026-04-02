@@ -32,36 +32,7 @@ from .market_renderer import (
 
 
 _POOL_CSS = """
-:root {
-  --bg: #070e1b;
-  --fg: #dde6f0;
-  --card: rgba(11, 20, 35, 0.85);
-  --border: rgba(100, 150, 180, 0.18);
-  --green: #34d399;
-  --red: #f87171;
-  --yellow: #fbbf24;
-  --blue: #60a5fa;
-  --purple: #a78bfa;
-  --muted: #8fa3b8;
-  --surface: rgba(14, 24, 40, 0.92);
-  --accent: #f59e0b;
-  --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
-  --signal-buy: var(--green);
-  --signal-sell: var(--red);
-  --signal-hold: var(--yellow);
-  --signal-veto: var(--red);
-  --state-success: var(--green);
-  --state-danger: var(--red);
-  --state-warning: var(--yellow);
-  --state-info: var(--blue);
-  --elev-1: 0 4px 12px rgba(0,0,0,0.15);
-  --elev-2: 0 12px 28px rgba(0,0,0,0.25);
-  --elev-3: 0 22px 54px rgba(0,0,0,0.35);
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --dur-fast: 200ms;
-  --dur-med: 360ms;
-  --sp-1: 0.5rem; --sp-2: 1rem; --sp-3: 1.5rem; --sp-4: 2rem; --sp-6: 3rem;
-}
+/* Pool-specific overrides (base :root tokens from shared_css._BASE_CSS) */
 body {
   background:
     radial-gradient(circle at 12% 20%, rgba(251, 191, 36, 0.16), transparent 28%),

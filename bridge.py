@@ -134,7 +134,7 @@ def _parse_kv_block(block: str, parse_arrays: bool = False) -> Dict[str, Any]:
     """
     result: Dict[str, Any] = {}
     for match in re.finditer(
-        r'^([a-zA-Z_]+)\s*=\s*([\s\S]*?)(?=\n[a-zA-Z_]+\s*=|\Z)',
+        r'^([a-zA-Z_]\w*)\s*=\s*([\s\S]*?)(?=\n[a-zA-Z_]\w*\s*=|\Z)',
         block, re.MULTILINE,
     ):
         key = match.group(1).strip()
@@ -441,6 +441,9 @@ def parse_claims(text: str, direction: str = "bullish") -> List[Dict]:
             # Normalize: if agent used 1-10 scale despite 0.0-1.0 instruction
             if claim["confidence"] > 1.0:
                 claim["confidence"] = claim["confidence"] / 10.0
+            # Normalize: if agent used 0-100 scale (e.g. 8.5 after /10)
+            if claim["confidence"] > 1.0:
+                claim["confidence"] = claim["confidence"] / 100.0
             claim["confidence"] = max(0.0, min(1.0, claim["confidence"]))
         else:
             claim["confidence"] = 0.5
@@ -636,7 +639,7 @@ def assemble_market_context(
         "market_weather": str(macro.get("market_weather", "")),
         "position_cap_multiplier": pcm,
         "style_bias": str(macro.get("style_bias", "均衡")),
-        "risk_alerts": str(macro.get("risk_alerts", "")),
+        "risk_alerts": "，".join(macro["risk_alerts"]) if isinstance(macro.get("risk_alerts"), list) else str(macro.get("risk_alerts", "")),
         "client_summary": client_summary,
         # Breadth
         "breadth_state": breadth_state,

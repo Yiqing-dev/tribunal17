@@ -359,8 +359,27 @@ class SignalLedger:
         return records
 
     def count(self) -> int:
-        """Total number of unique signals."""
-        return len(self.read())
+        """Total number of unique signals.
+
+        Uses a fast line-counting approach instead of fully parsing every record.
+        Falls back to full read() for dedup accuracy when the file exists.
+        """
+        if not self.path.exists():
+            return 0
+        n = 0
+        seen: set = set()
+        with open(self.path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                key = (d.get("ticker", ""), d.get("trade_date", ""))
+                seen.add(key)
+        return len(seen)
 
     # ── Summary ───────────────────────────────────────────────────────────
 

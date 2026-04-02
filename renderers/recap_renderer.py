@@ -716,7 +716,7 @@ def _render_index_chart_panel(data: dict) -> str:
              "low": p.get("low", 0), "close": p.get("close", 0), "vol": p.get("volume", 0)}
             for p in pts
         ]
-    kline_data_script = f'<script>var KLINE_DATA = {_json.dumps(kline_json, ensure_ascii=True)};</script>'
+    kline_data_script = f'<script>var KLINE_DATA = {_json.dumps(kline_json, ensure_ascii=True).replace("</", "<\\/")};</script>'
 
     return f"""
     <section class="glass animate-in delay-2">

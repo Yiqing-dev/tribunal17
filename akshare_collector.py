@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -599,7 +600,7 @@ def _collect_price_history(b: AkshareBundle):
         # Try Chinese column names (EM), fall back to English (Sina)
         date_val = r.get("日期", r.get("date", str(r.name) if hasattr(r, "name") else ""))
         rows.append({
-            "date": str(date_val),
+            "date": str(date_val)[:10],
             "open": _safe_float(r.get("开盘", r.get("open"))),
             "close": _safe_float(r.get("收盘", r.get("close"))),
             "high": _safe_float(r.get("最高", r.get("high"))),
@@ -742,7 +743,7 @@ def _collect_top10_shareholders(b: AkshareBundle):
     """stock_gdfx_free_top_10_em — top 10 circulating shareholders."""
     ak = _get_ak()
     # Try latest quarter
-    now = datetime.now()
+    now = datetime.strptime(b.trade_date[:10], "%Y-%m-%d") if b.trade_date else datetime.now()
     quarters = []
     for year in (now.year, now.year - 1):
         for q in ("1231", "0930", "0630", "0331"):
@@ -881,6 +882,8 @@ def _collect_lhb(b: AkshareBundle):
 
 def _fmt_num(v, decimals=2) -> str:
     if v is None:
+        return "—"
+    if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
         return "—"
     if abs(v) >= 1e8:
         return f"{v / 1e8:.{decimals}f}亿"

@@ -1554,14 +1554,22 @@ def _render_limit_universe(view: MarketView) -> str:
     ladder_html = ""
     if consec:
         import json as _json
-        levels = sorted(consec.items(), key=lambda x: int(x[0]))
+        def _safe_level_key(x):
+            try:
+                return int(x[0])
+            except (ValueError, TypeError):
+                return 0
+        levels = sorted(consec.items(), key=_safe_level_key)
         level_labels = {1: "\u9996\u677f", 2: "\u4e8c\u8fde\u677f", 3: "\u4e09\u8fde\u677f", 4: "\u56db\u8fde\u677f",
                         5: "\u4e94\u8fde\u677f", 6: "\u516d\u8fde\u677f", 7: "\u4e03\u8fde\u677f", 8: "\u516b\u8fde\u677f"}
         # Build JSON data for JS
         ladder_data = []
         prev_count = 0
         for level_str, stocks in levels:
-            level = int(level_str)
+            try:
+                level = int(level_str)
+            except (ValueError, TypeError):
+                continue
             count = len(stocks)
             rate = round(count / prev_count * 100) if prev_count > 0 and level > 1 else 0
             prev_count = count

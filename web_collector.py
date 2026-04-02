@@ -251,7 +251,13 @@ def parse_snapshot_recovery(text: str) -> Dict[str, str]:
         r"SNAPSHOT_RECOVERY:\s*\n(.*?)(?:\n```|\Z)",
         text, re.DOTALL,
     )
-    block_text = block_match.group(1) if block_match else text
+    if block_match:
+        block_text = block_match.group(1)
+    elif len(text) > 2000:
+        logger.warning("SNAPSHOT_RECOVERY block not found; text too long for safe fallback scan")
+        return result
+    else:
+        block_text = text
 
     keys = [
         "advance_count", "decline_count", "limit_up_count", "limit_down_count",
@@ -280,7 +286,13 @@ def parse_ticker_web_output(text: str) -> Dict[str, str]:
         r"TICKER_WEB_OUTPUT:\s*\n(.*?)(?:\n```|\Z)",
         text, re.DOTALL,
     )
-    block_text = block_match.group(1) if block_match else text
+    if block_match:
+        block_text = block_match.group(1)
+    elif len(text) > 2000:
+        logger.warning("TICKER_WEB_OUTPUT block not found; text too long for safe fallback scan")
+        return result
+    else:
+        block_text = text
 
     for key in result:
         m = re.search(rf"^{key}\s*=\s*(.+?)$", block_text, re.MULTILINE)
@@ -471,31 +483,6 @@ source = <URL or site name where data came from>
 """
 
 
-def concept_board_web_prompt_fetch(trade_date: str) -> str:
-    """Direct-fetch prompt — tries known URLs before falling back to search."""
-    return f"""**ROLE**: You are the Concept Board Recovery Agent (概念板块修复司).
-**OBJECTIVE**: Fetch today's A-share concept board ranking for {trade_date}.
-
-**STEP 1 — Try direct fetch (WebFetch):**
-Try fetching this URL: https://data.eastmoney.com/bkzj/gn.html
-Extract the concept board table (概念板块涨跌排名).
-
-**STEP 2 — If Step 1 fails, try search:**
-Search "同花顺 概念板块 涨跌幅" and find a page with tabular data.
-
-**STEP 3 — Extract and format:**
-For each concept board, extract: name (板块名称), change_pct (涨跌幅), market_cap (总市值).
-
-**OUTPUT FORMAT:**
-```
-CONCEPT_BOARD_OUTPUT:
-concept_count = <number>
-concepts = <JSON array: [{{"name": "...", "change_pct": 3.5, "market_cap_yi": 12000}}, ...]>
-source = <URL>
-```
-"""
-
-
 # ── Prompt: Top 10 Shareholders Web Fallback ───────────────────────
 
 def top10_shareholders_web_prompt(ticker: str, name: str) -> str:
@@ -550,7 +537,7 @@ def parse_concept_board_output(text: str) -> List[Dict]:
     block_text = block_match.group(1) if block_match else text
 
     # Extract concepts JSON array
-    m = re.search(r"concepts\s*=\s*(\[.*?\])", block_text, re.DOTALL)
+    m = re.search(r"concepts\s*=\s*(\[[\s\S]*\])", block_text, re.DOTALL)
     if not m:
         return []
     try:
@@ -586,7 +573,7 @@ def parse_top10_shareholders_output(text: str) -> Dict:
         result["report_date"] = m.group(1).strip()
 
     # Shareholders JSON array
-    m = re.search(r"shareholders\s*=\s*(\[.*?\])", block_text, re.DOTALL)
+    m = re.search(r"shareholders\s*=\s*(\[[\s\S]*\])", block_text, re.DOTALL)
     if not m:
         return result
     try:

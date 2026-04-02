@@ -8,11 +8,14 @@ Design principles:
 """
 
 import hashlib
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class NodeStatus(str, Enum):
@@ -119,6 +122,7 @@ class NodeTrace:
             try:
                 d["status"] = NodeStatus(d["status"])
             except ValueError:
+                logger.warning("Unknown NodeStatus '%s', defaulting to WARN", d["status"])
                 d["status"] = NodeStatus.WARN
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 

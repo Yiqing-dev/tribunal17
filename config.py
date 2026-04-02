@@ -3,15 +3,6 @@
 from datetime import date
 
 
-# ── Model name mapping ──────────────────────────────────────────────────
-# Short names used in PIPELINE_CONFIG → full Claude Code Agent model param
-MODEL_MAP = {
-    "haiku":  "haiku",                  # claude-haiku-4-5
-    "sonnet": "sonnet",                 # claude-sonnet-4-6
-    "opus":   "opus",                   # claude-opus-4-6
-}
-
-
 def _today() -> str:
     """Return today's date as YYYY-MM-DD string."""
     return date.today().isoformat()
@@ -44,7 +35,7 @@ PIPELINE_CONFIG = {
     "trend_override_threshold": -0.05, # return below this triggers downgrade
     "trend_override_downgrade": 1,     # points to subtract from each pillar_score
 
-    # Model assignments per stage (short names from MODEL_MAP)
+    # Model assignments per stage
     "models": {
         # Stage 0.8: Market Agents (parallel, once per day)
         "macro_analyst": "sonnet",
@@ -205,9 +196,6 @@ def validate_pipeline_config() -> None:
                 )
         for agent in s.get("agents", []):
             all_stage_agents.add(agent)
-
-    # Agents in stages but not in models are non-LLM (e.g. akshare_collector)
-    non_llm_agents = all_stage_agents - set(models.keys())
 
     # Check every agent in models has a corresponding pipeline stage
     for agent in models:

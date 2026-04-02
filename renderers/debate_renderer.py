@@ -13,6 +13,8 @@ All CSS/JS inline — self-contained HTML for static export.
 Consumes DebateView from debate_view.py, never raw traces.
 """
 
+from typing import Optional
+
 from .debate_view import (
     DebateView, ParticipantView, ClaimView,
     TimelineEntry, DebateRound, VerdictView,
@@ -877,7 +879,7 @@ def _render_verdict(v: DebateView) -> str:
     action_css = safe_badge_class(vd.action.lower() if vd.action else "hold")
     emoji = _ACTION_EMOJI.get(vd.action, "")
 
-    risk_css = "risk-ok" if vd.risk_score <= 3 else "risk-warn" if vd.risk_score <= 6 else "risk-bad"
+    risk_css = "risk-ok" if vd.risk_score is not None and vd.risk_score <= 3 else "risk-warn" if vd.risk_score is not None and vd.risk_score <= 6 else "risk-bad"
 
     html = f'<div class="verdict-card {action_css}">\n'
     html += f'  <div class="sec-head"><span class="sec-title">投委会裁决</span></div>\n'
@@ -1028,7 +1030,7 @@ def render_debate_page(view: DebateView) -> str:
 def generate_committee_report(
     run_trace,
     output_dir: str = "data/reports",
-) -> str | None:
+) -> Optional[str]:
     """Generate a static committee HTML report from a RunTrace.
 
     Args:
