@@ -434,17 +434,21 @@ def catalyst_agent(
     news_report: str,
     fundamentals_report: str,
     market_report: str,
+    sentiment_report: str = "",
     evidence_block: str = "",
     current_date: str = "",
     **kw,
 ) -> str:
     """Catalyst Analyst (Pro v2) — extracts forward-looking events."""
     _date_line = f"\n**当前日期**: {current_date}\n请以此日期为基准判断即将发生的事件。\n" if current_date else ""
+    _sentiment_section = f"\n[Sentiment]\n{sentiment_report}\n" if sentiment_report else ""
     return f"""**ROLE**: You are the [Catalyst Analyst] (Pro v2).
 **OBJECTIVE**: Identify upcoming events, short-term triggers, and deadlines that are highly likely to cause a price reaction for {ticker}.
 
 {common_input_block(ticker, **kw)}
 {_date_line}
+{EVIDENCE_PROTOCOL}
+
 **INSTRUCTIONS**:
 1. Scan the reports and evidence bundle for FORWARD-LOOKING events.
 2. Ignore past events unless they have a pending consequence (e.g., "Received inquiry letter" -> Catalyst: "Deadline to reply to inquiry letter").
@@ -463,7 +467,7 @@ def catalyst_agent(
 
 [Market]
 {market_report}
-
+{_sentiment_section}
 **OUTPUT FORMAT**:
 You must append this exact block at the end of your response:
 
@@ -766,6 +770,8 @@ def aggressive_debator(
 - Use data from the reports below, not generic platitudes about "growth potential".
 - Acknowledge real risks but argue why the reward justifies them.
 - State your recommendation (BUY/SELL/HOLD) and suggested position size % clearly.
+
+**注意**: 当研究总监 confidence ≥ 0.70 时，你的激进论证应聚焦于**加大仓位或加速入场**而非**方向翻转**，除非你能识别明确的爆发性催化剂支持更激进的操作。
 
 **结构化输出（必须附加在回复末尾）：**
 ```

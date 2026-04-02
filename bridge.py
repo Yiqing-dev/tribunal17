@@ -950,7 +950,7 @@ def build_node_trace(
 
     try:
         _populate_structured_data(agent_key, text, nt)
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError, KeyError) as e:
         logger.warning(f"Parse failed for {agent_key}: {e}")
         nt.parse_status = "failed"
         nt.parse_confidence = 0.0

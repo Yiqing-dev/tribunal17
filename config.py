@@ -42,6 +42,8 @@ PIPELINE_CONFIG = {
         "market_breadth_agent": "sonnet",
         "sector_rotation_agent": "sonnet",
         # Stage 0.5: Data Verification (FAIL → stop pipeline)
+        # Note: verification_agent uses verification.py (verification_prompt +
+        # parse_verification_result) directly, not prompts.py.
         "verification_agent": "sonnet",
         # Stage 1: Analysts (parallel, fast)
         "market_analyst": "sonnet",
@@ -198,10 +200,16 @@ def validate_pipeline_config() -> None:
             all_stage_agents.add(agent)
 
     # Check every agent in models has a corresponding pipeline stage
+    _KNOWN_MODELS = {"sonnet", "opus", "haiku"}
     for agent in models:
         if agent not in all_stage_agents:
             raise ValueError(
                 f"Model assigned to agent '{agent}' but it has no pipeline stage"
+            )
+        if models[agent] not in _KNOWN_MODELS:
+            raise ValueError(
+                f"Agent '{agent}' has unknown model '{models[agent]}'; "
+                f"expected one of {sorted(_KNOWN_MODELS)}"
             )
 
     # Cycle detection (topological sort attempt)

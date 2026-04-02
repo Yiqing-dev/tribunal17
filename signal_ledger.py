@@ -566,13 +566,17 @@ def repair_ledger(
         repaired_lines.append(json.dumps(d, ensure_ascii=False))
 
     if not dry_run:
-        # Atomic write: temp file → rename
+        # Atomic write: temp file → rename (with file lock)
         dir_name = os.path.dirname(ledger_path) or "."
         fd, tmp_path = tempfile.mkstemp(suffix=".jsonl", dir=dir_name)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as tmp_f:
-                for rl in repaired_lines:
-                    tmp_f.write(rl + "\n")
+                _flock_exclusive(tmp_f)
+                try:
+                    for rl in repaired_lines:
+                        tmp_f.write(rl + "\n")
+                finally:
+                    _flock_release(tmp_f)
             os.replace(tmp_path, ledger_path)
             logger.info(f"Repaired ledger: {report}")
         except Exception:

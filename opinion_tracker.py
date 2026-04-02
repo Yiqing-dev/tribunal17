@@ -29,6 +29,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -228,14 +230,22 @@ class WatchlistReport:
         }
 
     def save_json(self, output_dir: str = "data/reports") -> Path:
-        """Persist report as JSON."""
+        """Persist report as JSON (atomic write: temp file + os.replace)."""
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
         path = out / f"watchlist-{self.date_from}-{self.date_to}.json"
-        path.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        content = json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(out), suffix=".tmp", prefix=".watchlist-"
         )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as tmp_f:
+                tmp_f.write(content)
+            os.replace(tmp_path, str(path))
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
         return path
 
     def to_markdown(self) -> str:

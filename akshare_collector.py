@@ -1515,24 +1515,51 @@ _MARKET_COLLECTORS = [
 ]
 
 
-def _is_cn_trading_day(date_str: str) -> bool:
-    """Check if a date is a potential A-share trading day (weekday).
+# Major CN public holidays for 2026 (fixed/announced dates).
+# Spring Festival and National Day ranges are approximate — the State Council
+# announces exact dates each year.  Update annually.
+_CN_HOLIDAYS_2026 = {
+    # New Year's Day
+    "2026-01-01",
+    # Spring Festival (approx Jan 29 – Feb 4)
+    "2026-01-29", "2026-01-30", "2026-01-31",
+    "2026-02-01", "2026-02-02", "2026-02-03", "2026-02-04",
+    # Qingming Festival
+    "2026-04-04", "2026-04-05", "2026-04-06",
+    # Labor Day
+    "2026-05-01", "2026-05-02", "2026-05-03", "2026-05-04", "2026-05-05",
+    # Dragon Boat Festival
+    "2026-06-19", "2026-06-20", "2026-06-21",
+    # Mid-Autumn Festival
+    "2026-09-27", "2026-09-28", "2026-09-29",
+    # National Day
+    "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04",
+    "2026-10-05", "2026-10-06", "2026-10-07",
+}
 
-    Note: does not check public holidays — only weekday/weekend.
-    Returns True for weekdays, False for weekends.
+
+def _is_cn_trading_day(date_str: str) -> bool:
+    """Check if a date is a potential A-share trading day.
+
+    Checks both weekends and major 2026 CN public holidays.
+    Returns True for likely trading days, False otherwise.
     """
     try:
         dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
-        return dt.weekday() < 5  # Mon=0 .. Fri=4
+        if dt.weekday() >= 5:  # Sat/Sun
+            return False
+        if date_str[:10] in _CN_HOLIDAYS_2026:
+            return False
+        return True
     except (ValueError, TypeError):
         return True  # assume trading day if date is unparseable
 
 
 def _last_trading_day(date_str: str) -> str:
-    """Roll back to the most recent weekday (Mon-Fri) if date is a weekend."""
+    """Roll back to the most recent trading day (skips weekends and CN holidays)."""
     try:
         dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
-        while dt.weekday() >= 5:
+        while dt.weekday() >= 5 or dt.strftime("%Y-%m-%d") in _CN_HOLIDAYS_2026:
             dt -= timedelta(days=1)
         return dt.strftime("%Y-%m-%d")
     except (ValueError, TypeError):
