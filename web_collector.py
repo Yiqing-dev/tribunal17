@@ -451,6 +451,29 @@ def apply_snapshot_recovery(
         if v:
             market_snapshot.limit_down_count = v
 
+    # Index data recovery — fill empty index_data from web search results
+    if not getattr(market_snapshot, "index_data", None):
+        market_snapshot.index_data = {}
+    _INDEX_MAP = {
+        "index_sse": ("sh000001", "\u4e0a\u8bc1\u6307\u6570"),
+        "index_szse": ("sz399001", "\u6df1\u8bc1\u6210\u6307"),
+        "index_chinext": ("sz399006", "\u521b\u4e1a\u677f\u6307"),
+    }
+    for key, (code, name) in _INDEX_MAP.items():
+        if code in market_snapshot.index_data:
+            continue  # don't overwrite existing
+        raw = recovery.get(key, "")
+        if not raw or raw.upper() == "UNKNOWN":
+            continue
+        m = re.match(r'([\d,.]+)\s*\(([+-]?[\d.]+)%?\)', raw.replace(",", ""))
+        if m:
+            market_snapshot.index_data[code] = {
+                "name": name,
+                "close": float(m.group(1)),
+                "change_pct": float(m.group(2)),
+            }
+            logger.info("Recovered index %s: %s (%.2f%%)", name, m.group(1), float(m.group(2)))
+
 
 # ── Prompt: Concept Board Web Fallback ─────────────────────────────
 

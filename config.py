@@ -1,11 +1,45 @@
 """Pipeline configuration for subagent execution."""
 
+from dataclasses import dataclass
 from datetime import date
 
 
 def _today() -> str:
     """Return today's date as YYYY-MM-DD string."""
     return date.today().isoformat()
+
+
+@dataclass(frozen=True)
+class PipelineRunConfig:
+    """Immutable per-run configuration. Thread-safe — each run gets its own instance.
+
+    Use ``PipelineRunConfig.from_defaults(current_date="2026-04-02")`` to create
+    with overrides from PIPELINE_CONFIG defaults.
+    """
+    current_date: str = ""
+    ticker: str = ""
+    ticker_name: str = ""
+    market: str = "CN_A"
+    currency: str = "CNY"
+    language: str = "Chinese"
+    mode: str = "STANDARD"
+    capital: float = 200_000
+    max_single_pct: float = 0.05
+    max_dd: float = 0.06
+    bull_bear_rounds: int = 2
+    risk_debate_rounds: int = 1
+    trend_override_window: int = 5
+    trend_override_threshold: float = -0.05
+    trend_override_downgrade: int = 1
+
+    @classmethod
+    def from_defaults(cls, **overrides) -> "PipelineRunConfig":
+        """Create from PIPELINE_CONFIG defaults with optional overrides."""
+        defaults = {k: v for k, v in PIPELINE_CONFIG.items()
+                    if k in cls.__dataclass_fields__}
+        defaults.update(overrides)
+        return cls(**{k: v for k, v in defaults.items()
+                      if k in cls.__dataclass_fields__})
 
 
 # Default pipeline config — override per-run as needed

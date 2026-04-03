@@ -1585,6 +1585,7 @@ def generate_report(
     price_history: Optional[List[float]] = None,
     market_context_block: str = "",
     market_context: Optional[Dict] = None,
+    run_config=None,
 ) -> Dict[str, str]:
     """Convert subagent outputs to 3-tier HTML reports.
 
@@ -1622,10 +1623,11 @@ def generate_report(
                 nt.structured_data["price_history"] = price_history
                 break
     # 1c. Trend override — downgrade pillar scores when recent trend is strongly negative
-    from .config import PIPELINE_CONFIG
-    _tw = PIPELINE_CONFIG.get("trend_override_window", 5)
-    _thr = PIPELINE_CONFIG.get("trend_override_threshold", -0.05)
-    _td = PIPELINE_CONFIG.get("trend_override_downgrade", 1)
+    from .config import PIPELINE_CONFIG, PipelineRunConfig
+    _rc = run_config if isinstance(run_config, PipelineRunConfig) else PipelineRunConfig.from_defaults()
+    _tw = _rc.trend_override_window
+    _thr = _rc.trend_override_threshold
+    _td = _rc.trend_override_downgrade
     five_day_ret = _compute_5d_return(price_history, window=_tw)
     if five_day_ret is not None and five_day_ret < _thr:
         logger.info(
