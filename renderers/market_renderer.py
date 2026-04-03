@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 from .views import MarketView
 from .shared_css import _BRAND_LOGO_SM
-from .shared_utils import _esc, _html_wrap, _pct_to_hex, _squarify
+from .shared_utils import _esc, _html_wrap, _pct_to_hex, _squarify, render_svg_treemap
 
 
 _MARKET_CSS = """
@@ -423,50 +423,73 @@ def _render_svg_heatmap(heatmap_data, width=960, height=400, max_nodes=0):
     if max_nodes > 0:
         nodes = nodes[:max_nodes]
 
-    values = []
-    for i, n in enumerate(nodes):
+    # -- Size key: prefer market_cap, fall back to size_score --
+    # render_svg_treemap expects a single size_key string; we normalise here.
+    for n in nodes:
         cap = float(n.get("market_cap", 0) or n.get("size_score", 1))
-        values.append((i, max(cap, 0.01)))
-    values.sort(key=lambda x: x[1], reverse=True)
+        n.setdefault("_hm_size", cap)
 
-    rects = _squarify(values, 0, 0, width, height)
+    def _color(n):
+        pct = float(n.get("pct_change", 0))
+        action = str(n.get("action", "HOLD")).upper()
+        return _heatmap_color(pct, action)
 
-    svg_nodes = []
+    def _label(n):
+        name = str(n.get("name", n.get("ticker", "")))
+        pct = float(n.get("pct_change", 0))
+        sign = "+" if pct > 0 else ""
+        return (name, f"{sign}{pct:.1f}%")
+
+    def _g_attrs(idx, n):
+        pct = float(n.get("pct_change", 0))
+        action = str(n.get("action", "HOLD")).upper()
+        name = str(n.get("name", n.get("ticker", "")))
+        ticker = str(n.get("ticker", ""))
+        conf = float(n.get("confidence", 0))
+        conf_str = f"{conf:.0%}" if conf > 0 else ""
+        sector = str(n.get("sector", ""))
+        return (
+            f'data-ticker="{_esc(ticker)}" data-name="{_esc(name)}" '
+            f'data-pct="{pct:.2f}" data-action="{_esc(action)}" '
+            f'data-conf="{conf_str}" data-sector="{_esc(sector)}"'
+        )
+
+    def _rect_attrs(idx, n, fill):
+        conf = float(n.get("confidence", 0))
+        risk_fill = _heatmap_risk_color(conf)
+        return (
+            f'stroke="var(--bg, #0d1117)" stroke-width="1.5" '
+            f'data-return-fill="{fill}" data-risk-fill="{risk_fill}"'
+        )
+
+    svg = render_svg_treemap(
+        nodes, width=width, height=height, size_key="_hm_size",
+        color_fn=_color, label_fn=_label,
+        node_cls="hm-node",
+        extra_g_attrs_fn=_g_attrs,
+        extra_rect_attrs_fn=_rect_attrs,
+        svg_attrs='preserveAspectRatio="xMidYMid meet"',
+        rect_gap=1,
+    )
+
+    # Mobile fallback list (built separately — not part of SVG)
     mobile_rows = []
-    for idx, rx, ry, rw, rh in rects:
-        n = nodes[idx]
+    for i, n in enumerate(nodes):
         pct = float(n.get("pct_change", 0))
         action = str(n.get("action", "HOLD")).upper()
         name = str(n.get("name", n.get("ticker", "")))
         ticker = str(n.get("ticker", ""))
         fill = _heatmap_color(pct, action)
         sign = "+" if pct > 0 else ""
-
-        show_name = rw > 45 and rh > 24
-        show_pct = rw > 35 and rh > 16
-
-        name_el = ""
-        if show_name:
-            fs = min(max(rw / max(len(name), 1) * 1.2, 8), 14)
-            name_el = f'<text x="{rx + rw/2:.1f}" y="{ry + rh/2 - 3:.1f}" text-anchor="middle" fill="#fff" font-size="{fs:.0f}" font-weight="600">{_esc(name)}</text>'
-        pct_el = ""
-        if show_pct:
-            pct_el = f'<text x="{rx + rw/2:.1f}" y="{ry + rh/2 + 11:.1f}" text-anchor="middle" fill="rgba(255,255,255,.7)" font-size="10">{sign}{pct:.1f}%</text>'
-
         conf = float(n.get("confidence", 0))
         conf_str = f"{conf:.0%}" if conf > 0 else ""
         sector = str(n.get("sector", ""))
-        risk_fill = _heatmap_risk_color(conf)
-        data_attrs = f'data-idx="{idx}" data-ticker="{_esc(ticker)}" data-name="{_esc(name)}" data-pct="{pct:.2f}" data-action="{_esc(action)}" data-conf="{conf_str}" data-sector="{_esc(sector)}"'
-
-        svg_nodes.append(
-            f'<g class="hm-node" {data_attrs}>'
-            f'<rect x="{rx:.1f}" y="{ry:.1f}" width="{max(rw - 1, 1):.1f}" height="{max(rh - 1, 1):.1f}" '
-            f'rx="3" fill="{fill}" stroke="var(--bg, #0d1117)" stroke-width="1.5" '
-            f'data-return-fill="{fill}" data-risk-fill="{risk_fill}"/>'
-            f'{name_el}{pct_el}</g>'
+        data_attrs = (
+            f'data-idx="{i}" data-ticker="{_esc(ticker)}" '
+            f'data-name="{_esc(name)}" data-pct="{pct:.2f}" '
+            f'data-action="{_esc(action)}" data-conf="{conf_str}" '
+            f'data-sector="{_esc(sector)}"'
         )
-
         pct_cls = "up" if pct > 0 else ("dn" if pct < 0 else "")
         mobile_rows.append(
             f'<div class="hm-list-row" {data_attrs}>'
@@ -477,7 +500,6 @@ def _render_svg_heatmap(heatmap_data, width=960, height=400, max_nodes=0):
             f'</div>'
         )
 
-    svg = f'<svg viewBox="0 0 {width} {height}" width="100%" preserveAspectRatio="xMidYMid meet">{"".join(svg_nodes)}</svg>'
     mobile = f'<div class="hm-mobile-list">{"".join(mobile_rows)}</div>'
     return svg + mobile
 
@@ -614,6 +636,9 @@ def _render_heatmap_js():
 
 
 # ── Inline Treemap Engine (zero external dependencies) ───────────────
+
+# _TREEMAP_ENGINE_JS: Hierarchical drill-down treemap (sector→stock).
+# For flat single-level treemaps, use shared_utils.render_svg_treemap().
 
 # Pure-JS squarify treemap renderer, embedded in each HTML page.
 # Replaces Plotly CDN which doesn't load from file:// protocol.

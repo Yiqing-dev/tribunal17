@@ -16,7 +16,7 @@ import json as _json
 from pathlib import Path
 from typing import Optional
 
-from .shared_utils import _squarify, _html_wrap, _esc
+from .shared_utils import _squarify, _html_wrap, _esc, render_svg_treemap
 from .decision_labels import (
     get_regime_label, get_regime_class,
     get_breadth_label, get_breadth_class,
@@ -854,57 +854,26 @@ def _render_sector_heatmap(data: dict) -> str:
     size_key = "market_cap_yi" if has_mcap else "turnover_yi"
     size_label = "面积=市值" if has_mcap else "面积=成交额"
 
-    indexed = []
-    for i, n in enumerate(nodes):
-        v = max(float(n.get(size_key, 1) or 0), 0.01)
-        indexed.append((i, v))
-    indexed.sort(key=lambda x: x[1], reverse=True)
-
-    rects = _squarify(indexed, 0, 0, width, height)
-
-    svg_parts = []
-    for idx, rx, ry, rw, rh in rects:
-        node = nodes[idx]
-        pct = node.get("pct_change", 0)
-        color = _sector_color(pct)
-        name = _esc(node.get("sector", ""))
+    def _tooltip(n):
+        pct = n.get("pct_change", 0)
         sign = "+" if pct > 0 else ""
-
-        font_size = min(rw / 5, rh / 3, 14)
-        font_size = max(font_size, 8)
-
-        text_el = ""
-        if rw > 50 and rh > 30:
-            text_el = (
-                f'<text x="{rx + rw/2}" y="{ry + rh/2 - 4}" '
-                f'text-anchor="middle" fill="white" font-size="{font_size}px" font-weight="600">'
-                f'{name}</text>'
-                f'<text x="{rx + rw/2}" y="{ry + rh/2 + font_size}" '
-                f'text-anchor="middle" fill="rgba(255,255,255,.7)" '
-                f'font-size="{max(font_size-2, 7)}px" '
-                f'font-family="monospace">'
-                f'{sign}{pct:.2f}%</text>'
-            )
-
-        size_val = node.get(size_key, 0)
-        tooltip = f'{name} {sign}{pct:.2f}% | {size_label.split("=")[1]} {size_val:.1f}亿'
-        leaders = node.get("leaders", [])
+        name = n.get("sector", "")
+        size_val = n.get(size_key, 0)
+        tip = f'{name} {sign}{pct:.2f}% | {size_label.split("=")[1]} {size_val:.1f}亿'
+        leaders = n.get("leaders", [])
         if leaders:
             top3 = ", ".join(l.get("name", "") for l in leaders[:3])
-            tooltip += f' | 领涨: {top3}'
-        svg_parts.append(
-            f'<g class="shm-node" data-idx="{idx}">'
-            f'<title>{_esc(tooltip)}</title>'
-            f'<rect x="{rx}" y="{ry}" width="{rw}" height="{rh}" '
-            f'fill="{color}" stroke="var(--bg)" stroke-width="2" rx="3"/>'
-            f'{text_el}</g>'
-        )
+            tip += f' | 领涨: {top3}'
+        return tip
 
-    svg = (
-        f'<svg viewBox="0 0 {width} {height}" '
-        f'width="100%" height="auto" style="max-height:{height}px" '
-        f'xmlns="http://www.w3.org/2000/svg">'
-        f'{"".join(svg_parts)}</svg>'
+    svg = render_svg_treemap(
+        nodes, width=width, height=height, size_key=size_key,
+        color_fn=lambda n: _sector_color(n.get("pct_change", 0)),
+        label_fn=lambda n: (
+            _esc(n.get("sector", "")),
+            f"{'+' if n.get('pct_change', 0) > 0 else ''}{n.get('pct_change', 0):.2f}%",
+        ),
+        tooltip_fn=_tooltip,
     )
 
     return f"""

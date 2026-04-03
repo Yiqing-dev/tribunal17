@@ -219,6 +219,12 @@ def _pct_to_hex(pct: float) -> str:
     return f"#{max(0,min(255,r)):02X}{max(0,min(255,g)):02X}{max(0,min(255,b)):02X}"
 
 
+# ── Treemap Subsystem ────────────────────────────────────────────
+# Two rendering modes share the same squarify layout:
+#   1. render_svg_treemap() — Python SVG, flat single-level (recap, stock heatmap)
+#   2. _TREEMAP_ENGINE_JS (market_renderer) — JS drill-down, hierarchical
+
+
 def _squarify(values, x, y, w, h):
     """Squarified treemap layout algorithm.
 
@@ -311,3 +317,125 @@ def _squarify(values, x, y, w, h):
         remaining_total -= row_sum
 
     return rects
+
+
+def render_svg_treemap(nodes, width=600, height=340, size_key="value",
+                       color_fn=None, label_fn=None, tooltip_fn=None,
+                       data_idx=True, node_cls="shm-node",
+                       extra_g_attrs_fn=None, extra_rect_attrs_fn=None,
+                       svg_attrs="", rect_gap=0):
+    """Render a flat single-level SVG treemap from a list of node dicts.
+
+    Args:
+        nodes: list of dicts — each must have *size_key* for area sizing.
+        width, height: SVG viewBox dimensions.
+        size_key: dict key for the sizing value (area ∝ value).
+        color_fn: ``(node) -> str`` returning a CSS color for the rect fill.
+                  Defaults to ``"#3d5068"`` (neutral slate).
+        label_fn: ``(node) -> (name_str, subtitle_str)`` for the two text
+                  lines inside each rect.  Defaults to ``("", "")``.
+        tooltip_fn: ``(node) -> str`` for the ``<title>`` hover tooltip.
+                    Defaults to empty string.
+        data_idx: if *True*, each ``<g>`` gets ``data-idx="{i}"`` (needed by
+                  drawer click handlers).
+        node_cls: CSS class on each ``<g>`` group. Default ``"shm-node"``
+                  (recap/sector drawer); market heatmap uses ``"hm-node"``.
+        extra_g_attrs_fn: ``(idx, node) -> str`` returning additional
+                  attributes for the ``<g>`` element (e.g. ``data-ticker``).
+        extra_rect_attrs_fn: ``(idx, node, fill) -> str`` returning
+                  additional attributes for the ``<rect>`` element.
+        svg_attrs: extra attributes string appended to the ``<svg>`` tag
+                   (e.g. ``'preserveAspectRatio="xMidYMid meet"'``).
+        rect_gap: pixels to subtract from each rect width/height for gaps.
+
+    Returns:
+        Complete ``<svg …>…</svg>`` string.
+    """
+    if not nodes:
+        return ""
+
+    # Defaults
+    if color_fn is None:
+        color_fn = lambda n: "#3d5068"  # noqa: E731
+    if label_fn is None:
+        label_fn = lambda n: ("", "")  # noqa: E731
+    if tooltip_fn is None:
+        tooltip_fn = lambda n: ""  # noqa: E731
+
+    # Build indexed values for squarify
+    indexed = []
+    for i, n in enumerate(nodes):
+        v = max(float(n.get(size_key, 1) or 0), 0.01)
+        indexed.append((i, v))
+    indexed.sort(key=lambda x: x[1], reverse=True)
+
+    rects = _squarify(indexed, 0, 0, width, height)
+
+    svg_parts = []
+    for idx, rx, ry, rw, rh in rects:
+        node = nodes[idx]
+        fill = color_fn(node)
+        name, subtitle = label_fn(node)
+        tip = tooltip_fn(node)
+
+        # Apply rect gap
+        draw_w = max(rw - rect_gap, 1)
+        draw_h = max(rh - rect_gap, 1)
+
+        # Auto-size text based on rect dimensions
+        font_size = min(rw / 5, rh / 3, 14)
+        font_size = max(font_size, 8)
+
+        text_el = ""
+        if rw > 50 and rh > 30:
+            name_esc = _esc(name) if name else ""
+            sub_esc = _esc(subtitle) if subtitle else ""
+            text_el = (
+                f'<text x="{rx + rw / 2}" y="{ry + rh / 2 - 4}" '
+                f'text-anchor="middle" fill="white" '
+                f'font-size="{font_size}px" font-weight="600">'
+                f'{name_esc}</text>'
+            )
+            if sub_esc:
+                text_el += (
+                    f'<text x="{rx + rw / 2}" y="{ry + rh / 2 + font_size}" '
+                    f'text-anchor="middle" fill="rgba(255,255,255,.7)" '
+                    f'font-size="{max(font_size - 2, 7)}px" '
+                    f'font-family="monospace">'
+                    f'{sub_esc}</text>'
+                )
+
+        idx_attr = f' data-idx="{idx}"' if data_idx else ""
+        g_extra = ""
+        if extra_g_attrs_fn is not None:
+            g_extra = " " + extra_g_attrs_fn(idx, node)
+        tip_el = f"<title>{_esc(tip)}</title>" if tip else ""
+        rect_extra = ""
+        if extra_rect_attrs_fn is not None:
+            rect_extra = " " + extra_rect_attrs_fn(idx, node, fill)
+
+        # When extra_rect_attrs_fn is provided, it supplies its own
+        # stroke/stroke-width; otherwise use sensible defaults.
+        if extra_rect_attrs_fn is not None:
+            stroke_attrs = ""
+        else:
+            stroke_attrs = ' stroke="var(--bg)" stroke-width="2"'
+
+        svg_parts.append(
+            f'<g class="{node_cls}"{idx_attr}{g_extra}>'
+            f'{tip_el}'
+            f'<rect x="{rx:.1f}" y="{ry:.1f}" width="{draw_w:.1f}" '
+            f'height="{draw_h:.1f}" '
+            f'fill="{fill}"{stroke_attrs} rx="3"'
+            f'{rect_extra}/>'
+            f'{text_el}</g>'
+        )
+
+    style_attr = f' style="max-height:{height}px"' if not svg_attrs else ""
+    extra_svg = f" {svg_attrs}" if svg_attrs else ""
+    return (
+        f'<svg viewBox="0 0 {width} {height}" '
+        f'width="100%" height="auto"{style_attr}{extra_svg} '
+        f'xmlns="http://www.w3.org/2000/svg">'
+        f'{"".join(svg_parts)}</svg>'
+    )
