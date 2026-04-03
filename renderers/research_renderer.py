@@ -18,11 +18,12 @@ from .decision_labels import (
     get_thesis_label, get_risk_label, get_node_label, get_dimension_label,
     get_signal_emoji,
     safe_badge_class, get_severity_label,
+    AI_DISCLAIMER_BANNER,
 )
 from .shared_css import _COUNTUP_JS, _BRAND_LOGO_SM
 from .shared_utils import (
     _esc, _html_wrap, _ticker_display, _strip_preamble,
-    _format_price_zone, _degraded_banner,
+    _format_price_zone, _degraded_banner, _empty_state,
 )
 
 
@@ -83,7 +84,7 @@ def _render_research_degraded(view: ResearchView) -> str:
     body = f"""
     <h1>{_esc(_ticker_display(view))}</h1>
     <p class="subtitle">{_esc(view.trade_date)} &middot; \u6df1\u5ea6\u7814\u7a76\u62a5\u544a</p>
-    <div class="banner">\u672c\u62a5\u544a\u7531 AI \u591a\u667a\u80fd\u4f53\u7cfb\u7edf\u81ea\u52a8\u751f\u6210\uff0c\u4ec5\u4f9b\u7814\u7a76\u53c2\u8003\uff0c\u4e0d\u6784\u6210\u6295\u8d44\u5efa\u8bae\u3002\u4f7f\u7528\u524d\u8bf7\u7ed3\u5408\u4eba\u5de5\u5224\u65ad\u3002</div>
+    <div class="banner">{AI_DISCLAIMER_BANNER}</div>
     {_degraded_banner(view.degradation_reasons)}
     {exec_summary}
     {synth_html}
@@ -256,6 +257,7 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
             {_sig_emoji_r} {_esc(view.action_label)}
           </div>
           <div class="hero-summary">{_esc(view.action_explanation)}</div>
+          <div style="font-size:.65rem;color:var(--muted);margin-top:.3rem;">\u4fe1\u53f7\u8272: <span style="color:var(--red)">\u25cf</span> \u6da8/\u79ef\u6781 <span style="color:var(--green)">\u25cf</span> \u8dcc/\u6d88\u6781</div>
         </div>
         <div class="hero-right">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;">
@@ -309,10 +311,16 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
           </div>
         </div>"""
 
-    bull_html = _case_panel("\u770b\u591a\u8bba\u70b9", view.bull_claims, view.bull_excerpt,
-                            view.bull_evidence_ids, "green")
-    bear_html = _case_panel("\u770b\u7a7a\u8bba\u70b9", view.bear_claims, view.bear_excerpt,
-                            view.bear_evidence_ids, "red")
+    _has_bull = view.bull_claims or view.bull_excerpt
+    _has_bear = view.bear_claims or view.bear_excerpt
+    if _has_bull or _has_bear:
+        bull_html = _case_panel("\u770b\u591a\u8bba\u70b9", view.bull_claims, view.bull_excerpt,
+                                view.bull_evidence_ids, "green")
+        bear_html = _case_panel("\u770b\u7a7a\u8bba\u70b9", view.bear_claims, view.bear_excerpt,
+                                view.bear_evidence_ids, "red")
+    else:
+        bull_html = f'<div class="card">{_empty_state("\u2694\ufe0f", "\u6682\u65e0\u591a\u7a7a\u8fa9\u8bba\u6570\u636e", "\u7814\u7a76\u5458\u672a\u4ea7\u51fa\u7ed3\u6784\u5316\u8bba\u70b9")}</div>'
+        bear_html = ""
 
     # ── PM Synthesis -- structured conclusion + cases ──
     thesis_label = get_thesis_label(view.thesis_effect)
@@ -504,21 +512,27 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     body = f"""
     <h1>{_esc(_ticker_display(view))}</h1>
     <p class="subtitle">{_esc(view.trade_date)} &middot; \u6df1\u5ea6\u7814\u7a76\u62a5\u544a</p>
-    <div class="banner">\u672c\u62a5\u544a\u7531 AI \u591a\u667a\u80fd\u4f53\u7cfb\u7edf\u81ea\u52a8\u751f\u6210\uff0c\u4ec5\u4f9b\u7814\u7a76\u53c2\u8003\uff0c\u4e0d\u6784\u6210\u6295\u8d44\u5efa\u8bae\u3002\u4f7f\u7528\u524d\u8bf7\u7ed3\u5408\u4eba\u5de5\u5224\u65ad\u3002</div>
+    <div class="banner">{AI_DISCLAIMER_BANNER}</div>
     {exec_summary}
-    <details open><summary><h2>\u591a\u7a7a\u5206\u6790</h2></summary>
+    <nav style="font-size:.8rem;margin:.5rem 0;">
+      <a href="#bull-bear" style="color:var(--blue);text-decoration:none;">\u591a\u7a7a\u5206\u6790</a> &middot;
+      <a href="#synthesis" style="color:var(--blue);text-decoration:none;">\u7efc\u5408\u7814\u5224</a> &middot;
+      <a href="#risk" style="color:var(--blue);text-decoration:none;">\u98ce\u9669\u8bc4\u4f30</a> &middot;
+      <a href="#trade-plan" style="color:var(--blue);text-decoration:none;">\u4ea4\u6613\u8ba1\u5212</a>
+    </nav>
+    <details open><summary><h2 id="bull-bear">\u591a\u7a7a\u5206\u6790</h2></summary>
     <div class="cols reveal reveal-d1">{bull_html}{bear_html}</div>
     </details>
-    <details open><summary><h2>\u7efc\u5408\u7814\u5224</h2></summary>
+    <details open><summary><h2 id="synthesis">\u7efc\u5408\u7814\u5224</h2></summary>
     <div class="reveal reveal-d2">{synthesis_html}</div>
     <div class="reveal reveal-d3">{scenario_html}</div>
     </details>
-    <details open><summary><h2>\u98ce\u9669\u8bc4\u4f30</h2></summary>
+    <details open><summary><h2 id="risk">\u98ce\u9669\u8bc4\u4f30</h2></summary>
     <div class="reveal reveal-d4">{risk_html}</div>
-    <div class="reveal reveal-d5">{trade_plan_html}</div>
+    <div class="reveal reveal-d5" id="trade-plan">{trade_plan_html}</div>
     <div class="reveal reveal-d5">{catalyst_html}</div>
     </details>
-    <details open><summary><h2>\u51b3\u7b56\u94fe\u8def</h2></summary>
+    <details open><summary><h2 id="lineage">\u51b3\u7b56\u94fe\u8def</h2></summary>
     <div class="reveal reveal-d6">{inval_html}</div>
     <div class="reveal reveal-d6">{lineage_html}</div>
     </details>"""

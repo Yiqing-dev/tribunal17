@@ -77,7 +77,7 @@ h3 {
   color: var(--white); margin: .8rem 0 .5rem;
   font-size: .92rem; font-weight: 700; letter-spacing: 0.02em;
 }
-.mono { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .subtitle { color: var(--muted); margin-bottom: 1.2rem; font-size: .88rem; letter-spacing: 0.04em; }
 
 /* ── Banner ── */
@@ -104,6 +104,31 @@ h3 {
   transform: translateY(-2px);
   border-color: rgba(255, 255, 255, 0.1);
 }
+
+/* ── Glass Panel (recap / debate / pool) ── */
+.glass {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px; padding: 1.25rem;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
+}
+.glass:hover {
+  transform: translateY(-1px);
+  border-color: rgba(96, 165, 250, 0.18);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+/* ── Section Head ── */
+.sec-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .8rem; }
+.sec-title {
+  font-size: 1.15rem; font-weight: 700;
+  background: linear-gradient(90deg, var(--blue), var(--green));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.sec-sub { color: var(--muted); font-size: .78rem; }
 
 /* ── Hero (Decision Cockpit) ── */
 .hero {
@@ -248,7 +273,6 @@ h3 {
 .tp-inval-list li { margin-bottom: .2rem; }
 .tp-stop { border-top: 1px solid rgba(255,255,255,0.06); margin-top: .35rem; padding-top: .5rem; }
 .tp-target { padding: .2rem 0; }
-.mono { font-family: var(--mono); }
 
 /* ── Trust signal cards ── */
 .trust-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: .8rem; margin: .75rem 0; }
@@ -586,7 +610,9 @@ document.addEventListener('DOMContentLoaded',function(){
     var raw=el.textContent.trim();
     var m=raw.match(/([+-]?[\\d.]+)/);
     if(!m)return;
-    var target=parseFloat(m[1]),suffix=raw.replace(m[1],''),
+    var target=parseFloat(m[1]);
+    if(isNaN(target)||!isFinite(target))return;
+    var suffix=raw.replace(m[1],''),
         neg=raw.startsWith('-')||raw.startsWith('+'),
         dec=m[1].indexOf('.')>=0?m[1].split('.')[1].length:0,
         dur=600,start=performance.now();

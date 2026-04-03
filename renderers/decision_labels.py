@@ -369,6 +369,11 @@ TONE_MODERATION_MAP = {
 NO_COMPLIANCE_LABEL = "未捕获独立合规轨迹，建议结合总状态判断。"
 
 
+# ── AI Disclaimer Banner ──────────────────────────────────────────────
+
+AI_DISCLAIMER_BANNER = "本报告由 AI 多智能体系统自动生成，仅供研究参考，不构成投资建议。使用前请结合人工判断。"
+
+
 # ── Market Regime & Breadth Labels ────────────────────────────────────
 
 REGIME_LABELS = {

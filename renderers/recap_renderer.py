@@ -35,28 +35,19 @@ _RECAP_CSS = """
 }
 .recap-shell { position: relative; z-index: 1; max-width: 1360px; margin: 0 auto; padding: 1.5rem; display: grid; gap: 1.25rem; }
 
-/* ── Glass card ── */
+/* ── Glass card — recap overrides (base in _BASE_CSS) ── */
 .glass {
-  background: var(--card);
-  border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 1.25rem;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255,255,255,0.03);
-  transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
 }
 .glass:hover {
-  transform: translateY(-1px);
-  border-color: rgba(96, 165, 250, 0.18);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255,255,255,0.04);
 }
 .glass-glow-green { box-shadow: 0 0 24px var(--glow-green), inset 0 1px 0 rgba(52,211,153,.06); }
 .glass-glow-red   { box-shadow: 0 0 24px var(--glow-red),   inset 0 1px 0 rgba(248,113,113,.06); }
 .glass-glow-blue  { box-shadow: 0 0 24px var(--glow-blue),  inset 0 1px 0 rgba(96,165,250,.06); }
-
-/* Monospace numbers */
-.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
 /* ── Hero ── */
 .recap-hero {
@@ -98,18 +89,8 @@ _RECAP_CSS = """
 .hero-chip.down { color: var(--green); border-color: rgba(52,211,153,.2); }
 .hero-chip.neu  { color: var(--yellow); border-color: rgba(251,191,36,.2); }
 
-/* ── Section head ── */
-.sec-head {
-  display: flex; align-items: baseline; justify-content: space-between;
-  margin-bottom: .8rem;
-}
-.sec-title {
-  font-size: 1.1rem; font-weight: 700;
-  background: linear-gradient(90deg, var(--blue), var(--green));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.sec-sub { color: var(--muted); font-size: .78rem; }
+/* ── Section head — recap override (base in _BASE_CSS) ── */
+.sec-title { font-size: 1.1rem; }
 
 /* ── KPI Ribbon ── */
 .kpi-ribbon {
@@ -434,15 +415,6 @@ _RECAP_CSS = """
   background: inherit; padding-bottom: .8rem;
   border-bottom: 1px solid var(--border);
 }
-
-/* ── V8: Empty state ── */
-.empty-state {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 2rem 1rem; text-align: center; color: var(--muted);
-}
-.empty-state-icon { font-size: 2rem; margin-bottom: .6rem; opacity: .6; }
-.empty-state-title { font-size: .88rem; font-weight: 600; margin-bottom: .25rem; }
-.empty-state-hint { font-size: .78rem; opacity: .8; }
 
 /* ── S1: Contrast boost ── */
 .kpi-cell .lab, .sec-sub, .sd-section h4 { font-weight: 500; }

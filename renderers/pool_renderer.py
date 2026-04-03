@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 from .views import DivergencePoolView, StockDivergenceRow, _strip_internal_tokens
 from .decision_labels import (
     get_signal_emoji, get_severity_label, get_risk_label,
-    get_regime_label, get_regime_class,
+    get_regime_label, get_regime_class, AI_DISCLAIMER_BANNER,
 )
 from .shared_css import _BRAND_LOGO_SM, _BRAND_LOGO_LG
 from .shared_utils import _esc, _html_wrap, _empty_state
@@ -1054,7 +1054,7 @@ def _render_cover_page(view: DivergencePoolView) -> str:
         <div class="cover-subtitle">研究报告 · 多空分歧横向对比</div>
         <div class="cover-date">{_esc(view.trade_date)}</div>
         <div class="cover-meta">{view.total_stocks} 只标的覆盖 · 平均置信度 {view.avg_confidence:.0%} · 风险标签 {view.risk_alert_count}</div>
-        <div class="cover-disclaimer">本报告由 AI 多智能体系统自动生成，仅供研究参考，不构成投资建议。</div>
+        <div class="cover-disclaimer">{AI_DISCLAIMER_BANNER}</div>
       </div>
     </section>"""
 
@@ -1297,7 +1297,7 @@ def render_divergence_pool(
     {cover}
     <div class="pool-shell">
       {hero}
-      <div class="banner">本报告由 AI 多智能体系统自动生成，仅供研究参考，不构成投资建议。使用前请结合人工判断。</div>
+      <div class="banner">{AI_DISCLAIMER_BANNER}</div>
       {market_banner}
       {filter_bar}
       {heatmap_section}

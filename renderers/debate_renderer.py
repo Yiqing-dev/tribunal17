@@ -19,7 +19,7 @@ from .debate_view import (
     DebateView, ParticipantView, ClaimView,
     TimelineEntry, DebateRound, VerdictView,
 )
-from .decision_labels import safe_badge_class
+from .decision_labels import safe_badge_class, AI_DISCLAIMER_BANNER
 from .shared_css import _BASE_CSS
 from .shared_utils import _esc
 
@@ -36,36 +36,12 @@ _DEBATE_CSS = """
   --glow-purple: rgba(167, 139, 250, 0.12);
 }
 .debate-shell { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 1.5rem; display: grid; gap: 1.25rem; }
-.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-/* ── Glass card ── */
-.glass {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 14px; padding: 1.25rem;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
-}
-.glass:hover {
-  transform: translateY(-1px);
-  border-color: rgba(96, 165, 250, 0.18);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255,255,255,0.04);
-}
+/* ── Glass glow variants (debate-specific --glow-* vars) ── */
 .glass-glow-green { box-shadow: 0 0 20px var(--glow-green), inset 0 1px 0 rgba(52,211,153,.06); }
 .glass-glow-red   { box-shadow: 0 0 20px var(--glow-red),   inset 0 1px 0 rgba(248,113,113,.06); }
 .glass-glow-blue  { box-shadow: 0 0 20px var(--glow-blue),  inset 0 1px 0 rgba(96,165,250,.06); }
 .glass-glow-yellow { box-shadow: 0 0 20px var(--glow-yellow), inset 0 1px 0 rgba(251,191,36,.06); }
-
-/* ── Section head ── */
-.sec-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .8rem; }
-.sec-title {
-  font-size: 1.15rem; font-weight: 700;
-  background: linear-gradient(90deg, var(--blue), var(--green));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.sec-sub { color: var(--muted); font-size: .78rem; }
 
 /* ─────────── Section 1: Hero + Roster ─────────── */
 .debate-hero {
@@ -514,15 +490,6 @@ button:focus-visible, [role="button"]:focus-visible {
     transform: scale(0.97); transition: transform 60ms ease;
   }
 }
-
-/* ── V8: Empty state ── */
-.empty-state {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 2rem 1rem; text-align: center; color: var(--muted);
-}
-.empty-state-icon { font-size: 2rem; margin-bottom: .6rem; opacity: .6; }
-.empty-state-title { font-size: .88rem; font-weight: 600; margin-bottom: .25rem; }
-.empty-state-hint { font-size: .78rem; opacity: .8; }
 
 /* ── S1: Contrast boost ── */
 .roster-role, .claim-meta, .sec-sub, .audit-cell .al,
@@ -996,7 +963,7 @@ def render_debate_page(view: DebateView) -> str:
     Returns a self-contained HTML string (all CSS inline, no external deps).
     """
     sections = [
-        '<div class="ai-banner">AI 生成内容，仅供研究参考，不构成任何投资建议。投资决策需独立判断。</div>',
+        f'<div class="ai-banner">{AI_DISCLAIMER_BANNER}</div>',
         _render_hero(view),
         _render_market_wind(view),
         _render_timeline(view),

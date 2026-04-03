@@ -19,6 +19,7 @@ from .decision_labels import (
     get_signal_emoji, PILLAR_EMOJI,
     get_severity_label,
     safe_badge_class,
+    AI_DISCLAIMER_BANNER,
 )
 from .shared_css import _COUNTUP_JS, _BRAND_LOGO_SM
 from .shared_utils import (
@@ -325,7 +326,7 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
         body = f"""
     <h1>{_esc(_ticker_display(view))}</h1>
     <p class="subtitle">{_esc(view.trade_date)} &middot; \u7814\u7a76\u5feb\u7167</p>
-    <div class="banner">\u672c\u62a5\u544a\u7531 AI \u591a\u667a\u80fd\u4f53\u7cfb\u7edf\u81ea\u52a8\u751f\u6210\uff0c\u4ec5\u4f9b\u7814\u7a76\u53c2\u8003\uff0c\u4e0d\u6784\u6210\u6295\u8d44\u5efa\u8bae\u3002\u4f7f\u7528\u524d\u8bf7\u7ed3\u5408\u4eba\u5de5\u5224\u65ad\u3002</div>
+    <div class="banner">{AI_DISCLAIMER_BANNER}</div>
     {_degraded_banner(view.degradation_reasons)}
     {conclusion}
     {degraded_chart}
@@ -361,6 +362,7 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
           </div>
           <div class="hero-summary">{_esc(view.one_line_summary)}</div>
           <div style="font-size:.88rem;color:var(--muted);">{_esc(view.action_explanation)}</div>
+          <div style="font-size:.65rem;color:var(--muted);margin-top:.3rem;">\u4fe1\u53f7\u8272: <span style="color:var(--red)">\u25cf</span> \u6da8/\u79ef\u6781 <span style="color:var(--green)">\u25cf</span> \u8dcc/\u6d88\u6781</div>
         </div>
         <div class="hero-right">
           {hero_kpi_grid}
@@ -405,6 +407,8 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     if view.core_drivers:
         items = "".join(f"<li>{_esc(d[:120])}</li>" for d in view.core_drivers)
         drivers_html = f'<div class="card reveal reveal-d3"><h3>\u6838\u5fc3\u9a71\u52a8</h3><ul>{items}</ul></div>'
+    else:
+        drivers_html = f'<div class="card reveal reveal-d3"><h3>\u6838\u5fc3\u9a71\u52a8</h3>{_empty_state("\U0001f4ca", "\u6682\u65e0\u6838\u5fc3\u9a71\u52a8\u6570\u636e", "\u5206\u6790\u7ed3\u679c\u672a\u4ea7\u751f\u7ed3\u6784\u5316\u9a71\u52a8\u56e0\u7d20")}</div>'
 
     # Main risks
     risks_html = ""
@@ -448,6 +452,8 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
             else:
                 items += f"<li>{_esc(_strip_internal_tokens(str(c)))}</li>"
         catalyst_html = f'<div class="card reveal reveal-d5"><h3>\u8fd1\u671f\u50ac\u5316\u5242</h3><ul>{items}</ul></div>'
+    else:
+        catalyst_html = f'<div class="card reveal reveal-d5"><h3>\u8fd1\u671f\u50ac\u5316\u5242</h3>{_empty_state("\u26a1", "\u6682\u65e0\u50ac\u5316\u5242\u4fe1\u606f", "\u672a\u68c0\u6d4b\u5230\u8fd1\u671f\u91cd\u5927\u4e8b\u4ef6\u6216\u65f6\u95f4\u8282\u70b9")}</div>'
 
     # ── Feature cards ──
     battle_plan_html = _render_battle_plan(view)
@@ -464,7 +470,7 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     body = f"""
     <h1>{_esc(_ticker_display(view))}</h1>
     <p class="subtitle">{_esc(view.trade_date)} &middot; \u7814\u7a76\u5feb\u7167</p>
-    <div class="banner">\u672c\u62a5\u544a\u7531 AI \u591a\u667a\u80fd\u4f53\u7cfb\u7edf\u81ea\u52a8\u751f\u6210\uff0c\u4ec5\u4f9b\u7814\u7a76\u53c2\u8003\uff0c\u4e0d\u6784\u6210\u6295\u8d44\u5efa\u8bae\u3002\u4f7f\u7528\u524d\u8bf7\u7ed3\u5408\u4eba\u5de5\u5224\u65ad\u3002</div>
+    <div class="banner">{AI_DISCLAIMER_BANNER}</div>
     {conclusion}
     {lights_html}
     {battle_plan_html}
