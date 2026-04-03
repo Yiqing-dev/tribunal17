@@ -110,6 +110,9 @@ def _build_market_context(agent_outputs: dict, trade_date: str) -> dict:
 def _build_ths_to_sw_map() -> dict:
     """Build THS sector name → SW second-level industry code mapping.
 
+    NOTE: This function duplicates akshare_collector._build_ths_to_sw_map().
+    Future refactor should unify into a single shared implementation.
+
     Returns ``{ths_name: sw_code}`` e.g. ``{"半导体": "801081"}``.
     Uses exact match first, then fuzzy match (strip trailing ``Ⅱ``).
     """
@@ -458,8 +461,18 @@ def process_all(trade_date: str = ""):
     if market_context is not None:
         _REPLAYS_DIR.mkdir(parents=True, exist_ok=True)
         ctx_path = _REPLAYS_DIR / f"market_context_{today}.json"
-        ctx_path.write_text(json.dumps(market_context, ensure_ascii=False, indent=2),
-                            encoding="utf-8")
+        # Atomic write: temp file + os.replace
+        _fd, _tmp = tempfile.mkstemp(dir=str(_REPLAYS_DIR), suffix=".tmp", prefix=".ctx-")
+        try:
+            with os.fdopen(_fd, "w", encoding="utf-8") as _f:
+                json.dump(market_context, _f, ensure_ascii=False, indent=2, allow_nan=False)
+            os.replace(_tmp, str(ctx_path))
+        except BaseException:
+            try:
+                os.unlink(_tmp)
+            except OSError:
+                pass
+            raise
         print(f"  [MARKET] Context saved: {ctx_path}")
 
     # --- Step 4: Process individual tickers ---
