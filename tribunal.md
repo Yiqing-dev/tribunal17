@@ -438,6 +438,44 @@ tracker_report.save_json(output_dir=str(REPORTS))
 
 ---
 
+### L8.5 — 讨论质量回顾（每股必做）
+
+分析 agent 讨论质量，生成改进建议：
+
+```python
+from subagent_pipeline.discussion_tracker import generate_discussion_review
+from subagent_pipeline.renderers.review_renderer import generate_review_report
+
+review = generate_discussion_review(run_id, storage_dir=str(REPLAYS))
+review_path = generate_review_report(review, output_dir=str(REPORTS))
+print(f"[L8.5] 讨论质量: {review.debate_quality.debate_grade}")
+print(f"  证据利用率: {review.evidence_utilization.utilization_rate:.0%}")
+for s in review.prompt_suggestions:
+    print(f"  [{s.severity}] {s.agent}: {s.description[:60]}")
+```
+
+打印：`[L8.5] 讨论质量回顾完毕 — Grade {review.debate_quality.debate_grade}, {len(review.prompt_suggestions)} 条改进建议`
+
+### 事后回顾（隔日手动触发）
+
+当实际价格出来后，对比预测：
+
+```
+复盘验证！{run_id} {actual_price}
+```
+
+```python
+from subagent_pipeline.discussion_tracker import review_prediction
+
+pred_review = review_prediction(run_id, actual_price=9.35, storage_dir=str(REPLAYS))
+print(f"预测方向: {pred_review.predicted_direction}, 实际: {pred_review.actual_direction}")
+print(f"方向正确: {pred_review.direction_correct}")
+print(f"命中情景: {pred_review.scenario_hit}")
+print(f"教训: {pred_review.lesson}")
+```
+
+---
+
 ### 散堂
 
 打印：`[完毕] 十七司散堂，论衡已定。报告输出: data/reports/`
