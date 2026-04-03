@@ -81,28 +81,50 @@ REPLAYS.mkdir(parents=True, exist_ok=True)
 ```python
 # 检查 market_context 日期是否匹配 trade_date
 ctx_path = REPLAYS / f"market_context_{trade_date}.json"
-if ctx_path.exists():
+recap_path = REPLAYS / f"recap_{trade_date}.json"
+if ctx_path.exists() and recap_path.exists():
     market_context = json.loads(ctx_path.read_text(encoding="utf-8"))
     market_context_block = (RESULTS / "market_context_block.txt").read_text(encoding="utf-8")
-    print(f"[CHECK] 当日 L1 市场上下文已存在，跳过 L0+L1")
+    print(f"[CHECK] 当日 L0+L1 市场上下文已存在，跳过")
 else:
-    print(f"[CHECK] 未找到 {trade_date} 的市场上下文，需先执行 L0+L1")
+    print(f"[CHECK] 未找到 {trade_date} 的市场上下文或复盘数据，需先执行 L0+L1")
     # → 执行下面的 L0 和 L1 步骤
 ```
 
-若 `market_context_{trade_date}.json` 不存在或日期不匹配，**必须先完成 L0+L1** 再进入 L2。
+若 `market_context_{trade_date}.json` 或 `recap_{trade_date}.json` 不存在，**必须先完成 L0+L1** 再进入 L2。
 
 ---
 
-### L0 — 复盘司，点卯！（每日复盘，无 LLM）
+### L0+L1 并行启动
+
+> **编排要点**：L0 和 L1 数据采集相互独立，**必须同时启动**以节省时间。
+> L0 耗时约 3-5 分钟（akshare 58+ API），L1 snapshot 约 1-2 分钟。
+> L2 仅依赖 L1（market_context），可在 L1 完成后立即开始。
+> **L5/L6 同时依赖 L0（board_data）和 L1（market_context）**，必须等 L0+L1 都完成。
+
+```
+┌─ L0 复盘采集（~4分钟）──────────────────────────────────┐
+│                                                          ├─→ L5/L6 (需要 L0 board_data + L1 context)
+├─ L1 Snapshot + 4 Agents + 组装（~2分钟）─→ L2 个股分析 ──┘
+└──────────────────────────────────────────────────────────┘
+```
+
+**执行步骤**：
+1. **同时启动** L0 recap 采集（后台）和 L1 snapshot 采集
+2. L1 snapshot 完成后启动 4 个 L1 Agent
+3. L1 Agent 完成后组装 market_context，**立即进入 L2**
+4. L2-L4 完成后，**必须确认 L0 recap 已完成**，再执行 L5/L6
+
+### L0 — 复盘司，点卯！（每日复盘，无 LLM，后台启动）
 
 ```python
 from subagent_pipeline.recap_collector import collect_daily_recap
 from subagent_pipeline.renderers.recap_renderer import generate_daily_recap_report
 
+# ⚠️ 后台启动 — 耗时 3-5 分钟，与 L1 并行
 recap = collect_daily_recap(trade_date=trade_date)
 recap_json = recap.to_json()
-Path(REPLAYS / f"recap_{trade_date}.json").write_text(recap_json)
+Path(REPLAYS / f"recap_{trade_date}.json").write_text(recap_json, encoding="utf-8")
 generate_daily_recap_report(recap, output_dir=str(REPORTS))
 ```
 
@@ -114,7 +136,8 @@ generate_daily_recap_report(recap, output_dir=str(REPORTS))
 
 ```python
 from subagent_pipeline.akshare_collector import collect_market_snapshot
-snapshot = collect_market_snapshot(trade_date=trade_date, watchlist=[f"{ticker}"])
+# watchlist 传入本次所有待分析 ticker，获取个股现价
+snapshot = collect_market_snapshot(trade_date=trade_date, watchlist=all_tickers_bare)
 market_snapshot_md = snapshot.markdown_report  # 属性，非方法
 ```
 
@@ -350,6 +373,23 @@ else:
 
 ---
 
+### L0 完成门控
+
+> **⚠️ 关键检查点**：进入 L5/L6 前，**必须确认 L0 recap 已完成**。
+> L0 后台采集通常需要 3-5 分钟。如果 L2-L4 完成时 L0 仍在运行，**等待 L0 完成**。
+
+```python
+recap_path = REPLAYS / f"recap_{trade_date}.json"
+if not recap_path.exists():
+    print("[GATE] ⚠️ L0 复盘尚未完成，等待中...")
+    # 如果 L0 是后台运行，此处需要等待其完成
+    # 不可跳过 — board_data 为 None 会导致涨跌停数据缺失
+    raise RuntimeError(f"L0 recap not found: {recap_path}. Wait for L0 to complete before L5/L6.")
+print(f"[GATE] L0 复盘已确认完成: {recap_path}")
+```
+
+---
+
 ### L5 — 分歧池（多股时）
 
 多股批量模式下，所有个股跑完后：
@@ -361,17 +401,15 @@ from subagent_pipeline.akshare_collector import MarketSnapshot
 # ⚠️ 必须加载 L1 持久化的 snapshot，否则涨停跌停等数据丢失
 snapshot = MarketSnapshot.from_json(Path(RESULTS / "market_snapshot.json").read_text())
 
-# 从 recap 加载涨跌停明细（可选，丰富涨跌停宇宙板块）
+# ⚠️ 必须从 L0 recap 加载涨跌停明细 — board_data=None 会导致数据缺失
 recap_path = REPLAYS / f"recap_{trade_date}.json"
-board_data = None
-if recap_path.exists():
-    _recap = json.loads(recap_path.read_text())
-    board_data = {
-        "limit_ups": _recap.get("limit_board", {}).get("limit_up_stocks", []),
-        "limit_downs": _recap.get("limit_board", {}).get("limit_down_stocks", []),
-        "consecutive_boards": _recap.get("consecutive_boards", []),
-        "sectors": [],
-    }
+_recap = json.loads(recap_path.read_text(encoding="utf-8"))
+board_data = {
+    "limit_ups": _recap.get("limit_board", {}).get("limit_up_stocks", []),
+    "limit_downs": _recap.get("limit_board", {}).get("limit_down_stocks", []),
+    "consecutive_boards": _recap.get("consecutive_boards", []),
+    "sectors": [],
+}
 
 generate_pool_report(
     run_ids=all_run_ids, output_dir=str(REPORTS),
