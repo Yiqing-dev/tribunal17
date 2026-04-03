@@ -19,6 +19,32 @@ logger = logging.getLogger(__name__)
 from typing import Dict, List, Optional
 
 
+# ── Sentinel / sanitization helpers ───────────────────────────────
+
+_EMPTY_SENTINELS = frozenset({
+    "", "UNKNOWN", "unknown", "NONE", "none",
+    "N/A", "n/a", "未找到相关信息", "未找到",
+})
+
+_EMPTY_SENTINELS_UPPER = frozenset(s.upper() for s in _EMPTY_SENTINELS)
+
+
+def _is_empty(val) -> bool:
+    """Return True if *val* is a sentinel / empty placeholder."""
+    if not val:
+        return True
+    return str(val).strip().upper() in _EMPTY_SENTINELS_UPPER
+
+
+def _strip_html(text: str) -> str:
+    """Remove HTML tags and collapse excessive whitespace."""
+    if not isinstance(text, str):
+        return text
+    cleaned = re.sub(r'<[^>]+>', '', text)
+    cleaned = re.sub(r'\s{3,}', '  ', cleaned)
+    return cleaned.strip()
+
+
 # ── Prompt: Global Macro Web Agent ──────────────────────────────────
 
 def global_macro_prompt(trade_date: str, market_snapshot_md: str = "") -> str:
@@ -323,26 +349,25 @@ def merge_global_macro_into_context(
         return market_context
 
     market_context = dict(market_context)
-    market_context["global_macro"] = {
-        "te_china_index": global_macro.get("te_china_index", ""),
-        "te_macro_indicators": global_macro.get("te_macro_indicators", ""),
-        "te_forecast": global_macro.get("te_forecast", ""),
-        "inv_recent_prices": global_macro.get("inv_recent_prices", ""),
-        "inv_global_peers": global_macro.get("inv_global_peers", ""),
-        "inv_52w_range": global_macro.get("inv_52w_range", ""),
-        "overnight_markets": global_macro.get("overnight_markets", ""),
-        "geopolitical_risk": global_macro.get("geopolitical_risk", ""),
-        "cross_market_catalysts": global_macro.get("cross_market_catalysts", ""),
-        "sector_implications": global_macro.get("sector_implications", ""),
-        "foreign_sentiment": global_macro.get("foreign_sentiment", ""),
-        "macro_narrative": global_macro.get("macro_narrative", ""),
-    }
+
+    # Sanitize all string values from web-scraped data before storing
+    sanitized: Dict[str, str] = {}
+    for key in (
+        "te_china_index", "te_macro_indicators", "te_forecast",
+        "inv_recent_prices", "inv_global_peers", "inv_52w_range",
+        "overnight_markets", "geopolitical_risk", "cross_market_catalysts",
+        "sector_implications", "foreign_sentiment", "macro_narrative",
+    ):
+        raw = global_macro.get(key, "")
+        sanitized[key] = _strip_html(raw) if isinstance(raw, str) else raw
+
+    market_context["global_macro"] = sanitized
 
     # Append global risk factors to risk_alerts if present
-    geo_risk = global_macro.get("geopolitical_risk", "")
-    if geo_risk and geo_risk.upper() not in ("NONE", "未找到相关信息", ""):
+    geo_risk = sanitized.get("geopolitical_risk", "")
+    if not _is_empty(geo_risk):
         existing = market_context.get("risk_alerts", "")
-        if existing and existing != "NONE":
+        if existing and not _is_empty(existing):
             market_context["risk_alerts"] = f"{existing}, [全球]{geo_risk}"
         else:
             market_context["risk_alerts"] = f"[全球]{geo_risk}"
@@ -361,51 +386,51 @@ def format_global_macro_block(global_macro: Dict[str, str]) -> str:
     parts = ["国际宏观情报:"]
 
     te_index = global_macro.get("te_china_index", "")
-    if te_index and te_index.upper() not in ("UNKNOWN", "未找到相关信息"):
+    if not _is_empty(te_index):
         parts.append(f"  Trading Economics 中国指数: {te_index}")
 
     te_macro = global_macro.get("te_macro_indicators", "")
-    if te_macro and te_macro.upper() not in ("UNKNOWN", "未找到相关信息"):
+    if not _is_empty(te_macro):
         parts.append(f"  宏观指标(TE): {te_macro}")
 
     te_forecast = global_macro.get("te_forecast", "")
-    if te_forecast and te_forecast.upper() not in ("UNKNOWN", "未找到相关信息"):
+    if not _is_empty(te_forecast):
         parts.append(f"  TE预测: {te_forecast}")
 
     inv_prices = global_macro.get("inv_recent_prices", "")
-    if inv_prices and inv_prices.upper() not in ("UNKNOWN", "未找到相关信息"):
+    if not _is_empty(inv_prices):
         parts.append(f"  近期走势(Investing.com): {inv_prices}")
 
     inv_peers = global_macro.get("inv_global_peers", "")
-    if inv_peers and inv_peers.upper() not in ("UNKNOWN", "未找到相关信息"):
+    if not _is_empty(inv_peers):
         parts.append(f"  全球指数: {inv_peers}")
 
     inv_range = global_macro.get("inv_52w_range", "")
-    if inv_range and inv_range.upper() not in ("UNKNOWN", "未找到相关信息"):
+    if not _is_empty(inv_range):
         parts.append(f"  52周区间: {inv_range}")
 
     overnight = global_macro.get("overnight_markets", "")
-    if overnight:
+    if not _is_empty(overnight):
         parts.append(f"  隔夜外盘: {overnight}")
 
     geo = global_macro.get("geopolitical_risk", "")
-    if geo and geo.upper() not in ("NONE", "未找到相关信息"):
+    if not _is_empty(geo):
         parts.append(f"  地缘风险: {geo}")
 
     catalysts = global_macro.get("cross_market_catalysts", "")
-    if catalysts and catalysts.upper() not in ("NONE", "未找到相关信息"):
+    if not _is_empty(catalysts):
         parts.append(f"  跨市场催化剂: {catalysts}")
 
     implications = global_macro.get("sector_implications", "")
-    if implications:
+    if not _is_empty(implications):
         parts.append(f"  板块影响: {implications}")
 
     sentiment = global_macro.get("foreign_sentiment", "")
-    if sentiment and sentiment.upper() not in ("NONE", "未找到相关信息"):
+    if not _is_empty(sentiment):
         parts.append(f"  外资情绪: {sentiment}")
 
     narrative = global_macro.get("macro_narrative", "")
-    if narrative:
+    if not _is_empty(narrative):
         parts.append(f"  综合研判: {narrative}")
 
     if len(parts) <= 1:
@@ -424,6 +449,12 @@ def apply_snapshot_recovery(
     """
     if not recovery:
         return
+
+    # Sanitize all recovery string values from web-scraped data
+    recovery = {
+        k: _strip_html(v) if isinstance(v, str) else v
+        for k, v in recovery.items()
+    }
 
     def _safe_int(val):
         try:

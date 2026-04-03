@@ -35,6 +35,8 @@ from requests.exceptions import (
     ReadTimeout,
     SSLError,
 )
+# Design: unittest.mock.patch used in production for URL-selective monkey-patching.
+# Standard library, no external dependency.
 from unittest.mock import patch
 
 try:
@@ -323,5 +325,7 @@ def em_proxy_session():
             stack.enter_context(p)
         logger.info("EM proxy session active (API: %s...)", config["api_url"][:40])
         yield
+    # Design note: session closed eagerly in finally to prevent connection leaks.
+    # Streaming responses should be fully consumed before context exit.
 
     logger.info("EM proxy session closed")

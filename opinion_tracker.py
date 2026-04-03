@@ -32,7 +32,7 @@ import logging
 import os
 import tempfile
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -766,10 +766,21 @@ def track_ticker(
     ticker: str,
     storage_dir: str = "data/replays",
     limit: int = 30,
+    date_from: str = "",
 ) -> Tuple[List[DailySnapshot], List[OpinionDrift]]:
-    """Quick single-ticker tracking. Returns (snapshots, drifts)."""
+    """Quick single-ticker tracking. Returns (snapshots, drifts).
+
+    Args:
+        ticker: Ticker string (e.g. "601985.SS").
+        storage_dir: Path to ReplayStore directory.
+        limit: Max number of snapshots to return (0 = unlimited).
+        date_from: Start date filter (YYYY-MM-DD). Defaults to 30 days ago.
+    """
+    if not date_from:
+        date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
     report = build_watchlist_report(
         tickers=[ticker],
+        date_from=date_from,
         storage_dir=storage_dir,
     )
     snapshots = report.snapshots.get(ticker, [])
@@ -844,7 +855,7 @@ def _direction_arrow(direction: str) -> str:
 
 
 def _claims_match(a_text: str, b_text: str) -> bool:
-    """Fuzzy match two claim texts (same argument, possibly rephrased)."""
+    """Check if two claims are substantially similar using bigram overlap."""
     a = a_text.strip()
     b = b_text.strip()
     if not a or not b:
@@ -855,14 +866,16 @@ def _claims_match(a_text: str, b_text: str) -> bool:
     shorter, longer = (a, b) if len(a) < len(b) else (b, a)
     if shorter[:60] in longer:
         return True
-    # Character overlap on first 40 chars
-    a40 = set(a[:40])
-    b40 = set(b[:40])
-    if a40 and b40:
-        overlap = len(a40 & b40) / max(len(a40), len(b40))
-        if overlap > 0.6:
-            return True
-    return False
+    # Bigram overlap on first 60 chars (replaces single-char set overlap
+    # which gave false positives for Chinese high-frequency chars like 的/是/了/在/和)
+    a40 = a[:60]
+    b40 = b[:60]
+    if len(a40) < 4 or len(b40) < 4:
+        return a40 == b40
+    a_bigrams = {a40[i:i+2] for i in range(len(a40)-1)}
+    b_bigrams = {b40[i:i+2] for i in range(len(b40)-1)}
+    overlap = len(a_bigrams & b_bigrams) / max(len(a_bigrams), len(b_bigrams))
+    return overlap > 0.5
 
 
 def _diff_claims(

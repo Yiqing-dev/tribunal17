@@ -725,28 +725,36 @@ def run_backtest(
         if key not in seen:
             seen[key] = r
         else:
-            # Prefer generated_at timestamp; fall back to run_id lexicographic
+            # Prefer trace timestamp; fall back to run_id only when timestamps equal
             cur_ts = _run_timestamps.get(r.run_id)
             prev_ts = _run_timestamps.get(seen[key].run_id)
             if cur_ts and prev_ts:
                 if cur_ts > prev_ts:
                     seen[key] = r
-            elif r.run_id > seen[key].run_id:
+                elif cur_ts == prev_ts and r.run_id > seen[key].run_id:
+                    seen[key] = r
+            elif cur_ts and not prev_ts:
+                # Current has timestamp, previous doesn't — prefer current
                 seen[key] = r
+            elif not cur_ts and not prev_ts:
+                # Neither has timestamp — fall back to run_id
+                if r.run_id > seen[key].run_id:
+                    seen[key] = r
+            # else: prev has timestamp but cur doesn't — keep prev
     results = list(seen.values())
     results.sort(key=lambda r: r.trade_date, reverse=True)
 
     # Shadow VETO evaluation: re-evaluate VETO signals with their pre-veto direction
     shadow_results: List[BacktestResult] = []
+    _trace_cache: Dict[str, RunTrace] = {}
     for r in results:
         if r.eval_status != "skipped_veto":
             continue
-        # Determine pre-veto direction from the trace
-        trace_d = _run_timestamps.get(r.run_id)  # reuse cached timestamp check
+        # Determine pre-veto direction from the trace (cached to avoid redundant loads)
         pre_veto_action = ""
         for entry in store.list_runs(limit=500):
             if entry.get("run_id") == r.run_id:
-                trace = store.load(r.run_id)
+                trace = _trace_cache.setdefault(r.run_id, store.load(r.run_id))
                 if trace:
                     pre_veto_action = getattr(trace, "pre_veto_action", "")
                 break

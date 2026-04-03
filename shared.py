@@ -13,6 +13,7 @@ def common_input_block(
     currency: str = "CNY",
     language: str = "Chinese",
 ) -> str:
+    # No input validation by design — callers (prompts.py functions) are trusted internal code.
     return (
         f"**COMMON INPUT BLOCK**:\n"
         f"【Target】 {ticker}\n"

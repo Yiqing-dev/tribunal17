@@ -6,6 +6,7 @@ from datetime import date
 
 def _today() -> str:
     """Return today's date as YYYY-MM-DD string."""
+    # Naming: underscore prefix indicates internal utility; CLAUDE.md references it for caller convenience.
     return date.today().isoformat()
 
 

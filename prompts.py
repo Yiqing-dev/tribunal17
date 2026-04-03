@@ -163,7 +163,8 @@ def market_analyst(ticker: str, current_date: str, market_context_block: str = "
 3. Volume trends and any unusual trading activity
 4. Northbound/institutional fund flow data (if A-share)
 """
-    return f"""**ROLE**: You are the [Technical Analyst] (Pro v2).
+    return f"""<<<SYSTEM_INSTRUCTIONS>>>
+**ROLE**: You are the [Technical Analyst] (Pro v2).
 **OBJECTIVE**: Convert {ticker}'s price action over the last 30 days into actionable mid-term (3-6 Months) execution conditions, and output a **pillar_score** (0-4) for Novice Mode.
 
 {common_input_block(ticker, **kw)}
@@ -202,6 +203,7 @@ Columns: Conclusion | FACT(Link+Date) | INTERP | DISPROVE | Confidence | Decisio
 At the very end of your response, you MUST output the score line exactly as:
 `pillar_score = {{0, 1, 2, 3, or 4}}`
 
+<<<USER_DATA>>>
 {_data_instruction}
 {_data_block}
 {_search_guidance}
@@ -238,7 +240,8 @@ def fundamentals_analyst(ticker: str, current_date: str, akshare_md: str = "", *
 6. 十大流通股东及其持股变化（最近两个季度对比）
 7. 基金持仓季度变化：公募/社保/QFII 增减仓方向
 """
-    return f"""**ROLE**: You are the [Fundamental Analyst] (Pro v2).
+    return f"""<<<SYSTEM_INSTRUCTIONS>>>
+**ROLE**: You are the [Fundamental Analyst] (Pro v2).
 **OBJECTIVE**: Use S1/S2 evidence to determine the fundamental drivers for {ticker} over 3-6 Months, and output a **pillar_score** (0-4).
 
 {common_input_block(ticker, **kw)}
@@ -280,6 +283,7 @@ Columns: FACT(Link+Date) | Key Numbers | Bull Impact | Bear Impact | Uncertainty
 At the very end of your response, you MUST output the score line exactly as:
 `pillar_score = {{0, 1, 2, 3, or 4}}`
 
+<<<USER_DATA>>>
 {_data_instruction}
 {_data_block}
 {_search_guidance}
@@ -317,7 +321,8 @@ def news_analyst(ticker: str, current_date: str, akshare_md: str = "", **kw) -> 
 6. 监管公告：证监会/交易所问询函、行政处罚、立案调查
 7. 概念股/题材归属：当前所属板块概念(如新能源/AI/半导体)，近期轮动方向
 """
-    return f"""**ROLE**: You are the [News & Catalyst Agent] (Pro v2).
+    return f"""<<<SYSTEM_INSTRUCTIONS>>>
+**ROLE**: You are the [News & Catalyst Agent] (Pro v2).
 **OBJECTIVE**: Map past 30 days of info to a "Tradable Catalyst Map" for {ticker}, and output a **pillar_score** (0-4).
 
 {common_input_block(ticker, **kw)}
@@ -347,6 +352,7 @@ Columns: Event | Date | Source Tier | Link | Impact Path | Duration | Reversal |
 At the very end of your response, you MUST output the score line exactly as:
 `pillar_score = {{0, 1, 2, 3, or 4}}`
 
+<<<USER_DATA>>>
 {_data_instruction}
 {_data_block}
 {_search_guidance}
@@ -382,7 +388,8 @@ def sentiment_analyst(ticker: str, current_date: str, akshare_md: str = "", **kw
 5. Social media sentiment (Guba/Xueqiu discussion volume and tone)
 6. Dragon-Tiger board data (if available)
 """
-    return f"""**ROLE**: You are the [Flow & Sentiment Agent] (Pro v2).
+    return f"""<<<SYSTEM_INSTRUCTIONS>>>
+**ROLE**: You are the [Flow & Sentiment Agent] (Pro v2).
 **OBJECTIVE**: Assess "Crowding" and "Reflexivity Risk" for {ticker}, and output a **pillar_score** (0-4). (S3 Social data is auxiliary only).
 
 {common_input_block(ticker, **kw)}
@@ -415,6 +422,7 @@ Columns: Signal | FACT(Link+Date) | Interp | Reverse Risk | Trigger | Confidence
 At the very end of your response, you MUST output the score line exactly as:
 `pillar_score = {{0, 1, 2, 3, or 4}}`
 
+<<<USER_DATA>>>
 {_data_instruction}
 {_data_block}
 {_search_guidance}

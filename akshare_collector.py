@@ -503,15 +503,32 @@ def _collect_basic_info(b: AkshareBundle):
     raise RuntimeError("basic_info: both EM and XQ failed")
 
 
+# Module-level cache for full-market spot data to avoid redundant downloads
+# in batch loops.  Tuple of (DataFrame, timestamp_float).
+_cached_spot_df = None
+_cached_spot_ts: float = 0.0
+_SPOT_CACHE_TTL = 60.0  # seconds
+
+
 def _collect_spot(b: AkshareBundle):
     """stock_zh_a_spot_em — real-time snapshot (PE, PB, price).
 
     Fallback: XQ individual spot when EM is down.
+    Uses a module-level cache (60 s TTL) so batch runs don't re-download
+    the full ~5500-row table for every ticker.
     """
+    global _cached_spot_df, _cached_spot_ts
     ak = _get_ak()
     try:
-        with em_proxy_session():
-            df = ak.stock_zh_a_spot_em()
+        now = time.monotonic()
+        if _cached_spot_df is not None and (now - _cached_spot_ts) < _SPOT_CACHE_TTL:
+            df = _cached_spot_df
+        else:
+            with em_proxy_session():
+                df = ak.stock_zh_a_spot_em()
+            if df is not None and not df.empty:
+                _cached_spot_df = df
+                _cached_spot_ts = now
         if df is None or df.empty:
             raise ValueError("empty EM spot data")
         row = df[df["代码"] == b.ticker]

@@ -26,19 +26,29 @@ class ReplayService:
 
     def __init__(self, store: Optional[ReplayStore] = None):
         self.store = store or ReplayStore()
+        self._cache: Dict[str, RunTrace] = {}
 
     # ── Core Replay Operations ───────────────────────────────────────────
 
+    def _cached_load(self, run_id: str) -> Optional[RunTrace]:
+        """Load a trace with instance-level caching to avoid redundant JSON I/O."""
+        if run_id in self._cache:
+            return self._cache[run_id]
+        trace = self.store.load(run_id)
+        if trace is not None:
+            self._cache[run_id] = trace
+        return trace
+
     def load_run(self, run_id: str) -> Optional[RunTrace]:
         """Load a complete run trace."""
-        return self.store.load(run_id)
+        return self._cached_load(run_id)
 
     def list_nodes(self, run_id: str) -> List[Dict[str, str]]:
         """List all nodes in execution order with status summary.
 
         Returns list of dicts: {seq, node_name, status, duration_ms, research_action}
         """
-        trace = self.store.load(run_id)
+        trace = self._cached_load(run_id)
         if not trace:
             return []
 
@@ -138,7 +148,7 @@ class ReplayService:
         Answers: "For the final decision, what evidence was cited, what claims
         were made, how were they arbitrated, and what compliance gate fired?"
         """
-        trace = self.store.load(run_id)
+        trace = self._cached_load(run_id)
         if not trace:
             return None
 
@@ -214,7 +224,7 @@ class ReplayService:
 
         This is the primary debugging entry point.
         """
-        trace = self.store.load(run_id)
+        trace = self._cached_load(run_id)
         if not trace:
             return None
 
@@ -266,7 +276,7 @@ class ReplayService:
 
     def compute_metrics(self, run_id: str) -> Optional[RunMetrics]:
         """Compute RunMetrics from a stored trace."""
-        trace = self.store.load(run_id)
+        trace = self._cached_load(run_id)
         if not trace:
             return None
         return self._metrics_from_trace(trace)
@@ -359,7 +369,7 @@ class ReplayService:
 
     def _find_node(self, run_id: str, node_name: str) -> Optional[NodeTrace]:
         """Find a specific node trace within a run."""
-        trace = self.store.load(run_id)
+        trace = self._cached_load(run_id)
         if not trace:
             return None
         for nt in trace.node_traces:

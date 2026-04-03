@@ -1,4 +1,7 @@
-"""Shared CSS tokens, JS helpers, and brand assets used across all renderers."""
+"""Shared CSS tokens, JS helpers, and brand assets used across all renderers.
+
+Each HTML report embeds full CSS inline for self-contained static export (no external stylesheets needed).
+"""
 
 _BASE_CSS = """
 /* ═══════════════════════════════════════════════════════════════
@@ -576,6 +579,7 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); }
 }
 """
 
+# Only included in snapshot/research reports. Other report types display KPI values statically.
 _COUNTUP_JS = """<script>
 document.addEventListener('DOMContentLoaded',function(){
   document.querySelectorAll('.kpi-val').forEach(function(el){

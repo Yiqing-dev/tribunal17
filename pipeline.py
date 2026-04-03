@@ -1,5 +1,7 @@
 """Pipeline orchestrator — shows how to run the full TradingAgents pipeline using Claude Code subagents.
 
+# NOTE: This is a reference document, not executable code. Imports trigger config validation at import time.
+
 This file is a REFERENCE IMPLEMENTATION showing the subagent invocation pattern.
 It cannot be executed directly as a Python script — it is designed to be translated
 into sequential/parallel Agent tool calls within a Claude Code conversation.
