@@ -507,9 +507,11 @@ def _collect_basic_info(b: AkshareBundle):
 
 # Module-level cache for full-market spot data to avoid redundant downloads
 # in batch loops.  Tuple of (DataFrame, timestamp_float).
+import threading as _threading
 _cached_spot_df = None
 _cached_spot_ts: float = 0.0
 _SPOT_CACHE_TTL = 60.0  # seconds
+_spot_lock = _threading.Lock()
 
 
 def _collect_spot(b: AkshareBundle):
@@ -522,15 +524,16 @@ def _collect_spot(b: AkshareBundle):
     global _cached_spot_df, _cached_spot_ts
     ak = _get_ak()
     try:
-        now = time.monotonic()
-        if _cached_spot_df is not None and (now - _cached_spot_ts) < _SPOT_CACHE_TTL:
-            df = _cached_spot_df
-        else:
-            with em_proxy_session():
-                df = ak.stock_zh_a_spot_em()
-            if df is not None and not df.empty:
-                _cached_spot_df = df
-                _cached_spot_ts = now
+        with _spot_lock:
+            now = time.monotonic()
+            if _cached_spot_df is not None and (now - _cached_spot_ts) < _SPOT_CACHE_TTL:
+                df = _cached_spot_df
+            else:
+                with em_proxy_session():
+                    df = ak.stock_zh_a_spot_em()
+                if df is not None and not df.empty:
+                    _cached_spot_df = df
+                    _cached_spot_ts = now
         if df is None or df.empty:
             raise ValueError("empty EM spot data")
         row = df[df["代码"] == b.ticker]
@@ -1586,16 +1589,26 @@ _CN_HOLIDAYS_2026 = {
 
 # Union of all year sets for efficient lookup
 _CN_HOLIDAYS = _CN_HOLIDAYS_2025 | _CN_HOLIDAYS_2026
+_CN_HOLIDAYS_MAX_YEAR = 2026  # bump when adding next year's holidays
 
 
 def _is_cn_trading_day(date_str: str) -> bool:
     """Check if a date is a potential A-share trading day.
+
+    WARNING: Holiday calendar only covers up to {_CN_HOLIDAYS_MAX_YEAR}.
+    Dates beyond that year fall back to weekday-only check.
 
     Checks both weekends and major 2026 CN public holidays.
     Returns True for likely trading days, False otherwise.
     """
     try:
         dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
+        if dt.year > _CN_HOLIDAYS_MAX_YEAR:
+            logger.warning(
+                "Holiday calendar expired: %d > %d. "
+                "Falling back to weekday-only check. Update _CN_HOLIDAYS.",
+                dt.year, _CN_HOLIDAYS_MAX_YEAR,
+            )
         if dt.weekday() >= 5:  # Sat/Sun
             return False
         if date_str[:10] in _CN_HOLIDAYS:

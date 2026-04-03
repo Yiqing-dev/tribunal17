@@ -224,10 +224,18 @@ def _try_json_parse(block: str) -> Optional[Dict[str, Any]]:
     stripped = block.strip()
     if not stripped.startswith('{'):
         return None
-    # Fix trailing commas before attempting parse
+    decoder = json.JSONDecoder()
+    # Try raw parse first — only apply regex fixups if raw fails
+    try:
+        obj, _ = decoder.raw_decode(stripped)
+        if isinstance(obj, dict):
+            return obj
+    except (json.JSONDecodeError, ValueError):
+        pass
+    # Fallback: fix trailing commas (may damage string contents, but
+    # the raw parse above already failed, so this is best-effort)
     cleaned = re.sub(r',\s*}', '}', stripped)
     cleaned = re.sub(r',\s*]', ']', cleaned)
-    decoder = json.JSONDecoder()
     try:
         obj, _ = decoder.raw_decode(cleaned)
         if isinstance(obj, dict):

@@ -242,9 +242,11 @@ def validate_pipeline_config() -> None:
                 f"Model assigned to agent '{agent}' but it has no pipeline stage"
             )
         if models[agent] not in _KNOWN_MODELS:
-            raise ValueError(
-                f"Agent '{agent}' has unknown model '{models[agent]}'; "
-                f"expected one of {sorted(_KNOWN_MODELS)}"
+            import warnings
+            warnings.warn(
+                f"Agent '{agent}' uses model '{models[agent]}' not in "
+                f"known set {sorted(_KNOWN_MODELS)}; may be intentional for custom providers",
+                stacklevel=2,
             )
 
     # Cycle detection (topological sort attempt)
@@ -265,4 +267,11 @@ def validate_pipeline_config() -> None:
         _visit(s)
 
 
-validate_pipeline_config()
+# Run validation at import time — warn instead of crashing so that
+# simple imports (e.g. `from .config import _today`) still work even
+# if PIPELINE_STAGES has a temporary misconfiguration.
+try:
+    validate_pipeline_config()
+except ValueError as _e:
+    import warnings as _w
+    _w.warn(f"Pipeline config validation failed: {_e}", stacklevel=1)
