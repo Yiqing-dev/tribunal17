@@ -22,8 +22,8 @@ from .decision_labels import (
 )
 from .shared_css import _BRAND_LOGO_SM, _BRAND_LOGO_LG
 from .shared_utils import _esc, _html_wrap, _empty_state
-from .market_renderer import (
-    _MARKET_CSS,
+from .market_renderer import _MARKET_CSS
+from .market_treemap import (
     _render_heatmap_legend,
     _render_svg_heatmap,
     _render_detail_drawer,
