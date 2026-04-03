@@ -300,7 +300,7 @@ class TestMarketConfig:
 
     def test_pipeline_stages_include_market(self):
         from subagent_pipeline.config import PIPELINE_STAGES
-        market_stage = [s for s in PIPELINE_STAGES if s["stage"] == 0.8]
+        market_stage = [s for s in PIPELINE_STAGES if s["stage"] == 8]
         assert len(market_stage) == 1
         assert market_stage[0]["run_once_per_day"] is True
         assert "macro_analyst" in market_stage[0]["agents"]

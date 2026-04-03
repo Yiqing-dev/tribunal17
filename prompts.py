@@ -596,7 +596,10 @@ def scenario_agent(
 {_date_line}
 **OBJECTIVE**: Review the Bull vs Bear debate for {ticker} and construct a probabilistic Scenario Tree (Base/Bull/Bear).
 
-{common_input_block(ticker, **kw)}
+**COMMON INPUT BLOCK**:
+【Target】 {ticker}
+【Market】 CN_A
+【Language】 Chinese
 
 **INSTRUCTIONS**:
 1. Review the Bull History and Bear History below.
