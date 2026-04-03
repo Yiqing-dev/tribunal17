@@ -425,7 +425,7 @@ def process_all(trade_date: str = ""):
             )
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(board_data, f, ensure_ascii=False, indent=2)
+                    json.dump(board_data, f, ensure_ascii=False, indent=2, allow_nan=False)
                 os.replace(tmp, str(board_path))
             except BaseException:
                 try:

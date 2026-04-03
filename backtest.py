@@ -886,7 +886,7 @@ def save_backtest_report(report: BacktestReport, output_dir: str = "data/reports
     fd, tmp = tempfile.mkstemp(dir=str(out_dir), suffix=".tmp", prefix=".bt-")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(report.to_dict(), f, ensure_ascii=False, indent=2)
+            json.dump(report.to_dict(), f, ensure_ascii=False, indent=2, allow_nan=False)
         os.replace(tmp, str(path))
     except BaseException:
         try:

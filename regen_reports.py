@@ -94,7 +94,7 @@ def main():
 
     # Save updated files
     with open(f"{RESULTS}/market_context.json", "w") as f:
-        json.dump(market_context, f, ensure_ascii=False, indent=2)
+        json.dump(market_context, f, ensure_ascii=False, indent=2, allow_nan=False)
     with open(f"{RESULTS}/market_context_block.txt", "w") as f:
         f.write(market_context_block)
     print(f"  regime={market_context['regime']}, pcm={market_context['position_cap_multiplier']}")
