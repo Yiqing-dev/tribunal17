@@ -291,6 +291,11 @@ def process_all(trade_date: str = ""):
     """
     today = trade_date or date.today().isoformat()
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    # Structured degradation tracker: {step: {status, fallback, error}}
+    _degradations: list = []
+
+    def _track_degradation(step: str, error: str, fallback: str = "skipped"):
+        _degradations.append({"step": step, "error": str(error)[:200], "fallback": fallback})
 
     # --- Step 1: Try to collect market snapshot ---
     market_snapshot = None
@@ -306,6 +311,7 @@ def process_all(trade_date: str = ""):
               f"{len(market_snapshot.apis_failed)} failed")
     except Exception as e:
         print(f"  [MARKET] Snapshot collection failed: {e}")
+        _track_degradation("market_snapshot", e, "no snapshot data")
 
     # --- Step 1b: Try to collect board data (sector heatmap, limits) ---
     board_data = None
@@ -437,6 +443,7 @@ def process_all(trade_date: str = ""):
                   f"{len(board_data.get('limit_ups', []))} limit-ups")
         except Exception as e:
             print(f"  [BOARD] Board data collection failed: {e}")
+            _track_degradation("board_data", e, "no limit/sector detail")
 
     # --- Step 2: Parse market agent outputs (if available) ---
     market_agent_outputs = _load_market_agent_outputs(RESULTS_DIR)
@@ -574,6 +581,15 @@ def process_all(trade_date: str = ""):
             print(f"    {t}: {p}")
     if market_report_path:
         print(f"  [MARKET] {market_report_path}")
+
+    # --- Degradation summary ---
+    if _degradations:
+        print(f"\n⚠ 降级矩阵 ({len(_degradations)} 项):")
+        for d in _degradations:
+            print(f"  [{d['step']}] {d['error'][:80]} → {d['fallback']}")
+    else:
+        print("\n✓ 无数据降级")
+
     return results
 
 

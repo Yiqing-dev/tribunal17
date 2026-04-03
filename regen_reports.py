@@ -39,15 +39,27 @@ TICKERS = [
     ("002131", "\u5229\u6b27\u80a1\u4efd"),
 ]
 
-RUN_IDS = json.load(open(f"{RESULTS}/run_ids.json"))
+RUN_IDS = []  # populated in main()
+
+
+def _load_run_ids():
+    path = f"{RESULTS}/run_ids.json"
+    if not os.path.exists(path):
+        print(f"WARNING: {path} not found, using empty run_ids")
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def read(name):
-    with open(f"{RESULTS}/{name}", "r") as f:
+    with open(f"{RESULTS}/{name}", "r", encoding="utf-8") as f:
         return f.read()
 
 
 def main():
+    global RUN_IDS
+    RUN_IDS = _load_run_ids()
+
     # ── Step 1: Parse L1 agent outputs ──
     print("=== Step 1: Parse L1 agent outputs ===")
     macro_text = read("macro_analyst_output.txt")
@@ -93,9 +105,9 @@ def main():
     market_context_block = format_market_context_block(market_context)
 
     # Save updated files
-    with open(f"{RESULTS}/market_context.json", "w") as f:
+    with open(f"{RESULTS}/market_context.json", "w", encoding="utf-8") as f:
         json.dump(market_context, f, ensure_ascii=False, indent=2, allow_nan=False)
-    with open(f"{RESULTS}/market_context_block.txt", "w") as f:
+    with open(f"{RESULTS}/market_context_block.txt", "w", encoding="utf-8") as f:
         f.write(market_context_block)
     print(f"  regime={market_context['regime']}, pcm={market_context['position_cap_multiplier']}")
     print(f"  breadth_state={market_context['breadth_state']}, adr={market_context['advance_decline_ratio']}")
@@ -144,7 +156,7 @@ def main():
         print(f"  \u2713 {ticker} {name} -> {paths['run_id']}")
 
     # Save new run_ids
-    with open(f"{RESULTS}/run_ids.json", "w") as f:
+    with open(f"{RESULTS}/run_ids.json", "w", encoding="utf-8") as f:
         json.dump(new_run_ids, f, indent=2)
 
     # ── Step 4: Regenerate L4 committee reports ──
@@ -304,7 +316,7 @@ def main():
         if act in signal_dist:
             lines.append(f"- {label_map.get(act, act)}: {signal_dist[act]} \u53ea")
 
-    with open(f"{REPORTS}/brief-{TRADE_DATE}.md", "w") as f:
+    with open(f"{REPORTS}/brief-{TRADE_DATE}.md", "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     print("  \u2713 brief generated")
 

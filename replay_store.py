@@ -5,7 +5,7 @@ Storage format: one JSONL file per run, indexed by a manifest file.
 Directory structure:
     data/replays/
         manifest.jsonl        ← one line per run (run_id, ticker, date, status)
-        run-abc123def456.jsonl ← full RunTrace for that run
+        run-abc123def456.json  ← full RunTrace for that run
 """
 
 import fcntl
