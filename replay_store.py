@@ -49,7 +49,7 @@ class ReplayStore:
         )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(trace.to_dict(), f, ensure_ascii=False, indent=2)
+                json.dump(trace.to_dict(), f, ensure_ascii=False, indent=2, allow_nan=False)
             # os.replace can raise PermissionError on Windows when the
             # target file is momentarily locked by antivirus or indexer.
             # Retry up to 3 times with a brief delay.

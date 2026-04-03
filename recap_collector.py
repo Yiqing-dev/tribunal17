@@ -350,8 +350,12 @@ def _collect_index_history(code: str, name: str, days: int = 60) -> IndexInfo:
     )
 
 
-def collect_index_summary(trade_date: str = "") -> IndexSummary:
-    """Collect all major index data + breadth stats."""
+def collect_index_summary(trade_date: str = "", spot_df=None) -> IndexSummary:
+    """Collect all major index data + breadth stats.
+
+    If *spot_df* is provided, reuse it instead of fetching stock_zh_a_spot_em()
+    again (avoids a redundant ~3s API call when the caller already has the data).
+    """
     ak = _get_ak()
     indices = []
     for code, name in RECAP_CONFIG["indices"]:
@@ -367,9 +371,13 @@ def collect_index_summary(trade_date: str = "") -> IndexSummary:
     advancers = decliners = flat = 0
     flat_is_estimated = False
     turnover_total = 0
-    try:
-        with em_proxy_session():
-            spot_df = ak.stock_zh_a_spot_em()
+    if spot_df is None:
+        try:
+            with em_proxy_session():
+                spot_df = ak.stock_zh_a_spot_em()
+        except Exception as e:
+            logger.warning(f"  [FAIL] spot breadth: {e}")
+    if spot_df is not None:
         pct_col = "涨跌幅"
         if pct_col in spot_df.columns:
             advancers = int((spot_df[pct_col] > 0).sum())
@@ -378,8 +386,6 @@ def collect_index_summary(trade_date: str = "") -> IndexSummary:
         amt_col = "成交额"
         if amt_col in spot_df.columns:
             turnover_total = float(spot_df[amt_col].sum()) / 1e8
-    except Exception as e:
-        logger.warning(f"  [FAIL] spot breadth: {e}")
 
     # Fallback: derive breadth from THS industry summary
     if advancers == 0 and decliners == 0:
@@ -606,9 +612,10 @@ def collect_limit_board(trade_date: str = "", spot_df=None) -> LimitBoardSummary
             pct = _safe_float(r.get("涨跌幅")) or 0
             code = str(r.get("代码", ""))
             is_chinext = code.startswith("3") or code.startswith("68")
+            is_bje = code.startswith(("8", "4"))
             is_st = "ST" in str(r.get("名称", ""))
             # NOTE: Threshold logic duplicated in akshare_collector._collect_breadth — see M-14
-            limit_threshold = 4.9 if is_st else (19.9 if is_chinext else 9.9)
+            limit_threshold = 4.9 if is_st else (29.9 if is_bje else (19.9 if is_chinext else 9.9))
 
             amt = (_safe_float(r.get("成交额")) or 0) / 1e8
 
@@ -907,7 +914,7 @@ def collect_daily_recap(trade_date: str = "") -> DailyRecapData:
     # Collect all components
     idx_summary = IndexSummary(date=today)
     try:
-        idx_summary = _retry_call(collect_index_summary, today)
+        idx_summary = _retry_call(collect_index_summary, today, spot_df)
         logger.info(f"  [OK] index summary: {len(idx_summary.indices)} indices")
     except Exception as e:
         logger.warning(f"  [FAIL] index summary: {e}")

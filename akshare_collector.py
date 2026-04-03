@@ -471,7 +471,9 @@ def _collect_basic_info(b: AkshareBundle):
         b.market_cap_yi = raw_cap / 1e8 if raw_cap and raw_cap > 0 else None  # → 亿
         raw_fcap = _safe_float(info.get("流通市值"))
         b.float_cap_yi = raw_fcap / 1e8 if raw_fcap and raw_fcap > 0 else None  # → 亿
-        return
+        if b.name and b.market_cap_yi:
+            return
+        logger.info("  [basic_info] EM data incomplete, trying XQ fallback")
     except Exception as e:
         logger.warning(f"  [basic_info] EM failed ({e}), trying XQ fallback")
 
@@ -639,11 +641,13 @@ def _collect_valuation_history(b: AkshareBundle):
     pe_df = None
     pb_df = None
     try:
-        pe_df = ak.stock_zh_valuation_baidu(symbol=b.ticker, indicator="市盈率(TTM)")
+        with em_proxy_session():
+            pe_df = ak.stock_zh_valuation_baidu(symbol=b.ticker, indicator="市盈率(TTM)")
     except Exception as e:
         logger.warning(f"  [valuation] Baidu PE failed: {e}")
     try:
-        pb_df = ak.stock_zh_valuation_baidu(symbol=b.ticker, indicator="市净率")
+        with em_proxy_session():
+            pb_df = ak.stock_zh_valuation_baidu(symbol=b.ticker, indicator="市净率")
     except Exception as e:
         logger.warning(f"  [valuation] Baidu PB failed: {e}")
 
@@ -673,7 +677,8 @@ def _collect_valuation_history(b: AkshareBundle):
 def _collect_financial_summary(b: AkshareBundle):
     """stock_financial_abstract — key financial metrics (80 rows × N periods)."""
     ak = _get_ak()
-    df = ak.stock_financial_abstract(symbol=b.ticker)
+    with em_proxy_session():
+        df = ak.stock_financial_abstract(symbol=b.ticker)
     if df is None or df.empty:
         return
 
@@ -722,7 +727,8 @@ def _collect_financial_ratios(b: AkshareBundle):
     _REPORT_MAP = {"利润表": "lrb", "资产负债表": "zcfzb", "现金流量表": "xjllb"}
     for symbol, key in _REPORT_MAP.items():
         try:
-            df = ak.stock_financial_report_sina(stock=stock_code, symbol=symbol)
+            with em_proxy_session():
+                df = ak.stock_financial_report_sina(stock=stock_code, symbol=symbol)
             if df is not None and not df.empty:
                 b.financial_ratios[key] = {
                     "columns": df.columns.tolist()[:15],
@@ -737,7 +743,8 @@ def _collect_fund_flow(b: AkshareBundle):
     """stock_individual_fund_flow — 5-day fund flow detail."""
     ak = _get_ak()
     market = "sh" if b.ticker.startswith("6") else "sz"
-    df = ak.stock_individual_fund_flow(stock=b.ticker, market=market)
+    with em_proxy_session():
+        df = ak.stock_individual_fund_flow(stock=b.ticker, market=market)
     if df is None or df.empty:
         return
     df = df.tail(5)
@@ -833,7 +840,8 @@ def _collect_northbound(b: AkshareBundle):
 def _collect_news(b: AkshareBundle):
     """stock_news_em — recent stock-specific news."""
     ak = _get_ak()
-    df = ak.stock_news_em(symbol=b.ticker)
+    with em_proxy_session():
+        df = ak.stock_news_em(symbol=b.ticker)
     if df is None or df.empty:
         return
     articles = []
@@ -851,7 +859,8 @@ def _collect_news(b: AkshareBundle):
 def _collect_research_reports(b: AkshareBundle):
     """stock_research_report_em — analyst ratings/reports."""
     ak = _get_ak()
-    df = ak.stock_research_report_em(symbol=b.ticker)
+    with em_proxy_session():
+        df = ak.stock_research_report_em(symbol=b.ticker)
     if df is None or df.empty:
         return
     reports = []
@@ -1373,8 +1382,9 @@ def _collect_breadth(ms: MarketSnapshot, watchlist: list = None):
             code = str(r.get(code_col, ""))
             name = str(r.get(name_col, ""))
             is_st = "ST" in name
+            is_bje = code.startswith(("8", "4"))
             is_chinext_star = code.startswith("3") or code.startswith("68")
-            threshold = 4.9 if is_st else (19.9 if is_chinext_star else 9.9)
+            threshold = 4.9 if is_st else (29.9 if is_bje else (19.9 if is_chinext_star else 9.9))
             if pct >= threshold:
                 limit_up += 1
             elif pct <= -threshold:
@@ -1422,7 +1432,7 @@ def _collect_watchlist_spots_xq(ms: MarketSnapshot, watchlist: list):
                 "pct_change": _safe_float(vals.get("涨幅")),
                 "market_cap": _safe_float(vals.get("流通值", 0)),
                 "pe": _safe_float(vals.get("市盈率(动)", 0)),
-                "pb": 0,
+                "pb": _safe_float(vals.get("市净率", 0)),
                 "turnover_rate": _safe_float(vals.get("周转率", 0)),
             }
         except Exception:
@@ -1532,9 +1542,29 @@ _MARKET_COLLECTORS = [
 ]
 
 
-# Major CN public holidays for 2026 (fixed/announced dates).
-# Spring Festival and National Day ranges are approximate — the State Council
-# announces exact dates each year.  Update annually.
+# Major CN public holidays — approximate ranges by year.
+# The State Council announces exact dates each year.  Update annually.
+# TODO(2027): add 2027 holidays when State Council publishes them.
+
+_CN_HOLIDAYS_2025 = {
+    # New Year's Day
+    "2025-01-01",
+    # Spring Festival (Feb 10 – Feb 16)
+    "2025-02-10", "2025-02-11", "2025-02-12",
+    "2025-02-13", "2025-02-14", "2025-02-15", "2025-02-16",
+    # Qingming Festival
+    "2025-04-04", "2025-04-05", "2025-04-06",
+    # Labor Day
+    "2025-05-01", "2025-05-02", "2025-05-03", "2025-05-04", "2025-05-05",
+    # Dragon Boat Festival
+    "2025-05-31", "2025-06-01", "2025-06-02",
+    # Mid-Autumn Festival
+    "2025-10-06", "2025-10-07", "2025-10-08",
+    # National Day
+    "2025-10-01", "2025-10-02", "2025-10-03", "2025-10-04",
+    "2025-10-05", "2025-10-06", "2025-10-07",
+}
+
 _CN_HOLIDAYS_2026 = {
     # New Year's Day
     "2026-01-01",
@@ -1554,6 +1584,9 @@ _CN_HOLIDAYS_2026 = {
     "2026-10-05", "2026-10-06", "2026-10-07",
 }
 
+# Union of all year sets for efficient lookup
+_CN_HOLIDAYS = _CN_HOLIDAYS_2025 | _CN_HOLIDAYS_2026
+
 
 def _is_cn_trading_day(date_str: str) -> bool:
     """Check if a date is a potential A-share trading day.
@@ -1565,7 +1598,7 @@ def _is_cn_trading_day(date_str: str) -> bool:
         dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
         if dt.weekday() >= 5:  # Sat/Sun
             return False
-        if date_str[:10] in _CN_HOLIDAYS_2026:
+        if date_str[:10] in _CN_HOLIDAYS:
             return False
         return True
     except (ValueError, TypeError):
@@ -1576,7 +1609,7 @@ def _last_trading_day(date_str: str) -> str:
     """Roll back to the most recent trading day (skips weekends and CN holidays)."""
     try:
         dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
-        while dt.weekday() >= 5 or dt.strftime("%Y-%m-%d") in _CN_HOLIDAYS_2026:
+        while dt.weekday() >= 5 or dt.strftime("%Y-%m-%d") in _CN_HOLIDAYS:
             dt -= timedelta(days=1)
         return dt.strftime("%Y-%m-%d")
     except (ValueError, TypeError):

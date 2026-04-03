@@ -136,7 +136,7 @@ class SignalLedger:
         """
         if not record.recorded_at:
             record.recorded_at = datetime.now().isoformat()
-        line = json.dumps(record.to_dict(), ensure_ascii=False) + "\n"
+        line = json.dumps(record.to_dict(), ensure_ascii=False, allow_nan=False) + "\n"
 
         fd, tmp_path = tempfile.mkstemp(
             dir=str(self.path.parent), suffix=".tmp", prefix=".signal-"

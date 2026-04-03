@@ -781,7 +781,7 @@ _TREEMAP_ENGINE_JS = r"""
       var parName = nodes[pid] ? nodes[pid].label : '';
       var b = document.createElement('div');
       b.style.cssText = 'position:absolute;top:10px;left:10px;background:rgba(255,255,255,0.88);color:#1a1a1a;padding:5px 14px;border-radius:20px;cursor:pointer;font:500 13px/1.4 "PingFang SC","Microsoft YaHei",sans-serif;z-index:10;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 2px 8px rgba(0,0,0,0.1);border:1px solid rgba(0,0,0,0.06);transition:all 0.15s ease';
-      b.innerHTML = '\u2190 ' + parName;
+      b.textContent = '\u2190 ' + parName;
       b.addEventListener('mouseenter', function(){ b.style.background = 'rgba(255,255,255,0.98)'; b.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'; });
       b.addEventListener('mouseleave', function(){ b.style.background = 'rgba(255,255,255,0.88)'; b.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'; });
       b.addEventListener('click', function(){ render(rootId); });
@@ -1589,7 +1589,7 @@ def _render_limit_universe(view: MarketView) -> str:
                 "rate": rate,
                 "stocks": stock_list,
             })
-        ladder_json = _json.dumps(ladder_data, ensure_ascii=False)
+        ladder_json = _json.dumps(ladder_data, ensure_ascii=False).replace("</", "<\\/")  # N-SEC-1: prevent script injection
 
         ladder_html = f"""
       <div class="mkt-glass mkt-anim mkt-d4" style="margin-bottom:1rem">

@@ -878,13 +878,13 @@ def _render_sector_heatmap(data: dict) -> str:
     width, height = 960, 380
 
     # Size by market cap; fall back to turnover if market cap is all zero
-    has_mcap = any(n.get("market_cap_yi", 0) > 0 for n in nodes)
+    has_mcap = any(float(n.get("market_cap_yi", 0) or 0) > 0 for n in nodes)
     size_key = "market_cap_yi" if has_mcap else "turnover_yi"
     size_label = "面积=市值" if has_mcap else "面积=成交额"
 
     indexed = []
     for i, n in enumerate(nodes):
-        v = max(n.get(size_key, 1), 0.01)
+        v = max(float(n.get(size_key, 1) or 0), 0.01)
         indexed.append((i, v))
     indexed.sort(key=lambda x: x[1], reverse=True)
 

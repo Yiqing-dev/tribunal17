@@ -8,6 +8,7 @@ Usage:
 
 import json
 import logging
+import math
 import re
 import uuid
 from datetime import datetime
@@ -23,6 +24,24 @@ from .trace_models import (
 from .replay_store import ReplayStore
 
 logger = logging.getLogger(__name__)
+
+# N-BRG-1: English negation pattern for BUY/SELL inference (20-char window)
+_ENG_NEG = re.compile(r'\b(?:NOT|NO|DONT|DON\'T|AVOID|NEVER|AGAINST)\b')
+
+# N-BRG-3: Chinese negation pattern for 买入/卖出 inference (5-char window).
+# "谨慎" removed — "谨慎买入" means "buy cautiously", not negation.
+_NEG = re.compile(r'(?:不要|不宜|不建议|切勿|勿|避免|别|禁止|不应|不可|不得|不适合)')
+
+
+def _has_positive(text: str, kw: str) -> bool:
+    """Return True if *kw* appears in *text* without a preceding Chinese negation."""
+    for m in re.finditer(re.escape(kw), text):
+        window = text[max(0, m.start() - 5):m.start()]
+        if _NEG.search(window):
+            continue
+        return True
+    return False
+
 
 # ── Agent key → NodeTrace.node_name mapping ──────────────────────────────
 # Must match NODE_NAME_LABELS in dashboard/decision_labels.py
@@ -163,7 +182,11 @@ def _parse_kv_block(block: str, parse_arrays: bool = False) -> Dict[str, Any]:
                 result[key] = False
             else:
                 try:
-                    result[key] = float(val)
+                    fv = float(val)
+                    if math.isnan(fv) or math.isinf(fv):
+                        result[key] = val  # keep as string
+                    else:
+                        result[key] = fv
                 except ValueError:
                     result[key] = val
     return result
@@ -422,7 +445,7 @@ def parse_claims(text: str, direction: str = "bullish") -> List[Dict]:
                 if ids:
                     claim["supports"] = list(dict.fromkeys(ids))
                 elif len(prose_text) >= 10:
-                    claim["supports"] = [f"prose-{direction[0]}{i:03d}"]
+                    claim["supports"] = [f"prose-{'u' if direction == 'bullish' else 'r'}{i:03d}"]
                     claim["evidence_prose"] = prose_text[:300]
                 else:
                     claim["supports"] = []
@@ -438,12 +461,12 @@ def parse_claims(text: str, direction: str = "bullish") -> List[Dict]:
         conf_m = re.search(r'CONFIDENCE:\s*([\d.]+)', part)
         if conf_m:
             claim["confidence"] = float(conf_m.group(1))
-            # Normalize: if agent used 1-10 scale despite 0.0-1.0 instruction
-            if claim["confidence"] > 1.0:
-                claim["confidence"] = claim["confidence"] / 10.0
-            # Normalize: if agent used 0-100 scale (e.g. 8.5 after /10)
-            if claim["confidence"] > 1.0:
+            # Normalize: if agent used 0-100 scale
+            if claim["confidence"] > 10:
                 claim["confidence"] = claim["confidence"] / 100.0
+            # Normalize: if agent used 1-10 scale despite 0.0-1.0 instruction
+            elif claim["confidence"] > 1.0:
+                claim["confidence"] = claim["confidence"] / 10.0
             claim["confidence"] = max(0.0, min(1.0, claim["confidence"]))
         else:
             claim["confidence"] = 0.5
@@ -1186,19 +1209,18 @@ def _parse_research_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
         nt.parse_confidence = 0.4
         nt.parse_warnings = ["SYNTHESIS_OUTPUT block not found"]
         nt.status = NodeStatus.WARN
-        # Try to infer action from text — 5-char window negation check
-        _NEG = re.compile(r'(?:不要|不宜|不建议|切勿|勿|避免|谨慎|别|禁止)')
-        def _has_positive(text, kw):
-            for m in re.finditer(re.escape(kw), text):
-                window = text[max(0, m.start()-5):m.start()]
-                if _NEG.search(window):
+        # Try to infer action from text — uses module-level _NEG / _has_positive
+        def _has_positive_en(text_upper, kw):
+            for m in re.finditer(r'\b' + re.escape(kw) + r'\b', text_upper):
+                window = text_upper[max(0, m.start()-20):m.start()]
+                if _ENG_NEG.search(window):
                     continue
                 return True
             return False
         text_up = text.upper()
-        if re.search(r'\bBUY\b', text_up) or _has_positive(text, '买入'):
+        if _has_positive_en(text_up, 'BUY') or _has_positive(text, '买入'):
             nt.research_action = "BUY"
-        elif re.search(r'\bSELL\b', text_up) or _has_positive(text, '卖出'):
+        elif _has_positive_en(text_up, 'SELL') or _has_positive(text, '卖出'):
             nt.research_action = "SELL"
         else:
             nt.research_action = "HOLD"
@@ -1256,9 +1278,9 @@ def _parse_risk_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
             warnings.append("risk_flags JSON parse failed, flags may be incomplete")
             nt.parse_warnings = warnings
         flags = risk.get("risk_flags", [])
-        nt.risk_flag_count = len(flags)
+        nt.risk_flag_count = len([f for f in flags if isinstance(f, dict)])
         nt.risk_flag_categories = list(dict.fromkeys(
-            f.get("category", "") for f in flags if f.get("category")
+            f.get("category", "") for f in flags if isinstance(f, dict) and f.get("category")
         ))
 
         nt.structured_data = {
@@ -1280,7 +1302,7 @@ def _parse_risk_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
                     ),
                     "mitigant": f.get("mitigant", ""),
                 }
-                for i, f in enumerate(flags)
+                for i, f in enumerate(flags) if isinstance(f, dict)
             ],
         }
 
@@ -1395,7 +1417,10 @@ def _confidence_to_float(val, default: float = -1.0) -> float:
     if val is None:
         return default
     if isinstance(val, (int, float)):
-        return float(val)
+        v = float(val)
+        if v > 1.0:
+            v = v / 100.0 if v > 10 else v / 10.0
+        return max(0.0, min(1.0, v))
     if isinstance(val, str):
         mapped = _CONFIDENCE_MAP.get(val.strip().lower())
         if mapped is not None:
