@@ -65,6 +65,9 @@ subagent_pipeline/
 │                          ReflectionRecord (error_type, pillar_blame, lesson)
 │                          ReflectionReport (aggregation, markdown, save_json)
 │                          generate_reflection_prompt() for LLM-based deep analysis
+├── health_check.py        Post-run anomaly detection for daily batch operations
+│                          check_run_health(): node count, errors, confidence sentinel
+│                          check_batch_health(): action flips, confidence clustering
 │
 │  ── Prompt Layer ──
 ├── prompts.py             17 agent prompt functions, each returns rendered string
@@ -663,7 +666,7 @@ These rules exist because of past bugs that produced silently wrong reports. Vio
 
 ## Tests
 
-Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 918 tests, no API keys needed:
+Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 937 tests, no API keys needed:
 
 ```bash
 # All tests
