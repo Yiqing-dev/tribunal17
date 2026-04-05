@@ -80,12 +80,11 @@ REPLAYS.mkdir(parents=True, exist_ok=True)
 
 ```python
 # 检查 market_context + recap + snapshot 三件套是否齐全
-ctx_path = REPLAYS / f"market_context_{trade_date}.json"
-recap_path = REPLAYS / f"recap_{trade_date}.json"
-snap_path = REPLAYS / f"market_snapshot_{trade_date}.json"
-if ctx_path.exists() and recap_path.exists() and snap_path.exists():
-    market_context = json.loads(ctx_path.read_text(encoding="utf-8"))
-    market_context_block = (RESULTS / "market_context_block.txt").read_text(encoding="utf-8")
+from subagent_pipeline.market_layer import MarketLayerData
+mld = MarketLayerData.load(trade_date, replays_dir=str(REPLAYS), results_dir=str(RESULTS))
+if mld is not None:
+    market_context = mld.market_context
+    market_context_block = mld.market_context_block
     print(f"[CHECK] 当日 L0+L1 市场上下文已存在，跳过")
 else:
     print(f"[CHECK] 未找到 {trade_date} 的市场上下文或复盘数据，需先执行 L0+L1")
@@ -173,13 +172,17 @@ global_macro = parse_global_macro_output(global_macro_text) if global_macro_text
 market_context = assemble_market_context(macro, breadth, sector, trade_date, global_macro=global_macro)
 market_context_block = format_market_context_block(market_context)
 
-Path(RESULTS / "market_context.json").write_text(json.dumps(market_context, ensure_ascii=False, indent=2))
-Path(RESULTS / "market_context_block.txt").write_text(market_context_block)
-
-# ⚠️ 持久化 snapshot 对象 — L5/L6 渲染报告时需要 limit_up/down 等字段
-# 必须存到 REPLAYS 按日期命名，否则新鲜度检查跳过 L1 后 snapshot 丢失
-Path(REPLAYS / f"market_snapshot_{trade_date}.json").write_text(snapshot.to_json())
-Path(RESULTS / "market_snapshot.json").write_text(snapshot.to_json())  # 兼容旧路径
+# ⚠️ 使用 MarketLayerData 统一持久化三件套（context + block + snapshot）
+# 这确保新鲜度检查所需的全部文件一次性写入，不会遗漏
+from subagent_pipeline.market_layer import MarketLayerData
+mld = MarketLayerData(
+    trade_date=trade_date,
+    market_context=market_context,
+    market_context_block=market_context_block,
+    snapshot=snapshot,
+    # recap_json 由 L0 单独保存，此处不重复
+)
+mld.save(replays_dir=str(REPLAYS), results_dir=str(RESULTS))
 ```
 
 打印：`[L1] 太史令、户部司、舆图司、全球宏观情报司会同议事完毕`
@@ -401,22 +404,13 @@ print(f"[GATE] L0 复盘已确认完成: {recap_path}")
 from subagent_pipeline.renderers.report_renderer import generate_pool_report
 from subagent_pipeline.akshare_collector import MarketSnapshot
 
-# ⚠️ 必须加载 L1 持久化的 snapshot，否则涨停跌停等数据丢失
-# 优先从 REPLAYS 按日期加载（持久），fallback 到 RESULTS（临时）
-_snap_path = REPLAYS / f"market_snapshot_{trade_date}.json"
-if not _snap_path.exists():
-    _snap_path = RESULTS / "market_snapshot.json"
-snapshot = MarketSnapshot.from_json(_snap_path.read_text(encoding="utf-8"))
-
-# ⚠️ 必须从 L0 recap 加载涨跌停明细 — board_data=None 会导致数据缺失
-recap_path = REPLAYS / f"recap_{trade_date}.json"
-_recap = json.loads(recap_path.read_text(encoding="utf-8"))
-board_data = {
-    "limit_ups": _recap.get("limit_board", {}).get("limit_up_stocks", []),
-    "limit_downs": _recap.get("limit_board", {}).get("limit_down_stocks", []),
-    "consecutive_boards": _recap.get("consecutive_boards", []),
-    "sectors": [],
-}
+# ⚠️ 使用 MarketLayerData 统一加载 — 保证 snapshot + board_data 齐全
+from subagent_pipeline.market_layer import MarketLayerData
+mld = MarketLayerData.load(trade_date, replays_dir=str(REPLAYS), results_dir=str(RESULTS))
+if mld is None:
+    raise RuntimeError(f"MarketLayerData incomplete for {trade_date}. Run L0+L1 first.")
+snapshot = mld.snapshot
+board_data = mld.board_data
 
 generate_pool_report(
     run_ids=all_run_ids, output_dir=str(REPORTS),

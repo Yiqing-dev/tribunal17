@@ -1343,6 +1343,12 @@ def generate_pool_report(
     from ..replay_store import ReplayStore
     from ..replay_service import ReplayService
 
+    if market_snapshot is None:
+        logger.warning(
+            "generate_pool_report called with market_snapshot=None — "
+            "limit data will be missing. Use MarketLayerData.load()."
+        )
+
     store = ReplayStore(storage_dir=storage_dir)
     svc = ReplayService(store=store)
 

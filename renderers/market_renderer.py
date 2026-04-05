@@ -1215,7 +1215,8 @@ def generate_market_report(
 
     Args:
         market_context: Market context dict.
-        market_snapshot: Optional MarketSnapshot instance.
+        market_snapshot: MarketSnapshot instance. Pass None only for
+            degraded rendering (limit data will be missing).
         output_dir: Where to write HTML.
         trade_date: Trade date string.
         heatmap_data: Optional HeatmapData for embedding.
@@ -1227,6 +1228,12 @@ def generate_market_report(
     """
     if not market_context:
         return None
+    if market_snapshot is None:
+        logger.warning(
+            "generate_market_report called with market_snapshot=None — "
+            "limit_up/limit_down data will be missing. "
+            "Use MarketLayerData.load() to ensure snapshot is available."
+        )
 
     # Override sector_momentum with snapshot's actual price-change data.
     # The LLM agent's sector_momentum is sorted by net_inflow which is
