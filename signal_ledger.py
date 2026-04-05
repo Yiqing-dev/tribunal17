@@ -56,11 +56,12 @@ def normalize_ticker(ticker: str) -> str:
 
 
 def _flock_exclusive(f) -> None:
-    """Acquire POSIX exclusive advisory lock (non-blocking falls back to blocking)."""
-    try:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-    except OSError:
-        pass  # platform without flock — proceed unprotected
+    """Acquire POSIX exclusive advisory lock.
+
+    Fail-fast: if flock fails on Linux (NFS, read-only mount, etc.),
+    raise immediately to prevent silent data corruption from concurrent writes.
+    """
+    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
 
 
 def _flock_release(f) -> None:
@@ -68,7 +69,7 @@ def _flock_release(f) -> None:
     try:
         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     except OSError:
-        pass
+        pass  # unlock failure is non-critical — file will release on close
 
 
 @dataclass

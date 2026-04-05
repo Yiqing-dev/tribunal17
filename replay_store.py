@@ -13,7 +13,6 @@ import json
 import logging
 import os
 import tempfile
-import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -50,22 +49,10 @@ class ReplayStore:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(trace.to_dict(), f, ensure_ascii=False, indent=2, allow_nan=False)
-            # os.replace can raise PermissionError on Windows when the
-            # target file is momentarily locked by antivirus or indexer.
-            # Retry up to 3 times with a brief delay.
-            for attempt in range(3):
-                try:
-                    os.replace(tmp_path, str(trace_path))
-                    break
-                except PermissionError:
-                    if attempt < 2:
-                        logger.warning(
-                            "PermissionError replacing %s, retrying (%d/3)",
-                            trace_path, attempt + 1,
-                        )
-                        time.sleep(0.2 * (attempt + 1))
-                    else:
-                        raise
+            # os.replace is atomic on POSIX (single rename(2) syscall).
+            # No retry needed on Linux — PermissionError means real permission
+            # failure (read-only mount, wrong owner), not transient lock.
+            os.replace(tmp_path, str(trace_path))
         except BaseException:
             try:
                 os.unlink(tmp_path)
@@ -88,17 +75,14 @@ class ReplayStore:
         }
         line = json.dumps(manifest_entry, ensure_ascii=False) + "\n"
         with open(self._manifest_path, "a", encoding="utf-8") as f:
-            try:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            except OSError:
-                pass  # platform without flock — proceed unprotected
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
             try:
                 f.write(line)
             finally:
                 try:
                     fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 except OSError:
-                    pass
+                    pass  # unlock failure non-critical — released on close
 
         logger.info(f"Saved replay trace: {trace_path}")
         return trace_path
@@ -212,17 +196,14 @@ class ReplayStore:
                 }
                 line = json.dumps(entry, ensure_ascii=False) + "\n"
                 with open(self._manifest_path, "a", encoding="utf-8") as f:
-                    try:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                    except OSError:
-                        pass
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                     try:
                         f.write(line)
                     finally:
                         try:
                             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                         except OSError:
-                            pass
+                            pass  # unlock non-critical
                 repaired += 1
                 logger.info("Reconciled orphan trace: %s", run_id)
             except Exception as e:
