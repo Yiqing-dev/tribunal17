@@ -1,4 +1,13 @@
-# Pin akshare to avoid breaking API changes (field renames, removed endpoints).
-# Upgrade deliberately: run tests after `pip install akshare==X.Y.Z`.
+# Pin all critical dependencies to avoid silent breakage on deployment.
+# Upgrade deliberately: change version here → run tests → commit.
+#
+# akshare: core data source. Field names/APIs change between minor versions.
 akshare==1.18.51
-requests>=2.28
+# pandas: akshare returns DataFrames. pandas 2.x had breaking changes in .iloc/.loc.
+pandas>=2.3,<2.4
+# requests: HTTP client used directly + by akshare/proxy_pool.
+requests>=2.32,<3
+# urllib3: requests backend. urllib3 2.x dropped Python 3.7, changed retry API.
+urllib3>=2.0,<3
+# numpy: pandas dependency. numpy 2.x changed dtype defaults.
+numpy>=2.0,<3
