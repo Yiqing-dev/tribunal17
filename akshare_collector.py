@@ -875,22 +875,24 @@ def _collect_northbound(b: AkshareBundle):
 
 
 def _collect_news(b: AkshareBundle):
-    """stock_news_em — recent stock-specific news."""
+    """stock_news_em — recent stock-specific news, filtered by relevance."""
     ak = _get_ak()
     with em_proxy_session():
         df = ak.stock_news_em(symbol=b.ticker)
     if df is None or df.empty:
         return
-    articles = []
-    for _, r in df.head(15).iterrows():
-        articles.append({
+    raw_articles = []
+    for _, r in df.head(20).iterrows():  # fetch 20, filter down
+        raw_articles.append({
             "title": str(r.get("新闻标题", "")),
             "source": str(r.get("文章来源", "")),
             "time": str(r.get("发布时间", "")),
             "url": str(r.get("新闻链接", "")),
-            "content": str(r.get("新闻内容", ""))[:200],  # truncate
+            "content": str(r.get("新闻内容", ""))[:200],
         })
-    b.news_articles = articles
+    # Keyword filter: drop noise, keep high-relevance articles
+    from .news_filter import filter_news
+    b.news_articles = filter_news(raw_articles, threshold=15, max_articles=10)
 
 
 def _collect_research_reports(b: AkshareBundle):
