@@ -91,6 +91,10 @@ class SnapshotView:
     # Historical signal tracking
     signal_history: List[Dict] = field(default_factory=list)
 
+    # Visual enhancement fields
+    price_history: List[float] = field(default_factory=list)
+    previous_confidence: float = -1.0
+
     banner: Optional[BannerView] = None
 
     @classmethod
@@ -384,12 +388,34 @@ class SnapshotView:
                     "trade_date": pr.get("trade_date", ""),
                     "action": pr.get("research_action", ""),
                     "confidence": 0.0,  # manifest doesn't store confidence
+                    "run_id": pr.get("run_id", ""),
                 })
                 count += 1
                 if count >= 5:
                     break
         except Exception:
             pass
+
+        # ── Price History (for sparkline) ──
+        _price_history: List[float] = []
+        mkt_out = service.show_node_output(run_id, "Market Analyst")
+        if mkt_out:
+            _msd = (mkt_out.get("structured_data") or {})
+            _raw_prices = _msd.get("price_history", [])
+            _price_history = [float(p) for p in _raw_prices if p is not None][:30]
+
+        # ── Previous confidence (for trend arrow) ──
+        _prev_conf = -1.0
+        if signal_history:
+            # manifest doesn't store confidence; load trace if available
+            _prev_rid = signal_history[0].get("run_id", "")
+            if _prev_rid:
+                try:
+                    _pt = service.store.load(_prev_rid)
+                    if _pt:
+                        _prev_conf = _pt.final_confidence
+                except Exception:
+                    pass
 
         return cls(
             run_id=run_id,
@@ -429,5 +455,7 @@ class SnapshotView:
             tradecard=tradecard_data,
             trade_plan=trade_plan_data,
             signal_history=signal_history,
+            price_history=_price_history,
+            previous_confidence=_prev_conf,
             banner=BannerView.from_trace(trace),
         )

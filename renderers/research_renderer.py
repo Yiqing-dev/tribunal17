@@ -23,7 +23,7 @@ from .decision_labels import (
 from .shared_css import _COUNTUP_JS, _BRAND_LOGO_SM
 from .shared_utils import (
     _esc, _html_wrap, _ticker_display, _strip_preamble,
-    _format_price_zone, _degraded_banner, _empty_state,
+    _format_price_zone, _degraded_banner, _empty_state, _nav_bar,
 )
 
 
@@ -90,7 +90,8 @@ def _render_research_degraded(view: ResearchView) -> str:
     {synth_html}
     {risk_html}"""
 
-    return _html_wrap(f"{_ticker_display(view)} \u6df1\u5ea6\u7814\u7a76 \u2014 {view.trade_date}", body, "\u6df1\u5ea6\u7814\u7a76\u62a5\u544a", extra_head=_COUNTUP_JS)
+    nav = _nav_bar(view.ticker, view.run_id, "research")
+    return _html_wrap(f"{_ticker_display(view)} \u6df1\u5ea6\u7814\u7a76 \u2014 {view.trade_date}", body, "\u6df1\u5ea6\u7814\u7a76\u62a5\u544a", extra_head=_COUNTUP_JS, nav_html=nav)
 
 
 def _render_trade_plan_card(tp: dict) -> str:
@@ -537,4 +538,5 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     <div class="reveal reveal-d6">{lineage_html}</div>
     </details>"""
 
-    return _html_wrap(f"{_ticker_display(view)} \u6df1\u5ea6\u7814\u7a76 \u2014 {view.trade_date}", body, "\u6df1\u5ea6\u7814\u7a76\u62a5\u544a", extra_head=_COUNTUP_JS)
+    nav = _nav_bar(view.ticker, view.run_id, "research")
+    return _html_wrap(f"{_ticker_display(view)} \u6df1\u5ea6\u7814\u7a76 \u2014 {view.trade_date}", body, "\u6df1\u5ea6\u7814\u7a76\u62a5\u544a", extra_head=_COUNTUP_JS, nav_html=nav)

@@ -26,6 +26,7 @@ from .shared_utils import (
     _esc, _html_wrap, _ticker_display, _status_light, _strip_preamble,
     _empty_state, _format_price_zone, _evidence_strength_label,
     _degraded_banner, _bull_bear_bar, _direction_badge, _radar_svg,
+    _trend_arrow, _sparkline_svg, _nav_bar,
 )
 
 
@@ -344,13 +345,22 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
         conf_cls = "buy" if view.confidence >= 0.7 else ("hold" if view.confidence >= 0.4 else "sell")
         _conf_note = "\u2248" if getattr(view, "confidence_defaulted", False) else ""
         _conf_sub = ' <span style="font-size:.6rem;color:var(--muted);">(\u9ed8\u8ba4)</span>' if getattr(view, "confidence_defaulted", False) else ""
-        hero_kpis.append(f'<div class="kpi kpi-primary {conf_cls}"><span class="kpi-val">{_conf_note}{conf_pct}%</span><span class="kpi-label">\u7f6e\u4fe1\u5ea6{_conf_sub}</span></div>')
+        _conf_arrow = _trend_arrow(
+        view.confidence,
+        view.previous_confidence if view.previous_confidence >= 0 else None,
+    )
+    hero_kpis.append(f'<div class="kpi kpi-primary {conf_cls}"><span class="kpi-val">{_conf_note}{conf_pct}%</span>{_conf_arrow}<span class="kpi-label">\u7f6e\u4fe1\u5ea6{_conf_sub}</span></div>')
     hero_kpis.append(f'<div class="kpi kpi-secondary"><span class="kpi-val">{view.total_evidence}</span><span class="kpi-label">\u8bc1\u636e\u6761\u6570</span></div>')
     hero_kpis.append(f'<div class="kpi kpi-secondary"><span class="kpi-val">{view.attributed_rate:.0%}</span><span class="kpi-label">\u7ed1\u5b9a\u7387</span></div>')
     ev_label = _evidence_strength_label(view.evidence_strength)
     hero_kpis.append(f'<div class="kpi kpi-secondary"><span class="kpi-val" style="font-size:1.2rem">{_esc(ev_label)}</span><span class="kpi-label">\u8bc1\u636e\u5f3a\u5ea6</span></div>')
 
-    hero_kpi_grid = f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;">{"".join(hero_kpis)}</div>'
+    # Sparkline from price history
+    _sparkline_html = ""
+    if getattr(view, "price_history", None) and len(view.price_history) >= 2:
+        _sparkline_html = f'<div class="hero-sparkline">{_sparkline_svg(view.price_history)}</div>'
+
+    hero_kpi_grid = f'{_sparkline_html}<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;">{"".join(hero_kpis)}</div>'
 
     conclusion = f"""
     <div class="hero reveal">
@@ -482,4 +492,5 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     {_mc("\u50ac\u5316\u5242", catalyst_html)}
     {_mc("\u4fe1\u53f7\u5386\u53f2", signal_history_html)}"""
 
-    return _html_wrap(f"{_ticker_display(view)} \u7814\u7a76\u5feb\u7167 \u2014 {view.trade_date}", body, "\u7814\u7a76\u5feb\u7167")
+    nav = _nav_bar(view.ticker, view.run_id, "snapshot")
+    return _html_wrap(f"{_ticker_display(view)} \u7814\u7a76\u5feb\u7167 \u2014 {view.trade_date}", body, "\u7814\u7a76\u5feb\u7167", nav_html=nav)

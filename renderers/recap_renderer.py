@@ -444,19 +444,7 @@ _RECAP_CSS = """
 .temp-gauge svg { max-width: 160px; }
 .temp-gauge .gauge-label { font-size: .78rem; color: var(--muted); margin-top: .3rem; font-weight: 600; }
 
-@media print {
-  :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666}
-  body{background:#fff!important;color:#111!important}
-  .glass{background:#fff!important;box-shadow:none!important;backdrop-filter:none!important;
-    border:1px solid #ddd!important;border-radius:4px!important}
-  .animate-in{animation:none!important}
-  .container{max-width:100%;padding:0}
-  .chart-panel{display:block!important}
-  .rc-panel{display:block!important}
-  .sector-drawer,.sector-overlay,.shm-tooltip{display:none!important}
-  .toggle-btn,.csv-btn,.sd-close,.idx-tabs,.rc-tabs{display:none!important}
-  .glass{page-break-inside:avoid}
-}
+/* print rules consolidated in shared_css.py */
 """
 
 

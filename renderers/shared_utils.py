@@ -21,8 +21,12 @@ def _esc(text: str) -> str:
 
 
 def _html_wrap(title: str, body: str, tier_label: str, extra_css: str = "",
-               extra_head: str = "") -> str:
-    """Wrap body content in a full HTML document."""
+               extra_head: str = "", nav_html: str = "") -> str:
+    """Wrap body content in a full HTML document.
+
+    Args:
+        nav_html: Optional cross-report navigation bar (from _nav_bar()).
+    """
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -34,6 +38,7 @@ def _html_wrap(title: str, body: str, tier_label: str, extra_css: str = "",
 </head>
 <body>
 <div class="container">
+{nav_html}
 {body}
 <div class="footer">TradingAgents {tier_label} v0.2.0</div>
 </div>
@@ -67,11 +72,57 @@ def _strip_preamble(text: str) -> str:
     return "\n".join(cleaned).strip()
 
 
+_SVG_ICONS = {
+    "chart": (
+        '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5"'
+        ' stroke-linecap="round" stroke-linejoin="round">'
+        '<rect x="4" y="18" width="5" height="10" rx="1"/>'
+        '<rect x="13.5" y="10" width="5" height="18" rx="1"/>'
+        '<rect x="23" y="4" width="5" height="24" rx="1"/></svg>'
+    ),
+    "lightning": (
+        '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5"'
+        ' stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M18 2L6 18h8l-2 12 12-16h-8z"/></svg>'
+    ),
+    "swords": (
+        '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5"'
+        ' stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M6 6l20 20M26 6L6 26"/>'
+        '<circle cx="6" cy="6" r="2"/><circle cx="26" cy="6" r="2"/>'
+        '<circle cx="6" cy="26" r="2"/><circle cx="26" cy="26" r="2"/></svg>'
+    ),
+    "magnifier": (
+        '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5"'
+        ' stroke-linecap="round" stroke-linejoin="round">'
+        '<circle cx="14" cy="14" r="9"/><path d="M21 21l7 7"/></svg>'
+    ),
+}
+_ICON_MAP = {"📊": "chart", "⚡": "lightning", "⚔️": "swords", "🔍": "magnifier"}
+
+
+def _svg_icon(name: str, size: int = 32) -> str:
+    """Return inline SVG icon by name. Returns empty string for unknown names."""
+    svg = _SVG_ICONS.get(name, "")
+    if not svg:
+        return ""
+    return svg.replace('viewBox=', f'width="{size}" height="{size}" viewBox=', 1)
+
+
 def _empty_state(icon: str, title: str, hint: str = "") -> str:
-    """Render a polished empty-state placeholder."""
+    """Render a polished empty-state placeholder.
+
+    If *icon* matches a known emoji (📊⚡⚔️🔍), renders an SVG icon
+    with pulse animation instead. Unknown icons render as-is.
+    """
     hint_html = f'<div class="empty-state-hint">{_esc(hint)}</div>' if hint else ""
+    svg_name = _ICON_MAP.get(icon)
+    if svg_name:
+        icon_html = f'<div class="empty-state-icon empty-state-icon--svg" title="{_esc(icon)}">{_svg_icon(svg_name, 48)}</div>'
+    else:
+        icon_html = f'<div class="empty-state-icon">{icon}</div>'
     return (f'<div class="empty-state">'
-            f'<div class="empty-state-icon">{icon}</div>'
+            f'{icon_html}'
             f'<div class="empty-state-title">{_esc(title)}</div>'
             f'{hint_html}</div>')
 
@@ -439,3 +490,100 @@ def render_svg_treemap(nodes, width=600, height=340, size_key="value",
         f'xmlns="http://www.w3.org/2000/svg">'
         f'{"".join(svg_parts)}</svg>'
     )
+
+
+# ── Visual enhancement utilities (added 2026-04-05) ─────────────────────
+
+
+def _trend_arrow(current: float, previous: float = None,
+                 threshold: float = 0.01) -> str:
+    """Return a small trend arrow HTML span.
+
+    If *previous* is given, compares current vs previous.
+    Otherwise uses sign of *current* (positive=up, negative=down).
+    """
+    if previous is not None and previous != 0:
+        ratio = (current - previous) / abs(previous)
+        if ratio > threshold:
+            return '<span class="trend-arrow trend-up">↑</span>'
+        elif ratio < -threshold:
+            return '<span class="trend-arrow trend-down">↓</span>'
+        return '<span class="trend-arrow trend-neutral">→</span>'
+    # No previous — use sign
+    if current > threshold:
+        return '<span class="trend-arrow trend-up">↑</span>'
+    elif current < -threshold:
+        return '<span class="trend-arrow trend-down">↓</span>'
+    return '<span class="trend-arrow trend-neutral">→</span>'
+
+
+def _sparkline_svg(prices: list, width: int = 200, height: int = 60) -> str:
+    """Render a mini sparkline SVG from a list of close prices.
+
+    Shows polyline with gradient fill, current price dot + label.
+    """
+    if not prices or len(prices) < 2:
+        return ""
+    n = len(prices)
+    lo, hi = min(prices), max(prices)
+    spread = hi - lo if hi != lo else 1.0
+    pad_x, pad_y = 4, 6
+
+    def _x(i):
+        return pad_x + i * (width - 2 * pad_x) / (n - 1)
+
+    def _y(v):
+        return pad_y + (1 - (v - lo) / spread) * (height - 2 * pad_y)
+
+    pts = " ".join(f"{_x(i):.1f},{_y(v):.1f}" for i, v in enumerate(prices))
+    last_x, last_y = _x(n - 1), _y(prices[-1])
+
+    # Trend color
+    trend = prices[-1] - prices[0]
+    color = "#34d399" if trend > 0 else "#f87171" if trend < 0 else "#60a5fa"
+    fill_color = color.replace(")", ",0.15)").replace("#", "rgba(") if "#" in color else color
+    # Simple hex to rgba for fill
+    r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+    fill_rgba = f"rgba({r},{g},{b},0.12)"
+
+    # Polygon for gradient fill (close the area under the line)
+    poly_pts = pts + f" {_x(n-1):.1f},{height - pad_y} {_x(0):.1f},{height - pad_y}"
+
+    # Current price label
+    price_label = f"{prices[-1]:.2f}"
+
+    return (
+        f'<svg viewBox="0 0 {width} {height}" width="{width}" height="{height}" '
+        f'xmlns="http://www.w3.org/2000/svg" style="overflow:visible">'
+        f'<polygon points="{poly_pts}" fill="{fill_rgba}" stroke="none"/>'
+        f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="1.5" '
+        f'stroke-linecap="round" stroke-linejoin="round"/>'
+        f'<circle cx="{last_x:.1f}" cy="{last_y:.1f}" r="3" fill="{color}" stroke="#070e1b" stroke-width="1.5"/>'
+        f'<text x="{last_x:.1f}" y="{last_y - 6:.1f}" text-anchor="middle" '
+        f'font-size="9" font-family="var(--mono)" fill="{color}" font-weight="600">{price_label}</text>'
+        f'</svg>'
+    )
+
+
+def _nav_bar(ticker: str, run_id: str, current_page: str) -> str:
+    """Render cross-report navigation bar.
+
+    Links between snapshot/research/audit/committee for the same run.
+    """
+    if not run_id:
+        return ""
+    from .report_renderer import _safe_filename
+    safe_t = _safe_filename(ticker)
+    short_id = run_id.replace("run-", "")[:12]
+
+    pages = [
+        ("snapshot", "结论", f"{safe_t}-run-{short_id}-snapshot.html"),
+        ("research", "研究", f"{safe_t}-run-{short_id}-research.html"),
+        ("audit", "审计", f"{safe_t}-run-{short_id}-audit.html"),
+        ("committee", "辩论", f"{safe_t}-{run_id}-committee.html"),
+    ]
+    links = []
+    for key, label, href in pages:
+        cls = ' class="active"' if key == current_page else ""
+        links.append(f'<a href="{_esc(href)}"{cls}>{label}</a>')
+    return f'<nav class="cross-nav">{"".join(links)}</nav>'

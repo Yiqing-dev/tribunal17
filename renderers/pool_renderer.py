@@ -311,6 +311,16 @@ body {
 .priority-table tbody tr:hover {
   background: rgba(255, 255, 255, 0.03);
 }
+/* Heat bar behind conviction value */
+.heat-cell { position: relative; }
+.heat-bar-bg { position: absolute; inset: 0; border-radius: 3px; }
+.heat-bar-fill { height: 100%; border-radius: 3px; opacity: 0.12; }
+.heat-val { position: relative; z-index: 1; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* Mini bull/bear bar in divergence column */
+.mini-bb { display: flex; height: 4px; border-radius: 2px; overflow: hidden; margin-bottom: .15rem; }
+.mini-bb-bull { background: var(--green); }
+.mini-bb-bear { background: var(--red); }
+.mini-bb-label { font-size: .72rem; color: var(--muted); font-family: var(--mono); }
 .rank-pill {
   display: inline-flex;
   align-items: center;
@@ -756,24 +766,7 @@ button:focus-visible, [role="button"]:focus-visible {
 .empty-state-title { font-size: .88rem; font-weight: 600; margin-bottom: .25rem; }
 .empty-state-hint { font-size: .78rem; opacity: .7; }
 
-/* ── Print / Export ─────────────────────────────────────────── */
-@media print {
-  @page { size: A3 landscape; margin: 12mm; }
-  body {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-  .cover-page { page-break-after: always; min-height: 100vh; }
-  .anchor-nav, .filter-bar { display: none !important; }
-  .stock-card { page-break-inside: avoid; break-inside: avoid; }
-  .board-card { page-break-before: always; }
-  .insight-card { page-break-inside: avoid; break-inside: avoid; }
-  .reveal {
-    animation: none !important;
-    opacity: 1 !important;
-    transform: none !important;
-  }
-}
+/* print rules consolidated in shared_css.py */
 """
 
 
@@ -784,6 +777,17 @@ def _pool_action_color(action_class: str) -> str:
         "sell": "#f87171",
         "veto": "#f87171",
     }.get(action_class, "#60a5fa")
+
+
+def _mini_bb(bull: float, bear: float) -> str:
+    """Mini bull/bear bar for table cell."""
+    total = bull + bear
+    bp = int(bull / total * 100) if total > 0 else 50
+    return (
+        f'<div class="mini-bb"><div class="mini-bb-bull" style="width:{bp}%"></div>'
+        f'<div class="mini-bb-bear" style="width:{100-bp}%"></div></div>'
+        f'<span class="mini-bb-label">{bull:.1f} / {bear:.1f}</span>'
+    )
 
 
 def _pool_severity_class(severity: str) -> str:
@@ -956,8 +960,8 @@ def _render_pool_table(view: DivergencePoolView) -> str:
             <div style="color:var(--muted); font-size:.78rem;">{_esc(row.risk_state_label)}</div>
           </td>
           <td><span class="badge badge-{row.action_class}">{get_signal_emoji(row.action)} {_esc(row.action_label)}</span></td>
-          <td>{row.conviction_pct}%</td>
-          <td>{_esc(divergence)}</td>
+          <td class="heat-cell"><div class="heat-bar-bg"><div class="heat-bar-fill" style="width:{row.conviction_pct}%;background:{_pool_action_color(row.action_class)}"></div></div><span class="heat-val">{row.conviction_pct}%</span></td>
+          <td>{_mini_bb(row.bull_score, row.bear_score)}</td>
           <td>{_esc(metrics)}</td>
           <td>{_esc(risk_text)}</td>
         </tr>"""

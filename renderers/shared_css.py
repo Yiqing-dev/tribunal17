@@ -514,8 +514,42 @@ thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); }
   padding: 2rem 1rem; text-align: center; color: var(--muted);
 }
 .empty-state-icon { font-size: 2rem; margin-bottom: .6rem; opacity: .6; }
+.empty-state-icon--svg svg { width: 3rem; height: 3rem; stroke: var(--muted); fill: none; stroke-width: 1.5; }
+.empty-state-icon--svg { animation: icon-pulse 2.5s ease-in-out infinite; }
+@keyframes icon-pulse { 0%,100% { opacity: .45; transform: scale(1); } 50% { opacity: .75; transform: scale(1.06); } }
 .empty-state-title { font-size: .88rem; font-weight: 600; margin-bottom: .25rem; }
 .empty-state-hint { font-size: .78rem; opacity: .8; }
+
+/* ── Trend arrows ── */
+.trend-arrow { font-size: .7em; margin-left: .2em; font-weight: 700; vertical-align: super; }
+.trend-up { color: var(--green, #34d399); }
+.trend-down { color: var(--red, #f87171); }
+.trend-neutral { color: var(--muted, #8fa3b8); }
+
+/* ── Hero sparkline ── */
+.hero-sparkline { margin-bottom: .5rem; }
+.hero-sparkline svg { width: 100%; max-width: 220px; height: auto; }
+
+/* ── Cross-report nav ── */
+.cross-nav {
+  position: sticky; top: 0; z-index: 100;
+  display: flex; gap: 0; margin: -2.2rem -1.5rem 1.5rem;
+  background: rgba(7, 14, 27, 0.95); backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 1.5rem;
+}
+.cross-nav a {
+  display: flex; align-items: center; padding: .7rem 1.2rem;
+  color: var(--muted); text-decoration: none; font-size: .82rem;
+  font-weight: 600; letter-spacing: .04em; border-bottom: 2px solid transparent;
+  transition: color 180ms ease, border-color 180ms ease;
+}
+.cross-nav a:hover { color: var(--fg); }
+.cross-nav a.active { color: var(--accent, #f59e0b); border-bottom-color: var(--accent, #f59e0b); }
+@media (max-width: 760px) {
+  .cross-nav { margin: -1.25rem -.75rem 1rem; padding: 0 .75rem; overflow-x: auto; }
+  .cross-nav a { padding: .5rem .8rem; font-size: .78rem; white-space: nowrap; }
+}
 
 /* ── S1: Contrast boost ── */
 .kpi-label, .card-title, .tl, .te, .sec-sub,
@@ -587,19 +621,38 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); }
 .hm-leg-item { cursor: pointer; transition: opacity var(--dur-fast) var(--ease-out); }
 .hm-leg-item:hover { opacity: .85; }
 
+/* ── Print — consolidated from all renderers ──────────────── */
 @media print {
+  @page { margin: 15mm; }
   :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666;--white:#111;--accent:#333}
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   body{background:#fff!important;color:#111!important}
-  .card,.hero{background:#fff!important;box-shadow:none!important;backdrop-filter:none!important;
+  body::before,.hero::after{display:none!important}
+  /* Cards & glass */
+  .card,.hero,.glass,.debate-hero,.verdict-card{
+    background:#fff!important;box-shadow:none!important;backdrop-filter:none!important;
     border:1px solid #ddd!important;border-radius:4px!important}
-  .hero::after,body::before{display:none}
-  .reveal{animation:none!important}
-  .conf-fill,.bb-bull,.bb-bear{animation:none!important}
-  .container{max-width:100%;padding:0}
-  details[open]>div{display:block!important}
-  .toggle-btn,.csv-btn{display:none!important}
-  h2{color:#333!important}
-  .card{page-break-inside:avoid}
+  /* Page breaks */
+  .card,.glass,.stock-card,.insight-card{page-break-inside:avoid;break-inside:avoid}
+  .cover-page{page-break-after:always}
+  .board-card{page-break-before:always}
+  /* Disable all animations */
+  .reveal,.animate-in,.conf-fill,.bb-bull,.bb-bear,.strength-bull,.strength-bear,
+  .verdict-card,.empty-state-icon--svg{animation:none!important;opacity:1!important;transform:none!important}
+  /* Layout */
+  .container,.debate-shell{max-width:100%;padding:0}
+  details[open]>div,.chart-panel,.rc-panel{display:block!important}
+  /* Hide interactive elements */
+  .toggle-btn,.csv-btn,.sd-close,.idx-tabs,.rc-tabs,.anchor-nav,.filter-bar,
+  .sector-drawer,.sector-overlay,.shm-tooltip,.cross-nav{display:none!important}
+  /* Typography */
+  h2,.sec-title{color:#333!important}
+  .kpi-val{-webkit-text-fill-color:#111!important;background:none!important;color:#111!important}
+  /* SVG visibility */
+  svg text{fill:#333!important}
+  svg polyline,svg line{stroke:#555!important}
+  .bb-bull{background:#34d399!important} .bb-bear{background:#f87171!important}
+  .strength-bull{background:#34d399!important} .strength-bear{background:#f87171!important}
 }
 """
 

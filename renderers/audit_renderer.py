@@ -16,7 +16,7 @@ from .decision_labels import (
     safe_badge_class, get_severity_label,
 )
 from .shared_utils import (
-    _esc, _html_wrap, _ticker_display, _status_light,
+    _esc, _html_wrap, _ticker_display, _status_light, _nav_bar,
 )
 
 
@@ -280,4 +280,5 @@ def render_audit(view: AuditView) -> str:
       {failures_html or '<div class="card" style="color:var(--green);">\u65e0\u6545\u969c\u8bb0\u5f55\u3002</div>'}
     </div>"""
 
-    return _html_wrap(f"{_ticker_display(view)} \u4fe1\u4efb\u5ba1\u8ba1\u62a5\u544a \u2014 {view.trade_date}", body, "\u4fe1\u4efb\u5ba1\u8ba1\u62a5\u544a")
+    nav = _nav_bar(view.ticker, view.run_id, "audit")
+    return _html_wrap(f"{_ticker_display(view)} \u4fe1\u4efb\u5ba1\u8ba1\u62a5\u544a \u2014 {view.trade_date}", body, "\u4fe1\u4efb\u5ba1\u8ba1\u62a5\u544a", nav_html=nav)

@@ -20,8 +20,8 @@ from .debate_view import (
     TimelineEntry, DebateRound, VerdictView,
 )
 from .decision_labels import safe_badge_class, AI_DISCLAIMER_BANNER
-from .shared_css import _BASE_CSS
-from .shared_utils import _esc
+from .shared_css import _BASE_CSS, _COUNTUP_JS
+from .shared_utils import _esc, _nav_bar
 
 
 # ── CSS ───────────────────────────────────────────────────────────────
@@ -221,12 +221,24 @@ _DEBATE_CSS = """
   display: flex; height: 8px; border-radius: 4px;
   overflow: hidden; background: rgba(255,255,255,.06);
 }
-.strength-bull { background: linear-gradient(90deg, rgba(52,211,153,.3), var(--green)); border-radius: 4px 0 0 4px; }
-.strength-bear { background: linear-gradient(90deg, var(--red), rgba(248,113,113,.3)); border-radius: 0 4px 4px 0; }
+.strength-bull { background: linear-gradient(90deg, rgba(52,211,153,.3), var(--green)); border-radius: 4px 0 0 4px;
+  animation: tug-grow 1s cubic-bezier(0.22,1,0.36,1) both; }
+.strength-bear { background: linear-gradient(90deg, var(--red), rgba(248,113,113,.3)); border-radius: 0 4px 4px 0;
+  animation: tug-grow 1s cubic-bezier(0.22,1,0.36,1) 0.12s both; }
+@keyframes tug-grow { from { max-width: 0; } to { max-width: 100%; } }
+.strength-bar-wrap[data-winner="bull"] .strength-bull {
+  box-shadow: 0 0 10px rgba(52,211,153,0.3);
+}
+.strength-bar-wrap[data-winner="bear"] .strength-bear {
+  box-shadow: 0 0 10px rgba(248,113,113,0.3);
+}
 .strength-pct {
   text-align: center; font-size: .72rem; font-weight: 700;
   margin-top: .2rem;
 }
+/* Verdict entrance */
+.verdict-card { animation: verdict-entrance 0.7s cubic-bezier(0.22,1,0.36,1) both 0.2s; }
+@keyframes verdict-entrance { from { opacity:0; transform:scale(0.94) translateY(16px); } to { opacity:1; transform:scale(1) translateY(0); } }
 
 /* Claim cards */
 .claim-card {
@@ -517,17 +529,7 @@ button:focus-visible, [role="button"]:focus-visible {
 .radar-wrap { display: flex; justify-content: center; margin: var(--sp-2) 0; }
 .radar-wrap svg text { font-size: 10px; fill: #8fa3b8; }
 
-@media print {
-  :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666;--white:#111}
-  body{background:#fff!important;color:#111!important}
-  body::before{display:none}
-  .glass,.debate-hero{background:#fff!important;box-shadow:none!important;
-    backdrop-filter:none!important;border:1px solid #ddd!important;border-radius:4px!important}
-  .glass,.debate-hero{animation:none!important}
-  .debate-shell{max-width:100%;padding:0}
-  .glass{page-break-inside:avoid}
-  h2,.sec-title{color:#333!important}
-}
+/* print rules consolidated in shared_css.py */
 """
 
 
@@ -761,8 +763,9 @@ def _render_arena(v: DebateView) -> str:
     html += '  <div class="sec-head"><span class="sec-title">多空对抗</span>'
     html += f'<span class="sec-sub">Bull vs Bear Arena</span></div>\n'
 
-    # Strength bar
-    html += '  <div class="strength-bar-wrap">\n'
+    # Strength bar (with winner glow)
+    _winner = "bull" if bull_pct > 55 else ("bear" if bull_pct < 45 else "")
+    html += f'  <div class="strength-bar-wrap" data-winner="{_winner}">\n'
     html += '    <div class="strength-bar-labels">'
     html += f'<span class="bull-label">看多 {v.bull_score:.1f}</span>'
     html += f'<span class="bear-label">看空 {v.bear_score:.1f}</span>'
@@ -984,9 +987,11 @@ def render_debate_page(view: DebateView) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{_esc(title)}</title>
 <style>{_BASE_CSS}{_DEBATE_CSS}</style>
+{_COUNTUP_JS}
 </head>
 <body>
 <div class="debate-shell">
+{_nav_bar(view.ticker, view.run_id, "committee")}
 {body}
 <div class="debate-footer">TradingAgents AI Investment Committee v0.2.0</div>
 </div>
