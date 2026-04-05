@@ -1,5 +1,6 @@
 """Pipeline configuration for subagent execution."""
 
+import os
 from dataclasses import dataclass
 from datetime import date
 
@@ -41,6 +42,77 @@ class PipelineRunConfig:
         defaults.update(overrides)
         return cls(**{k: v for k, v in defaults.items()
                       if k in cls.__dataclass_fields__})
+
+    @classmethod
+    def from_env(cls, **overrides) -> "PipelineRunConfig":
+        """Create from environment variables (TA_*) with fallback to PIPELINE_CONFIG.
+
+        Env var mapping (all optional):
+            TA_TRADE_DATE          → current_date
+            TA_TICKER              → ticker
+            TA_TICKER_NAME         → ticker_name
+            TA_MARKET              → market
+            TA_CURRENCY            → currency
+            TA_LANGUAGE            → language
+            TA_MODE                → mode
+            TA_CAPITAL             → capital (float)
+            TA_MAX_SINGLE_PCT      → max_single_pct (float)
+            TA_MAX_DD              → max_dd (float)
+            TA_BULL_BEAR_ROUNDS    → bull_bear_rounds (int)
+            TA_RISK_DEBATE_ROUNDS  → risk_debate_rounds (int)
+            TA_TREND_WINDOW        → trend_override_window (int)
+            TA_TREND_THRESHOLD     → trend_override_threshold (float)
+            TA_TREND_DOWNGRADE     → trend_override_downgrade (int)
+
+        Model overrides (per-agent):
+            TA_MODEL_DEFAULT       → default model for all agents
+            TA_MODEL_{AGENT_NAME}  → per-agent override (uppercase, e.g. TA_MODEL_RESEARCH_MANAGER)
+
+        Feature flags:
+            TA_CACHE_ENABLED       → "true"/"false" (read by data_cache, not stored here)
+            TA_STRICT_DATE_CHECK   → "true"/"false" (read by callers, not stored here)
+            TA_API_MIN_INTERVAL    → float seconds (read by akshare_collector throttle)
+        """
+        # Start from PIPELINE_CONFIG defaults
+        defaults = {k: v for k, v in PIPELINE_CONFIG.items()
+                    if k in cls.__dataclass_fields__}
+
+        # Env var → field mapping
+        _ENV_MAP = {
+            "TA_TRADE_DATE": ("current_date", str),
+            "TA_TICKER": ("ticker", str),
+            "TA_TICKER_NAME": ("ticker_name", str),
+            "TA_MARKET": ("market", str),
+            "TA_CURRENCY": ("currency", str),
+            "TA_LANGUAGE": ("language", str),
+            "TA_MODE": ("mode", str),
+            "TA_CAPITAL": ("capital", float),
+            "TA_MAX_SINGLE_PCT": ("max_single_pct", float),
+            "TA_MAX_DD": ("max_dd", float),
+            "TA_BULL_BEAR_ROUNDS": ("bull_bear_rounds", int),
+            "TA_RISK_DEBATE_ROUNDS": ("risk_debate_rounds", int),
+            "TA_TREND_WINDOW": ("trend_override_window", int),
+            "TA_TREND_THRESHOLD": ("trend_override_threshold", float),
+            "TA_TREND_DOWNGRADE": ("trend_override_downgrade", int),
+        }
+
+        for env_key, (field_name, cast) in _ENV_MAP.items():
+            val = os.environ.get(env_key)
+            if val is not None:
+                try:
+                    defaults[field_name] = cast(val)
+                except (ValueError, TypeError):
+                    pass  # ignore unparseable env values, keep default
+
+        # Apply explicit overrides last (highest priority)
+        defaults.update(overrides)
+        cfg = cls(**{k: v for k, v in defaults.items()
+                     if k in cls.__dataclass_fields__})
+
+        # Apply model overrides to PIPELINE_CONFIG["models"] (side effect)
+        _apply_model_env_overrides()
+
+        return cfg
 
 
 # Default pipeline config — override per-run as needed
@@ -103,6 +175,46 @@ PIPELINE_CONFIG = {
         "research_output": "sonnet",
     },
 }
+
+
+def _apply_model_env_overrides() -> None:
+    """Apply TA_MODEL_* env vars to PIPELINE_CONFIG["models"].
+
+    TA_MODEL_DEFAULT overrides all agents.
+    TA_MODEL_{AGENT_NAME} overrides a specific agent (takes precedence).
+    """
+    models = PIPELINE_CONFIG.get("models", {})
+    default_model = os.environ.get("TA_MODEL_DEFAULT")
+    if default_model:
+        for name in models:
+            models[name] = default_model
+
+    for name in list(models):
+        env_key = f"TA_MODEL_{name.upper()}"
+        val = os.environ.get(env_key)
+        if val:
+            models[name] = val
+
+
+def get_env_bool(key: str, default: bool = False) -> bool:
+    """Read a boolean env var (true/1/yes → True, else default)."""
+    val = os.environ.get(key, "").strip().lower()
+    if val in ("true", "1", "yes"):
+        return True
+    if val in ("false", "0", "no"):
+        return False
+    return default
+
+
+def get_env_float(key: str, default: float = 0.0) -> float:
+    """Read a float env var with fallback."""
+    val = os.environ.get(key)
+    if val is not None:
+        try:
+            return float(val)
+        except ValueError:
+            pass
+    return default
 
 
 # Full pipeline execution order

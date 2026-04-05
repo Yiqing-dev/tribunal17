@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import math
+import random
 import re
 import time
 from dataclasses import dataclass, field
@@ -38,14 +39,42 @@ def _get_ak():
     return _ak
 
 
+# ── Global API throttle ─────────────────────────────────────────────────
+# Ensures minimum interval between consecutive akshare API calls to avoid
+# 429 rate limits from upstream data providers (EM, Sina, THS).
+# Configurable via TA_API_MIN_INTERVAL (seconds) and TA_API_JITTER (seconds).
+
+_throttle_lock = _threading.Lock()
+_last_api_call: float = 0.0
+
+_THROTTLE_MIN_INTERVAL = 0.3   # default minimum seconds between calls
+_THROTTLE_JITTER = 0.2         # default random jitter upper bound
+
+
+def _throttle() -> None:
+    """Wait if needed to maintain minimum interval between API calls."""
+    global _last_api_call
+    from .config import get_env_float
+    min_interval = get_env_float("TA_API_MIN_INTERVAL", _THROTTLE_MIN_INTERVAL)
+    jitter = get_env_float("TA_API_JITTER", _THROTTLE_JITTER)
+    needed = min_interval + random.uniform(0, jitter)
+    with _throttle_lock:
+        elapsed = time.time() - _last_api_call
+        if elapsed < needed:
+            time.sleep(needed - elapsed)
+        _last_api_call = time.time()
+
+
 def _retry_call(fn, *args, max_retries=2, base_delay=1.0, **kwargs):
     """Call fn with retry on transient failures (network, rate limit).
 
     Retries up to max_retries times with exponential backoff.
+    Applies global throttle before each attempt.
     Only retries on known transient exceptions; re-raises everything else.
     """
     for attempt in range(max_retries + 1):
         try:
+            _throttle()
             return fn(*args, **kwargs)
         except Exception as e:
             err_str = str(e).lower()
