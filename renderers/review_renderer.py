@@ -634,7 +634,8 @@ def generate_review_report(review, output_dir: str = "data/reports") -> Optional
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    ticker_slug = ticker.replace(".", "-") or "unknown"
+    from .report_renderer import _safe_filename
+    ticker_slug = _safe_filename(ticker) or "unknown"
     run_slug = run_id[:12] if run_id else "no-run"
     path = out_dir / f"review-{ticker_slug}-{run_slug}.html"
     path.write_text(html, encoding="utf-8")

@@ -14,9 +14,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import math
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -1493,14 +1492,9 @@ def generate_backtest_report(
 
 
 def _esc(text: str) -> str:
-    """HTML-escape."""
-    return (
-        str(text)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
+    """HTML-escape (delegates to shared_utils._esc with str coercion)."""
+    from .renderers.shared_utils import _esc as _shared_esc
+    return _shared_esc(str(text))
 
 
 def _card(title: str, value: str, tier: str = "") -> str:

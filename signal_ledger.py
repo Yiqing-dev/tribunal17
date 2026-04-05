@@ -302,10 +302,10 @@ class SignalLedger:
 
     def read(
         self,
-        ticker: str = None,
-        action: str = None,
-        after: str = None,
-        before: str = None,
+        ticker: Optional[str] = None,
+        action: Optional[str] = None,
+        after: Optional[str] = None,
+        before: Optional[str] = None,
         limit: int = 0,
     ) -> List[SignalRecord]:
         """Read signals with optional filters.
@@ -537,8 +537,8 @@ def repair_ledger(
                     d["trade_date"] = trace.trade_date
                     changed = True
                     report["date_fixes"] += 1
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("date repair failed for %s: %s", run_id, _e)
 
         # 2. Name repair: empty ticker_name
         if not d.get("ticker_name"):
@@ -548,8 +548,8 @@ def repair_ledger(
                     d["ticker_name"] = trace.ticker_name
                     changed = True
                     report["name_fixes"] += 1
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("name repair failed for %s: %s", run_id, _e)
 
         # 3. Suffix repair: re-normalize ticker
         ticker = d.get("ticker", "")

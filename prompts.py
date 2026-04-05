@@ -506,6 +506,7 @@ def bull_researcher(
     evidence_block: str = "",
     past_memory: str = "",
     current_date: str = "",
+    **kw,
 ) -> str:
     """Bull Analyst — 5 dimensions, structured claims, evidence protocol."""
     _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
@@ -551,6 +552,7 @@ def bear_researcher(
     evidence_block: str = "",
     past_memory: str = "",
     current_date: str = "",
+    **kw,
 ) -> str:
     """Bear Analyst — 5 risk dimensions, structured claims, evidence protocol."""
     _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
@@ -763,6 +765,7 @@ def aggressive_debator(
     last_neutral: str = "",
     current_date: str = "",
     evidence_block: str = "",
+    **kw,
 ) -> str:
     """Aggressive Risk Analyst — maximize upside."""
     _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
@@ -814,6 +817,7 @@ def conservative_debator(
     last_neutral: str = "",
     current_date: str = "",
     evidence_block: str = "",
+    **kw,
 ) -> str:
     """Conservative Risk Analyst — protect capital."""
     _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
@@ -866,6 +870,7 @@ def neutral_debator(
     last_conservative: str = "",
     current_date: str = "",
     evidence_block: str = "",
+    **kw,
 ) -> str:
     """Neutral Risk Analyst — optimal risk-adjusted strategy."""
     _date_line = f"\n【Date】 {current_date}\n" if current_date else ""

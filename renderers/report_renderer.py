@@ -15,10 +15,18 @@ All user-facing text is in Chinese (A-share product).
 """
 
 import logging
+import re as _re
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+_UNSAFE_PATH_RE = _re.compile(r'[^A-Za-z0-9._\-]')
+
+
+def _safe_filename(part: str) -> str:
+    """Sanitize a user-supplied string for safe use in file names."""
+    return _UNSAFE_PATH_RE.sub("_", str(part))
 
 from .views import (
     SnapshotView, ResearchView, AuditView, MarketView,
@@ -101,7 +109,7 @@ def generate_all_tiers(run_id: str, output_dir: str = "data/reports",
     # Tier 1
     snap = SnapshotView.build(svc, run_id)
     if snap:
-        path = out_dir / f"{snap.ticker}-run-{short_id}-snapshot.html"
+        path = out_dir / f"{_safe_filename(snap.ticker)}-run-{short_id}-snapshot.html"
         path.write_text(render_snapshot(snap, skip_vendors=skip_vendors),
                         encoding="utf-8")
         results["snapshot"] = str(path)
@@ -109,7 +117,7 @@ def generate_all_tiers(run_id: str, output_dir: str = "data/reports",
     # Tier 2
     res = ResearchView.build(svc, run_id)
     if res:
-        path = out_dir / f"{res.ticker}-run-{short_id}-research.html"
+        path = out_dir / f"{_safe_filename(res.ticker)}-run-{short_id}-research.html"
         path.write_text(render_research(res, skip_vendors=skip_vendors),
                         encoding="utf-8")
         results["research"] = str(path)
@@ -117,7 +125,7 @@ def generate_all_tiers(run_id: str, output_dir: str = "data/reports",
     # Tier 3
     audit = AuditView.build(svc, run_id)
     if audit:
-        path = out_dir / f"{audit.ticker}-run-{short_id}-audit.html"
+        path = out_dir / f"{_safe_filename(audit.ticker)}-run-{short_id}-audit.html"
         path.write_text(render_audit(audit), encoding="utf-8")
         results["audit"] = str(path)
 

@@ -56,7 +56,8 @@ def is_em_url(url: str) -> bool:
     try:
         host = urlparse(url).hostname or ""
         return host.endswith(_EM_DOMAIN)
-    except Exception:
+    except Exception as _e:
+        logger.debug("URL parse failed for is_em_url: %s", _e)
         return False
 
 
@@ -149,7 +150,8 @@ def _fetch_proxies(api_url: str, original_get: Callable,
             if r.status_code in (200, 403):  # 403 = reached EM, just no valid params
                 logger.info("Proxy pool validated (%d proxies)", len(proxies))
                 return proxies
-        except Exception:
+        except Exception as _e:
+            logger.debug("Proxy validation failed: %s", _e)
             continue
 
     logger.warning("No proxy passed validation, returning pool anyway (%d)", len(proxies))

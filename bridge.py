@@ -12,7 +12,6 @@ import math
 import re
 import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .trace_models import (
@@ -28,15 +27,16 @@ logger = logging.getLogger(__name__)
 # N-BRG-1: English negation pattern for BUY/SELL inference (20-char window)
 _ENG_NEG = re.compile(r'\b(?:NOT|NO|DONT|DON\'T|AVOID|NEVER|AGAINST)\b')
 
-# N-BRG-3: Chinese negation pattern for 买入/卖出 inference (5-char window).
+# N-BRG-3: Chinese negation pattern for 买入/卖出 inference (12-char window).
 # "谨慎" removed — "谨慎买入" means "buy cautiously", not negation.
+# Window widened from 5→12 to catch multi-char modifiers like "坚决不建议".
 _NEG = re.compile(r'(?:不要|不宜|不建议|切勿|勿|避免|别|禁止|不应|不可|不得|不适合)')
 
 
 def _has_positive(text: str, kw: str) -> bool:
     """Return True if *kw* appears in *text* without a preceding Chinese negation."""
     for m in re.finditer(re.escape(kw), text):
-        window = text[max(0, m.start() - 5):m.start()]
+        window = text[max(0, m.start() - 12):m.start()]
         if _NEG.search(window):
             continue
         return True
@@ -469,8 +469,8 @@ def parse_claims(text: str, direction: str = "bullish") -> List[Dict]:
         conf_m = re.search(r'CONFIDENCE:\s*([\d.]+)', part)
         if conf_m:
             claim["confidence"] = float(conf_m.group(1))
-            # Normalize: if agent used 0-100 scale
-            if claim["confidence"] > 10:
+            # Normalize: if agent used 0-100 scale (>= 10 catches 10-100)
+            if claim["confidence"] >= 10:
                 claim["confidence"] = claim["confidence"] / 100.0
             # Normalize: if agent used 1-10 scale despite 0.0-1.0 instruction
             elif claim["confidence"] > 1.0:
@@ -638,8 +638,8 @@ def assemble_market_context(
         except StaleMarketDataError as e:
             logger.warning("Date mismatch (non-fatal): %s", e)
 
-    regime = str(macro.get("regime", "NEUTRAL")).upper()
-    breadth_state = str(breadth.get("breadth_state", "NARROW")).upper()
+    regime = str(macro.get("regime") or "NEUTRAL").upper()
+    breadth_state = str(breadth.get("breadth_state") or "NARROW").upper()
 
     # Normalize position_cap_multiplier
     pcm = macro.get("position_cap_multiplier", 0.8)
@@ -1603,7 +1603,8 @@ def _try_fetch_prices(ticker: str, days: int = 30) -> List[float]:
             end_date=end.strftime("%Y%m%d"),
         )
         return df["收盘"].tail(days).tolist()
-    except Exception:
+    except Exception as _e:
+        logger.debug("price history fetch failed for %s: %s", ticker, _e)
         return []
 
 
@@ -1656,7 +1657,7 @@ def generate_report(
                 nt.structured_data["price_history"] = price_history
                 break
     # 1c. Trend override — downgrade pillar scores when recent trend is strongly negative
-    from .config import PIPELINE_CONFIG, PipelineRunConfig
+    from .config import PipelineRunConfig
     _rc = run_config if isinstance(run_config, PipelineRunConfig) else PipelineRunConfig.from_defaults()
     _tw = _rc.trend_override_window
     _thr = _rc.trend_override_threshold

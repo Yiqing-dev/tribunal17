@@ -793,7 +793,8 @@ def _collect_top10_shareholders(b: AkshareBundle):
                     })
                 b.top10_shareholders = rows
                 return
-        except Exception:
+        except Exception as _e:
+            logger.debug("top10 shareholders attempt failed: %s", _e)
             continue
 
 
@@ -1131,7 +1132,7 @@ class MarketSnapshot:
             "apis_succeeded": self.apis_succeeded,
             "apis_failed": self.apis_failed,
         }
-        return _json.dumps(d, ensure_ascii=False, indent=2)
+        return _json.dumps(d, ensure_ascii=False, indent=2, allow_nan=False, default=str)
 
     @classmethod
     def from_json(cls, json_str: str) -> "MarketSnapshot":
@@ -1438,7 +1439,8 @@ def _collect_watchlist_spots_xq(ms: MarketSnapshot, watchlist: list):
                 "pb": _safe_float(vals.get("市净率", 0)),
                 "turnover_rate": _safe_float(vals.get("周转率", 0)),
             }
-        except Exception:
+        except Exception as _e:
+            logger.debug("stock spot parse failed: %s", _e)
             continue
 
 
@@ -1484,7 +1486,8 @@ def _build_market_markdown(ms: MarketSnapshot) -> str:
             adv = nb.get("northbound_advance", 0)
             dec = nb.get("northbound_decline", 0)
             if adv or dec:
-                lines.append(f"- 北向持股标的: 上涨 {adv} / 下跌 {dec} (涨跌比 {adv / (adv + dec):.2f})")
+                ratio_str = f" (涨跌比 {adv / (adv + dec):.2f})" if (adv + dec) > 0 else ""
+                lines.append(f"- 北向持股标的: 上涨 {adv} / 下跌 {dec}{ratio_str}")
             hint = nb.get("direction_hint")
             if hint:
                 lines.append(f"- 方向推断（基于持股标的涨跌比）: {hint}")
@@ -1740,7 +1743,8 @@ def _build_ths_to_sw_map() -> dict:
     ak = _get_ak()
     try:
         sw2 = ak.sw_index_second_info()
-    except Exception:
+    except Exception as _e:
+        logger.debug("sw_index_second_info failed: %s", _e)
         return {}
 
     sw_by_name: dict = {}
@@ -1755,7 +1759,8 @@ def _build_ths_to_sw_map() -> dict:
 
     try:
         ths = ak.stock_board_industry_name_ths()
-    except Exception:
+    except Exception as _e:
+        logger.debug("stock_board_industry_name_ths failed: %s", _e)
         return {}
 
     mapping: dict = {}

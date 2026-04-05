@@ -1017,7 +1017,8 @@ def generate_committee_report(
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    ticker_slug = view.ticker.replace(".", "-") or "unknown"
+    from .report_renderer import _safe_filename
+    ticker_slug = _safe_filename(view.ticker) or "unknown"
     path = out_dir / f"{ticker_slug}-{view.run_id}-committee.html"
     path.write_text(render_debate_page(view), encoding="utf-8")
     return str(path)

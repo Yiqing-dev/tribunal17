@@ -5,9 +5,9 @@ Usage:
 """
 
 import json
+import logging
 import os
 import re
-import sys
 import tempfile
 from datetime import date
 from pathlib import Path
@@ -19,6 +19,8 @@ from .bridge import (
     assemble_market_context,
     format_market_context_block,
 )
+
+logger = logging.getLogger(__name__)
 
 # Section delimiter pattern used by research agents
 SECTION_RE = re.compile(
@@ -119,7 +121,8 @@ def _build_ths_to_sw_map() -> dict:
     try:
         import akshare as ak
         sw2 = ak.sw_index_second_info()
-    except Exception:
+    except Exception as _e:
+        logger.debug("sw_index_second_info failed: %s", _e)
         return {}
 
     sw_by_name: dict[str, str] = {}
@@ -134,7 +137,8 @@ def _build_ths_to_sw_map() -> dict:
 
     try:
         ths = ak.stock_board_industry_name_ths()
-    except Exception:
+    except Exception as _e:
+        logger.debug("stock_board_industry_name_ths failed: %s", _e)
         return {}
 
     mapping: dict[str, str] = {}
@@ -193,8 +197,8 @@ def _collect_sector_stocks_sw(sectors: list, ths_sw_map: dict,
                     pct_row = spot[spot["item"] == "涨幅"]
                     if not pct_row.empty:
                         pct_change = float(pct_row["value"].values[0] or 0)
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug("XQ spot for %s failed: %s", ticker, _e)
                 stocks.append({
                     "ticker": ticker,
                     "name": name,
@@ -206,7 +210,8 @@ def _collect_sector_stocks_sw(sectors: list, ths_sw_map: dict,
             if stocks:
                 result[sector_name] = stocks
             time.sleep(0.3)
-        except Exception:
+        except Exception as _e:
+            logger.debug("SW+XQ sector %s failed: %s", sector_name, _e)
             continue
 
     return result
@@ -263,7 +268,8 @@ def _collect_sector_stocks(sectors: list, max_sectors: int = 20,
                 result[sector_name] = stocks
                 consecutive_failures = 0
             time.sleep(0.5)
-        except Exception:
+        except Exception as _e:
+            logger.debug("EM sector %s failed: %s", sector_name, _e)
             consecutive_failures += 1
             if consecutive_failures >= 3:
                 print(f"  [BOARD] EM failed 3x, switching to SW+XQ fallback")

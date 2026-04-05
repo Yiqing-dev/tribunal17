@@ -287,7 +287,7 @@ def _col_name(df, *candidates):
     for c in candidates:
         if c in df.columns:
             return c
-    return candidates[0]
+    return candidates[0] if candidates else ""
 
 
 def _collect_index_history(code: str, name: str, days: int = 60) -> IndexInfo:
@@ -424,8 +424,8 @@ def collect_index_summary(trade_date: str = "", spot_df=None) -> IndexSummary:
                 if prev_amt > 0 and today_amt > 0 and turnover_total > 0:
                     ratio = today_amt / prev_amt
                     turnover_prev = turnover_total / ratio
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("turnover delta estimation failed: %s", _e)
 
     turnover_delta = turnover_total - turnover_prev if turnover_prev > 0 else 0
 
@@ -480,7 +480,8 @@ def collect_sector_heatmap(trade_date: str = "", spot_df=None) -> SectorHeatmapD
         try:
             with em_proxy_session():
                 spot_df = ak.stock_zh_a_spot_em()
-        except Exception:
+        except Exception as _e:
+            logger.debug("sector heatmap spot_em failed: %s", _e)
             spot_df = None
 
     nodes = []
@@ -490,14 +491,15 @@ def collect_sector_heatmap(trade_date: str = "", spot_df=None) -> SectorHeatmapD
         try:
             with em_proxy_session():
                 df = ak.stock_sector_fund_flow_rank(indicator="今日")
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("sector_fund_flow_rank failed, trying THS: %s", _e)
         if df is None or df.empty:
             # Fallback: THS industry summary
             try:
                 df = _retry_call(ak.stock_board_industry_summary_ths)
                 source = "ths"
-            except Exception:
+            except Exception as _e:
+                logger.debug("THS industry summary fallback also failed: %s", _e)
                 df = None
         if df is not None and not df.empty:
             for _, r in df.iterrows():
@@ -600,7 +602,8 @@ def collect_limit_board(trade_date: str = "", spot_df=None) -> LimitBoardSummary
         try:
             with em_proxy_session():
                 spot_df = ak.stock_zh_a_spot_em()
-        except Exception:
+        except Exception as _e:
+            logger.debug("limit board spot_em failed: %s", _e)
             return LimitBoardSummary()
 
     up_stocks = []
@@ -655,8 +658,8 @@ def collect_limit_board(trade_date: str = "", spot_df=None) -> LimitBoardSummary
                         b = _safe_float(match.iloc[0].get(board_col))
                         if b and b > 0:
                             s["boards"] = int(b)
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("consecutive board enrichment failed: %s", _e)
 
     up_stocks.sort(key=lambda x: x.get("pct_change", 0), reverse=True)
     down_stocks.sort(key=lambda x: x.get("pct_change", 0))
@@ -699,7 +702,8 @@ def _fetch_prev_day_board_dist(trade_date: str = "") -> Dict[int, int]:
                 b = int(_safe_float(r.get(board_col)) or 1)
                 dist[b] = dist.get(b, 0) + 1
             return dist
-        except Exception:
+        except Exception as _e:
+            logger.debug("board distribution attempt failed: %s", _e)
             continue
     return {}
 
@@ -772,7 +776,8 @@ def collect_red_close_screen(
         try:
             with em_proxy_session():
                 spot_df = ak.stock_zh_a_spot_em()
-        except Exception:
+        except Exception as _e:
+            logger.debug("red close spot_em failed: %s", _e)
             return RedCloseScreen(window_natural_days=window)
 
     if spot_df is None or spot_df.empty:
@@ -816,7 +821,8 @@ def collect_red_close_screen(
 
             red_counts[code] = {"ticker": code, "name": name, "red_days": reds,
                                 "total_days": len(closes) - 1}
-        except Exception:
+        except Exception as _e:
+            logger.debug("red close analysis for %s failed: %s", code, _e)
             continue
 
     # Filter by thresholds
