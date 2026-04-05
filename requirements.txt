@@ -1,3 +1,4 @@
-# Python >= 3.9 required (uses built-in generics: dict[str, str], list[str])
-akshare>=1.10
+# Pin akshare to avoid breaking API changes (field renames, removed endpoints).
+# Upgrade deliberately: run tests after `pip install akshare==X.Y.Z`.
+akshare==1.18.51
 requests>=2.28

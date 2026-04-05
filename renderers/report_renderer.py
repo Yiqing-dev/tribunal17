@@ -291,3 +291,29 @@ def generate_brief_report_file(
     path = out_dir / f"brief-{date_slug}.md"
     path.write_text(content, encoding="utf-8")
     return str(path)
+
+
+def rotate_reports(output_dir: str = "data/reports", keep_days: int = 30) -> int:
+    """Delete report files older than *keep_days*. Returns count removed.
+
+    Scans HTML, JSON, and MD files in output_dir.
+    Safe to call daily — skips non-report files.
+    """
+    import time as _time
+    out = Path(output_dir)
+    if not out.exists():
+        return 0
+    cutoff = _time.time() - keep_days * 86400
+    count = 0
+    for f in out.iterdir():
+        if f.suffix not in (".html", ".json", ".md"):
+            continue
+        try:
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+                count += 1
+        except OSError:
+            pass
+    if count:
+        logger.info("Rotated %d report files older than %d days", count, keep_days)
+    return count

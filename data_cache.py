@@ -40,11 +40,15 @@ class DataCache:
     Thread-safe. Each entry is a standalone JSON file.
     """
 
-    def __init__(self, cache_dir: str = _DEFAULT_DIR):
+    _DEFAULT_TTL_DAYS = 7
+
+    def __init__(self, cache_dir: str = _DEFAULT_DIR, *, auto_evict: bool = True):
         self._dir = Path(cache_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._stats = {"hits": 0, "misses": 0, "writes": 0}
+        if auto_evict:
+            self.evict_older_than(self._DEFAULT_TTL_DAYS)
 
     # ── Key generation ───────────────────────────────────────────────
 
@@ -110,6 +114,22 @@ class DataCache:
             path.unlink()
             return True
         return False
+
+    def evict_older_than(self, days: int = 7) -> int:
+        """Remove cache files older than *days*. Returns count removed."""
+        import time as _time
+        cutoff = _time.time() - days * 86400
+        count = 0
+        for f in self._dir.glob("*.json"):
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+                    count += 1
+            except OSError:
+                pass
+        if count:
+            logger.debug("Evicted %d cache files older than %d days", count, days)
+        return count
 
     def clear(self) -> int:
         """Remove all cache files. Returns count removed."""

@@ -149,7 +149,18 @@ class ReplayStore:
 
         # Return most recent first
         entries.reverse()
-        return entries[:limit]
+        return entries[:limit] if limit > 0 else entries
+
+    def has_run_for(self, ticker: str, trade_date: str) -> bool:
+        """Check if a run already exists for this ticker+trade_date.
+
+        Use to skip re-runs on consecutive non-trading days (holiday dedup).
+        """
+        runs = self.list_runs(ticker=ticker, limit=0)  # 0 = no limit
+        for entry in runs:
+            if entry.get("trade_date") == trade_date:
+                return True
+        return False
 
     def delete(self, run_id: str) -> bool:
         """Delete a trace file. Does NOT rewrite manifest (append-only)."""

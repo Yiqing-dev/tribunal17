@@ -125,22 +125,34 @@ class SignalLedger:
     def __init__(self, path: str = _DEFAULT_PATH):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._run_id_index: Optional[set] = None  # lazy-loaded
 
     # ── Write ─────────────────────────────────────────────────────────────
 
-    def _has_run_id(self, run_id: str) -> bool:
-        """Check if run_id already exists in ledger (O(n) scan)."""
+    def _load_run_id_index(self) -> set:
+        """Build in-memory set of all run_ids (one-time O(n), then O(1) lookups)."""
+        ids: set = set()
         if not self.path.exists():
-            return False
-        needle = f'"run_id": "{run_id}"'
+            return ids
         try:
             with open(self.path, "r", encoding="utf-8") as f:
                 for line in f:
-                    if needle in line:
-                        return True
+                    # Fast substring extract — avoids full JSON parse
+                    idx = line.find('"run_id": "')
+                    if idx >= 0:
+                        start = idx + 11
+                        end = line.find('"', start)
+                        if end > start:
+                            ids.add(line[start:end])
         except OSError:
             pass
-        return False
+        return ids
+
+    def _has_run_id(self, run_id: str) -> bool:
+        """Check if run_id already exists in ledger (O(1) after first load)."""
+        if self._run_id_index is None:
+            self._run_id_index = self._load_run_id_index()
+        return run_id in self._run_id_index
 
     def append(self, record: SignalRecord, *, allow_duplicate: bool = False) -> None:
         """Append a single signal record.
@@ -171,6 +183,9 @@ class SignalLedger:
                         f.write(tmp_f.read())
                 finally:
                     _flock_release(f)
+            # Update in-memory index
+            if record.run_id and self._run_id_index is not None:
+                self._run_id_index.add(record.run_id)
         finally:
             try:
                 os.unlink(tmp_path)
