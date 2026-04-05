@@ -11,15 +11,17 @@ Usage:
         df = ak.stock_zh_a_spot_em()   # proxied (EM domain)
     df2 = ak.stock_zh_a_daily(...)     # not proxied (Sina, outside context)
 
-Ported from akshare-stock-data-fetcher/stock_zh_a_spot_em_proxy_strength.py.
+Implementation: Uses module-level function replacement (NOT unittest.mock.patch)
+with threading.local for thread safety. Each thread gets its own proxy state.
 """
 
 import logging
 import os
 import random
 import re
+import threading
 import time
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -33,9 +35,6 @@ from requests.exceptions import (
     ReadTimeout,
     SSLError,
 )
-# Design: unittest.mock.patch used in production for URL-selective monkey-patching.
-# Standard library, no external dependency.
-from unittest.mock import patch
 
 try:
     from urllib3.util.retry import Retry
@@ -69,7 +68,6 @@ def _proxy_config() -> Optional[Dict[str, Any]]:
     url = os.environ.get("PROXY_API_URL", "").strip()
     if not url:
         return None
-    # PROXY_AUTH format: "username:password" — applied to all extracted proxies
     auth = os.environ.get("PROXY_AUTH", "").strip()
     return {
         "api_url": url,
@@ -94,7 +92,6 @@ def _parse_proxy_line(line: str, auth: Optional[str] = None) -> Optional[Dict[st
     if not line:
         return None
 
-    # Already a URL
     if line.startswith("http://") or line.startswith("https://"):
         return {"http": line, "https": line}
 
@@ -117,9 +114,7 @@ def _fetch_proxies(api_url: str, original_get: Callable,
                    auth: Optional[str] = None) -> List[Dict[str, str]]:
     """Fetch proxy list from supplier API and validate against EM endpoint.
 
-    Uses *original_get* (the un-patched ``requests.get``) to avoid recursion
-    when ``requests.get`` is already patched by ``em_proxy_session``.
-    *auth*: Optional ``"username:password"`` applied to ``ip:port`` proxies.
+    Uses *original_get* (the un-patched ``requests.get``) to avoid recursion.
     """
     try:
         resp = original_get(api_url, timeout=10)
@@ -139,13 +134,13 @@ def _fetch_proxies(api_url: str, original_get: Callable,
         logger.warning("Proxy supplier returned no valid proxies")
         return []
 
-    # Validate one proxy against EM to confirm the pool is alive
+    # Validate one proxy against EM
     test_url = "https://82.push2.eastmoney.com/api/qt/clist/get"
-    for p in proxies[:3]:  # test first 3 at most
+    for p in proxies[:3]:
         try:
             r = original_get(test_url, proxies=p, timeout=5,
                              headers={"User-Agent": "Mozilla/5.0", "Connection": "close"})
-            if r.status_code in (200, 403):  # 403 = reached EM, just no valid params
+            if r.status_code in (200, 403):
                 logger.info("Proxy pool validated (%d proxies)", len(proxies))
                 return proxies
         except Exception as _e:
@@ -161,7 +156,6 @@ def _fetch_proxies(api_url: str, original_get: Callable,
 _RETRIABLE_EXC: Tuple[type, ...] = (
     ProxyError, ConnectTimeout, ReadTimeout, SSLError,
     ConnectionError, ChunkedEncodingError,
-    # Low-level network errors (narrowed from OSError)
     ConnectionResetError, BrokenPipeError,
 )
 
@@ -185,7 +179,6 @@ def build_rotating_get(
     """
 
     def rotating_get(url: str, **kwargs: Any) -> requests.Response:
-        # Non-EM URLs pass through unchanged
         if not is_em_url(url):
             return original_get(url, **kwargs)
 
@@ -199,7 +192,7 @@ def build_rotating_get(
                 last_exc = e
 
             if include_direct:
-                pool = list(pool) + [None]  # None = direct connection
+                pool = list(pool) + [None]
 
             random.shuffle(pool)
 
@@ -245,7 +238,6 @@ def build_rotating_get(
                     time.sleep(random.uniform(*backoff))
                     continue
                 except Exception:
-                    # Non-retriable (ValueError, etc.) — fail fast
                     raise
                 finally:
                     try:
@@ -253,16 +245,55 @@ def build_rotating_get(
                     except Exception:
                         pass
 
-            # All proxies in this pool exhausted — refresh
             logger.debug("All proxies exhausted, refreshing pool (round %d)", refresh_round)
             time.sleep(random.uniform(*backoff))
 
-        # Every refresh round failed
         if last_exc:
             raise last_exc
         raise RuntimeError("EM request failed: no working proxy available")
 
     return rotating_get
+
+
+# ── Thread-safe module-level injection ───────────────────────────────────
+#
+# Instead of unittest.mock.patch (global, not thread-safe), we use:
+# 1. Save the original requests.get at import time
+# 2. Replace requests.get with a dispatcher that checks thread-local state
+# 3. Each thread's em_proxy_session() sets its own rotating_get in _tls
+#
+# This is thread-safe: concurrent threads each have their own proxy state.
+
+_original_requests_get = requests.get  # saved at import time
+_tls = threading.local()  # thread-local storage
+_active_count_lock = threading.Lock()
+_active_count = 0  # how many threads have an active session
+
+
+def _dispatching_get(url: str, **kwargs: Any) -> requests.Response:
+    """Thread-safe dispatcher: routes to per-thread rotating_get or original."""
+    rotating = getattr(_tls, "rotating_get", None)
+    if rotating is not None:
+        return rotating(url, **kwargs)
+    return _original_requests_get(url, **kwargs)
+
+
+def _install_dispatcher() -> None:
+    """Replace requests.get with our dispatcher (idempotent)."""
+    global _active_count
+    with _active_count_lock:
+        _active_count += 1
+        if _active_count == 1:
+            requests.get = _dispatching_get
+
+
+def _uninstall_dispatcher() -> None:
+    """Restore original requests.get when no sessions are active."""
+    global _active_count
+    with _active_count_lock:
+        _active_count = max(0, _active_count - 1)
+        if _active_count == 0:
+            requests.get = _original_requests_get
 
 
 # ── Context Manager ──────────────────────────────────────────────────────
@@ -271,8 +302,8 @@ def build_rotating_get(
 def em_proxy_session():
     """Context manager that routes EM-domain akshare calls through proxy rotation.
 
-    Patches ``requests.get`` and (if available) ``akshare.utils.func.request_with_retry``
-    so that akshare's internal HTTP calls are intercepted.
+    Thread-safe: each thread gets its own rotating_get via threading.local.
+    Replaces requests.get with a dispatcher while any session is active.
 
     **No-op** when ``PROXY_API_URL`` environment variable is not set.
     """
@@ -281,33 +312,29 @@ def em_proxy_session():
         yield
         return
 
-    # Save original before patching (critical for recursion prevention)
-    original_get = requests.get
-
     proxy_auth = config.get("auth")
 
     def supplier():
-        # Temporarily restore original get so proxy fetching works
-        with patch("requests.get", new=original_get):
-            return _fetch_proxies(config["api_url"], original_get, auth=proxy_auth)
+        return _fetch_proxies(config["api_url"], _original_requests_get, auth=proxy_auth)
 
     rotating = build_rotating_get(
         proxies_supplier=supplier,
-        original_get=original_get,
+        original_get=_original_requests_get,
         timeout=config["timeout"],
         include_direct=True,
         max_supplier_refresh=2,
     )
 
-    # WARNING: Global monkey-patch of requests.get. NOT thread-safe —
-    # concurrent threads share the same rotated proxy. Acceptable for the
-    # current single-threaded pipeline; refactor to session-level injection
-    # before any multi-threaded usage.
-    patches = [patch("requests.get", new=rotating)]
+    # Set thread-local rotating_get and install global dispatcher
+    _tls.rotating_get = rotating
+    _install_dispatcher()
 
-    # Also patch akshare's request_with_retry (used by stock_zh_a_spot_em)
+    # Also patch akshare's request_with_retry if present
+    _orig_rwr = None
+    _akfunc = None
     try:
-        import akshare.utils.func as _akfunc
+        import akshare.utils.func as _akfunc_mod
+        _akfunc = _akfunc_mod
         _orig_rwr = _akfunc.request_with_retry
 
         def _proxy_rwr(url, params=None, **kwargs):
@@ -316,16 +343,23 @@ def em_proxy_session():
             kwargs.setdefault("timeout", config["timeout"])
             return rotating(url, params=params, **kwargs)
 
-        patches.append(patch.object(_akfunc, "request_with_retry", new=_proxy_rwr))
+        _akfunc.request_with_retry = _proxy_rwr
     except (ImportError, AttributeError):
-        pass  # akshare version without request_with_retry — skip
+        pass
 
-    with ExitStack() as stack:
-        for p in patches:
-            stack.enter_context(p)
+    try:
         logger.info("EM proxy session active (API: %s...)", config["api_url"][:40])
         yield
-    # Design note: session closed eagerly in finally to prevent connection leaks.
-    # Streaming responses should be fully consumed before context exit.
+    finally:
+        # Restore thread-local state
+        _tls.rotating_get = None
+        _uninstall_dispatcher()
 
-    logger.info("EM proxy session closed")
+        # Restore akshare's request_with_retry
+        if _akfunc is not None and _orig_rwr is not None:
+            try:
+                _akfunc.request_with_retry = _orig_rwr
+            except Exception:
+                pass
+
+        logger.info("EM proxy session closed")
