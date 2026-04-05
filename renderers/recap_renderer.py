@@ -381,8 +381,10 @@ _RECAP_CSS = """
 .mkt-summary { font-size: .82rem; color: var(--fg); grid-column: 1 / -1; padding-top: .4rem; border-top: 1px solid var(--border); }
 .kline-crosshair{pointer-events:none}
 .kline-xline{stroke:rgba(255,255,255,0.3);stroke-width:1;stroke-dasharray:3 2}
-.kline-label-bg{fill:var(--card);stroke:var(--border);rx:4}
+.kline-yline{stroke:rgba(255,255,255,0.2);stroke-width:1;stroke-dasharray:3 2}
+.kline-label-bg{fill:rgba(11,20,35,0.92);stroke:var(--border);rx:6;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.4))}
 .kline-label-text{fill:var(--fg);font-size:9px;font-family:var(--mono)}
+.kline-date-label{fill:var(--muted);font-size:8px;font-family:var(--mono);text-anchor:middle}
 
 /* ── V5a: Keyboard focus ── */
 .idx-tab:focus-visible, .rc-tab:focus-visible, .toggle-btn:focus-visible,
@@ -1312,46 +1314,79 @@ def _render_recap_js(data: dict) -> str:
           var pts=KLINE_DATA[idx]||[];
           if(!pts.length) return;
           var ns='http://www.w3.org/2000/svg';
+          var vbW=svg.viewBox.baseVal.width, vbH=svg.viewBox.baseVal.height;
+          // Vertical crosshair
           var xline=document.createElementNS(ns,'line');
           xline.setAttribute('class','kline-xline kline-crosshair');
-          xline.setAttribute('y1','0'); xline.setAttribute('y2',svg.viewBox.baseVal.height.toString());
+          xline.setAttribute('y1','0'); xline.setAttribute('y2',vbH.toString());
           xline.style.display='none';
           svg.appendChild(xline);
+          // Horizontal crosshair
+          var yline=document.createElementNS(ns,'line');
+          yline.setAttribute('class','kline-yline kline-crosshair');
+          yline.setAttribute('x1','0'); yline.setAttribute('x2',vbW.toString());
+          yline.style.display='none';
+          svg.appendChild(yline);
+          // Tooltip group
           var label=document.createElementNS(ns,'g');
           label.setAttribute('class','kline-crosshair');
           label.style.display='none';
           var lbg=document.createElementNS(ns,'rect');
           lbg.setAttribute('class','kline-label-bg');
-          lbg.setAttribute('width','120'); lbg.setAttribute('height','52');
+          lbg.setAttribute('width','130'); lbg.setAttribute('height','72');
           label.appendChild(lbg);
           var ltxt=document.createElementNS(ns,'text');
           ltxt.setAttribute('class','kline-label-text');
           label.appendChild(ltxt);
+          // Date label at bottom
+          var dtxt=document.createElementNS(ns,'text');
+          dtxt.setAttribute('class','kline-date-label kline-crosshair');
+          dtxt.setAttribute('y',(vbH-2).toString());
+          dtxt.style.display='none';
+          svg.appendChild(dtxt);
           svg.appendChild(label);
+
+          function _fmtVol(v){{ if(!v)return''; if(v>=1e8)return (v/1e8).toFixed(1)+'亿'; if(v>=1e4)return (v/1e4).toFixed(0)+'万'; return v.toFixed(0); }}
 
           svg.addEventListener('mousemove',function(e){{
             var rect=svg.getBoundingClientRect();
-            var scaleX=svg.viewBox.baseVal.width/rect.width;
+            var scaleX=vbW/rect.width, scaleY=vbH/rect.height;
             var svgX=(e.clientX-rect.left)*scaleX;
-            var pad=40, gap=(svg.viewBox.baseVal.width-80)/pts.length;
+            var svgY=(e.clientY-rect.top)*scaleY;
+            var pad=40, gap=(vbW-80)/pts.length;
             var ci=Math.round((svgX-pad-gap/2)/gap);
             ci=Math.max(0,Math.min(ci,pts.length-1));
             var px=pad+ci*gap+gap/2;
+            // Vertical line
             xline.setAttribute('x1',px.toString()); xline.setAttribute('x2',px.toString());
             xline.style.display='';
+            // Horizontal line
+            yline.setAttribute('y1',svgY.toString()); yline.setAttribute('y2',svgY.toString());
+            yline.style.display='';
+            // Date label
             var p=pts[ci];
+            dtxt.textContent=p.date||'';
+            dtxt.setAttribute('x',px.toString());
+            dtxt.style.display='';
+            // OHLCV tooltip
             ltxt.innerHTML='';
-            var lines=['O:'+p.open.toFixed(2),'H:'+p.high.toFixed(2),'L:'+p.low.toFixed(2),'C:'+p.close.toFixed(2)];
+            var lines=[p.date||'','O:'+p.open.toFixed(2)+' H:'+p.high.toFixed(2),'L:'+p.low.toFixed(2)+' C:'+p.close.toFixed(2)];
+            if(p.vol) lines.push('V:'+_fmtVol(p.vol));
+            // Edge flip: show tooltip on left side if near right edge
+            var flipX = px > vbW - 160;
+            var lx = flipX ? px - 138 : px + 6;
             lines.forEach(function(ln,j){{
               var ts=document.createElementNS(ns,'tspan');
-              ts.setAttribute('x',(px+8).toString()); ts.setAttribute('dy',j===0?'12':'11');
+              ts.setAttribute('x',(lx+6).toString()); ts.setAttribute('dy',j===0?'13':'12');
               ts.textContent=ln; ltxt.appendChild(ts);
             }});
-            lbg.setAttribute('x',(px+4).toString()); lbg.setAttribute('y','2');
+            lbg.setAttribute('x',lx.toString()); lbg.setAttribute('y','2');
+            lbg.setAttribute('height',(14+lines.length*12).toString());
             label.style.display='';
           }});
           svg.addEventListener('mouseleave',function(){{
-            xline.style.display='none'; label.style.display='none';
+            xline.style.display='none'; yline.style.display='none';
+            label.style.display='none'; dtxt.style.display='none';
           }});
         }});
       }}
