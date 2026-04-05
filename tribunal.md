@@ -79,10 +79,11 @@ REPLAYS.mkdir(parents=True, exist_ok=True)
 在进入 L2 个股分析前，**必须**检查 L0/L1 市场层是否已在当天运行过：
 
 ```python
-# 检查 market_context 日期是否匹配 trade_date
+# 检查 market_context + recap + snapshot 三件套是否齐全
 ctx_path = REPLAYS / f"market_context_{trade_date}.json"
 recap_path = REPLAYS / f"recap_{trade_date}.json"
-if ctx_path.exists() and recap_path.exists():
+snap_path = REPLAYS / f"market_snapshot_{trade_date}.json"
+if ctx_path.exists() and recap_path.exists() and snap_path.exists():
     market_context = json.loads(ctx_path.read_text(encoding="utf-8"))
     market_context_block = (RESULTS / "market_context_block.txt").read_text(encoding="utf-8")
     print(f"[CHECK] 当日 L0+L1 市场上下文已存在，跳过")
@@ -176,7 +177,9 @@ Path(RESULTS / "market_context.json").write_text(json.dumps(market_context, ensu
 Path(RESULTS / "market_context_block.txt").write_text(market_context_block)
 
 # ⚠️ 持久化 snapshot 对象 — L5/L6 渲染报告时需要 limit_up/down 等字段
-Path(RESULTS / "market_snapshot.json").write_text(snapshot.to_json())
+# 必须存到 REPLAYS 按日期命名，否则新鲜度检查跳过 L1 后 snapshot 丢失
+Path(REPLAYS / f"market_snapshot_{trade_date}.json").write_text(snapshot.to_json())
+Path(RESULTS / "market_snapshot.json").write_text(snapshot.to_json())  # 兼容旧路径
 ```
 
 打印：`[L1] 太史令、户部司、舆图司、全球宏观情报司会同议事完毕`
@@ -399,7 +402,11 @@ from subagent_pipeline.renderers.report_renderer import generate_pool_report
 from subagent_pipeline.akshare_collector import MarketSnapshot
 
 # ⚠️ 必须加载 L1 持久化的 snapshot，否则涨停跌停等数据丢失
-snapshot = MarketSnapshot.from_json(Path(RESULTS / "market_snapshot.json").read_text())
+# 优先从 REPLAYS 按日期加载（持久），fallback 到 RESULTS（临时）
+_snap_path = REPLAYS / f"market_snapshot_{trade_date}.json"
+if not _snap_path.exists():
+    _snap_path = RESULTS / "market_snapshot.json"
+snapshot = MarketSnapshot.from_json(_snap_path.read_text(encoding="utf-8"))
 
 # ⚠️ 必须从 L0 recap 加载涨跌停明细 — board_data=None 会导致数据缺失
 recap_path = REPLAYS / f"recap_{trade_date}.json"
