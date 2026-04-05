@@ -118,147 +118,6 @@ def _build_ths_to_sw_map() -> dict:
     return _impl()
 
 
-def _collect_sector_stocks_sw(sectors: list, ths_sw_map: dict,
-                              max_sectors: int = 20, top_n: int = 10) -> dict:
-    """Fallback: fetch constituent stocks via SW index + XQ spot data.
-
-    Uses ``index_component_sw`` for constituent list (sorted by weight)
-    and ``stock_individual_spot_xq`` for realtime price/pct_change.
-    """
-    import time
-    result: dict[str, list] = {}
-    if not sectors or not ths_sw_map:
-        return result
-
-    try:
-        import akshare as ak
-    except ImportError:
-        return result
-
-    sorted_sectors = sorted(sectors,
-                            key=lambda s: float(s.get("total_turnover_yi", 0) or 0),
-                            reverse=True)
-
-    for s in sorted_sectors[:max_sectors]:
-        sector_name = str(s.get("sector", ""))
-        sw_code = ths_sw_map.get(sector_name)
-        if not sw_code:
-            continue
-        try:
-            cons = ak.index_component_sw(symbol=sw_code)
-            if cons is None or cons.empty:
-                continue
-            # Sort by weight descending, take top_n
-            cons = cons.sort_values("最新权重", ascending=False).head(top_n)
-
-            stocks = []
-            for _, row in cons.iterrows():
-                ticker = str(row.get("证券代码", ""))
-                name = str(row.get("证券名称", ""))
-                weight = float(row.get("最新权重", 0) or 0)
-                pct_change = 0.0
-                # Fetch realtime pct_change from XQ
-                try:
-                    prefix = "SH" if ticker.startswith("6") else "SZ"
-                    spot = ak.stock_individual_spot_xq(symbol=f"{prefix}{ticker}")
-                    pct_row = spot[spot["item"] == "涨幅"]
-                    if not pct_row.empty:
-                        pct_change = float(pct_row["value"].values[0] or 0)
-                except Exception as _e:
-                    logger.debug("XQ spot for %s failed: %s", ticker, _e)
-                stocks.append({
-                    "ticker": ticker,
-                    "name": name,
-                    "pct_change": pct_change,
-                    "market_cap_yi": 0,  # SW doesn't provide mcap
-                    "amount_yi": 0,
-                    "weight": weight,
-                })
-            if stocks:
-                result[sector_name] = stocks
-            time.sleep(0.3)
-        except Exception as _e:
-            logger.debug("SW+XQ sector %s failed: %s", sector_name, _e)
-            continue
-
-    return result
-
-
-def _collect_sector_stocks(sectors: list, max_sectors: int = 20,
-                           top_n: int = 10) -> dict:
-    """Fetch top constituent stocks per sector for treemap drill-down.
-
-    Tries EM (stock_board_industry_cons_em) first.  After 3 consecutive
-    failures, falls back to SW (index_component_sw) + XQ (stock_individual_spot_xq).
-    """
-    import time
-    result: dict[str, list] = {}
-    if not sectors:
-        return result
-
-    try:
-        from .akshare_collector import _retry_call
-        import akshare as ak
-    except ImportError:
-        return result
-
-    sorted_sectors = sorted(sectors, key=lambda s: float(s.get("total_turnover_yi", 0) or 0),
-                            reverse=True)
-
-    consecutive_failures = 0
-    for s in sorted_sectors[:max_sectors]:
-        sector_name = str(s.get("sector", ""))
-        if not sector_name:
-            continue
-        try:
-            from .proxy_pool import em_proxy_session
-            with em_proxy_session():
-                df = _retry_call(ak.stock_board_industry_cons_em, symbol=sector_name)
-            if df is None or df.empty:
-                continue
-
-            # Sort by market cap descending, take top_n
-            if "总市值" in df.columns:
-                df = df.sort_values("总市值", ascending=False)
-
-            stocks = []
-            for _, row in df.head(top_n).iterrows():
-                mcap = float(row.get("总市值", 0) or 0)
-                stocks.append({
-                    "ticker": str(row.get("代码", "")),
-                    "name": str(row.get("名称", "")),
-                    "pct_change": float(row.get("涨跌幅", 0) or 0),
-                    "market_cap_yi": round(mcap / 1e8, 2) if mcap > 0 else 0,
-                    "amount_yi": round(float(row.get("成交额", 0) or 0) / 1e8, 2),
-                })
-            if stocks:
-                result[sector_name] = stocks
-                consecutive_failures = 0
-            time.sleep(0.5)
-        except Exception as _e:
-            logger.debug("EM sector %s failed: %s", sector_name, _e)
-            consecutive_failures += 1
-            if consecutive_failures >= 3:
-                print(f"  [BOARD] EM failed 3x, switching to SW+XQ fallback")
-                ths_sw_map = _build_ths_to_sw_map()
-                if ths_sw_map:
-                    print(f"  [BOARD] THS→SW mapping: {len(ths_sw_map)} sectors matched")
-                    remaining = [s2 for s2 in sorted_sectors[:max_sectors]
-                                 if str(s2.get("sector", "")) not in result]
-                    sw_result = _collect_sector_stocks_sw(
-                        remaining, ths_sw_map, max_sectors=max_sectors, top_n=top_n,
-                    )
-                    result.update(sw_result)
-                    if sw_result:
-                        print(f"  [BOARD] SW fallback: {len(sw_result)} sectors fetched")
-                else:
-                    print(f"  [BOARD] SW fallback: mapping build failed")
-                break
-            time.sleep(1)
-
-    return result
-
-
 def process_all(trade_date: str = ""):
     """Process all ticker output files in agent_artifacts/results/.
 
@@ -290,6 +149,7 @@ def process_all(trade_date: str = ""):
         _track_degradation("market_snapshot", e, "no snapshot data")
 
     # --- Step 1b: Try to collect board data (sector heatmap, limits) ---
+    # Delegates to akshare_collector.collect_board_data() — single source of truth.
     board_data = None
     board_path = _REPLAYS_DIR / f"market_board_{today}.json"
     if board_path.exists():
@@ -302,106 +162,14 @@ def process_all(trade_date: str = ""):
 
     if board_data is None:
         try:
-            from .akshare_collector import _retry_call
-            import akshare as ak
-
+            from .akshare_collector import collect_board_data as _collect_board
             print("  [BOARD] Collecting board data...")
             _REPLAYS_DIR.mkdir(parents=True, exist_ok=True)
-            board_data = {"trade_date": today}
+            board_data = _collect_board(today)
+            print(f"  [BOARD] Collected: {len(board_data.get('sectors', []))} sectors, "
+                  f"{len(board_data.get('limit_ups', []))} limit-ups")
 
-            # Sector heatmap (THS)
-            try:
-                df = _retry_call(ak.stock_board_industry_summary_ths)
-                sectors = []
-                for _, row in df.head(80).iterrows():
-                    sectors.append({
-                        "sector": str(row.get("板块", "")),
-                        "pct_change": float(row.get("涨跌幅", 0) or 0),
-                        "total_turnover_yi": round(float(row.get("总成交额", 0) or 0), 2),
-                        "net_flow_yi": round(float(row.get("净流入", 0) or 0), 2),
-                        "advance_count": int(row.get("上涨家数", 0) or 0),
-                        "decline_count": int(row.get("下跌家数", 0) or 0),
-                        "leader": str(row.get("领涨股", "") or ""),
-                        "leader_pct": float(row.get("领涨股-涨跌幅", 0) or 0),
-                    })
-                board_data["sectors"] = sectors
-            except Exception as e:
-                print(f"  [BOARD] Sector collection failed: {e}")
-                board_data["sectors"] = []
-
-            # Limit-up stocks
-            date_fmt = today.replace("-", "")
-            try:
-                from .proxy_pool import em_proxy_session
-                with em_proxy_session():
-                    df_zt = _retry_call(ak.stock_zt_pool_em, date=date_fmt)
-                limit_ups = []
-                for _, row in df_zt.iterrows():
-                    limit_ups.append({
-                        "ticker": str(row.get("代码", "")),
-                        "name": str(row.get("名称", "")),
-                        "pct_change": float(row.get("涨跌幅", 0) or 0),
-                        "amount_yi": round(float(row.get("成交额", 0) or 0) / 1e8, 2),
-                        "boards": int(row.get("连板数", 1) or 1),
-                        "sector": str(row.get("所属行业", "") or ""),
-                        "seal_amount_yi": round(float(row.get("封板资金", 0) or 0) / 1e8, 2),
-                        "first_seal": str(row.get("首次封板时间", "") or ""),
-                    })
-                board_data["limit_ups"] = limit_ups
-            except Exception as e:
-                print(f"  [BOARD] Limit-up collection failed: {e}")
-                board_data["limit_ups"] = []
-
-            # Limit-down stocks
-            try:
-                from .proxy_pool import em_proxy_session
-                with em_proxy_session():
-                    df_dt = _retry_call(ak.stock_zt_pool_dtgc_em, date=date_fmt)
-                limit_downs = []
-                for _, row in df_dt.iterrows():
-                    limit_downs.append({
-                        "ticker": str(row.get("代码", "")),
-                        "name": str(row.get("名称", "")),
-                        "pct_change": float(row.get("涨跌幅", 0) or 0),
-                        "amount_yi": round(float(row.get("成交额", 0) or 0) / 1e8, 2),
-                        "sector": str(row.get("所属行业", "") or ""),
-                    })
-                board_data["limit_downs"] = limit_downs
-            except Exception as e:
-                print(f"  [BOARD] Limit-down collection failed: {e}")
-                board_data["limit_downs"] = []
-
-            # Consecutive boards (derived from limit_ups)
-            consec = {}
-            for s in board_data.get("limit_ups", []):
-                b = s.get("boards", 1)
-                consec.setdefault(b, []).append(s)
-            board_data["consecutive_boards"] = {str(k): v for k, v in sorted(consec.items())}
-
-            # Sector attribution
-            sector_agg = {}
-            for s in board_data.get("limit_ups", []):
-                sec = s.get("sector", "")
-                if sec:
-                    if sec not in sector_agg:
-                        sector_agg[sec] = {"count": 0, "stocks": []}
-                    sector_agg[sec]["count"] += 1
-                    sector_agg[sec]["stocks"].append(s["name"])
-            board_data["limit_sector_attribution"] = dict(
-                sorted(sector_agg.items(), key=lambda x: x[1]["count"], reverse=True)
-            )
-
-            # Sector constituent stocks (top N per sector, for treemap drill-down)
-            sector_stocks = _collect_sector_stocks(
-                board_data.get("sectors", []), max_sectors=20, top_n=10,
-            )
-            if sector_stocks:
-                board_data["sector_stocks"] = sector_stocks
-                total_st = sum(len(v) for v in sector_stocks.values())
-                print(f"  [BOARD] Sector stocks: {len(sector_stocks)} sectors, "
-                      f"{total_st} stocks total")
-
-            # Save atomically (temp file + rename)
+            # Persist atomically
             fd, tmp = tempfile.mkstemp(
                 dir=str(board_path.parent), suffix=".tmp", prefix=".board-"
             )
@@ -415,8 +183,6 @@ def process_all(trade_date: str = ""):
                 except OSError:
                     pass
                 raise
-            print(f"  [BOARD] Saved: {len(board_data.get('sectors', []))} sectors, "
-                  f"{len(board_data.get('limit_ups', []))} limit-ups")
         except Exception as e:
             print(f"  [BOARD] Board data collection failed: {e}")
             _track_degradation("board_data", e, "no limit/sector detail")
