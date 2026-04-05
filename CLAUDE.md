@@ -44,7 +44,7 @@ See `tribunal.md` for the full orchestration spec with step-by-step execution or
 subagent_pipeline/
 │
 │  ── Foundation ──
-├── shared.py              Common prompt fragments (rules, evidence protocol, language)
+├── shared.py              Common prompt fragments + TAG_* output tag constants
 ├── config.py              PIPELINE_STAGES DAG + model assignments + import-time validation
 │
 │  ── Data Layer (no LLM) ──
@@ -642,6 +642,12 @@ These rules exist because of past bugs that produced silently wrong reports. Vio
 - **Fail-open batch processing**: `batch_process.process_all()` continues processing remaining tickers when one fails. Individual failures are logged but don't block the batch.
 - **Confidence sentinel -1.0**: `NodeTrace.confidence` and `RunTrace.final_confidence` use `-1.0` to mean "not set". `RunTrace.finalize()` skips nodes with `confidence < 0` when picking the final confidence. Do not change to `None` — 7+ files compare numerically.
 - **Publishing Compliance is lightweight**: The subagent_pipeline runs P1 (evidence presence) and P5 (veto consistency) checks. The full 5-rule engine lives in `tradingagents/publishing_compliance.py` (parent project, not importable due to zero-external-import policy). Compliance node seq=18 (after research_output=17).
+- **Output tag constants in shared.py**: All agent output markers (`TAG_CATALYST_OUTPUT`, `TAG_RISK_OUTPUT`, etc.) are defined once in `shared.py`. Bridge parsers import them. Prompts still embed the string literals in f-strings (LLM-facing text), but the tag names are centralized for parser maintenance.
+- **Timestamps are CST (UTC+8)**: `trace_models._now_cst()` produces timezone-aware datetimes. Old traces with naive timestamps are still loadable via `fromisoformat()`.
+- **_sina_cache capped at 500 entries**: Thread-safe with FIFO eviction when limit reached (`backtest._cached_klines()`).
+- **Replay trace size limit**: `ReplayStore.load()` rejects files >50 MB to prevent OOM.
+- **pm_confidence survives JSON roundtrip**: `RunTrace.to_dict()` serializes `_pm_confidence` as `"pm_confidence"`; `from_dict()` restores it. This preserves the confidence fallback chain across serialization boundaries.
+- **confidence_raw in structured_data**: The pre-normalization confidence value from TRADECARD_JSON is stored as `structured_data["confidence_raw"]` for audit traceability.
 
 ## Tests
 
