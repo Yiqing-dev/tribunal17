@@ -46,6 +46,8 @@ subagent_pipeline/
 │  ── Foundation ──
 ├── shared.py              Common prompt fragments + TAG_* output tag constants
 ├── config.py              PIPELINE_STAGES DAG + model assignments + import-time validation
+│                          PipelineRunConfig.from_env() reads TA_* env vars
+│                          get_env_bool/get_env_float for feature flags
 ├── agent_protocol.py      Unified AgentRequest/AgentResult + AGENT_REGISTRY (17 agents)
 │                          build_prompt(req) + parse_output() + list_agents(category)
 │
@@ -53,6 +55,7 @@ subagent_pipeline/
 ├── akshare_collector.py   Stock data → AkshareBundle (12 APIs) + _retry_call() utility
 │                          Market data → MarketSnapshot (indices/sectors/northbound/limits)
 │                          collect(use_cache=True) skips API calls on same-day re-runs
+│                          _throttle(): global rate limiter (0.3s+jitter, TA_API_MIN_INTERVAL)
 ├── data_cache.py          SHA1-keyed file cache: DataCache.get/put/invalidate/clear
 │                          Storage: data/cache/{sha1}.json, thread-safe, stats tracking
 ├── recap_collector.py     Daily recap → DailyRecapData (index K/MACD/RSI, sector heatmap, limits)
@@ -660,7 +663,7 @@ These rules exist because of past bugs that produced silently wrong reports. Vio
 
 ## Tests
 
-Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 897 tests, no API keys needed:
+Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 918 tests, no API keys needed:
 
 ```bash
 # All tests
