@@ -46,6 +46,8 @@ subagent_pipeline/
 │  ── Foundation ──
 ├── shared.py              Common prompt fragments + TAG_* output tag constants
 ├── config.py              PIPELINE_STAGES DAG + model assignments + import-time validation
+├── agent_protocol.py      Unified AgentRequest/AgentResult + AGENT_REGISTRY (17 agents)
+│                          build_prompt(req) + parse_output() + list_agents(category)
 │
 │  ── Data Layer (no LLM) ──
 ├── akshare_collector.py   Stock data → AkshareBundle (12 APIs) + _retry_call() utility
@@ -658,7 +660,7 @@ These rules exist because of past bugs that produced silently wrong reports. Vio
 
 ## Tests
 
-Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 857 tests, no API keys needed:
+Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 897 tests, no API keys needed:
 
 ```bash
 # All tests
