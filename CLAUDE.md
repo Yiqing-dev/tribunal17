@@ -651,7 +651,7 @@ These rules exist because of past bugs that produced silently wrong reports. Vio
 
 ## Tests
 
-Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 803 tests, no API keys needed:
+Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 834 tests, no API keys needed:
 
 ```bash
 # All tests
