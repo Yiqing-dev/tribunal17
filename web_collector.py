@@ -10,8 +10,6 @@ to gather data akshare cannot provide:
 The agents return structured text that gets merged into market_context.
 """
 
-from __future__ import annotations
-
 import logging
 import re
 

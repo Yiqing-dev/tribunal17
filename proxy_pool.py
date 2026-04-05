@@ -14,8 +14,6 @@ Usage:
 Ported from akshare-stock-data-fetcher/stock_zh_a_spot_em_proxy_strength.py.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 import random

@@ -8,8 +8,6 @@ The verification agent receives the akshare data bundle, independently searches
 for the same data points via WebSearch, and checks consistency.
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass, field
 from typing import Optional

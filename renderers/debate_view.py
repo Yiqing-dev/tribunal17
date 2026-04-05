@@ -6,8 +6,6 @@ RunTrace objects and produces a DebateView that the renderer can consume
 without touching raw protocol internals.
 """
 
-from __future__ import annotations
-
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional
 

@@ -34,6 +34,9 @@ def _strip_internal_tokens(text: str) -> str:
     """
     if not text:
         return text
+    # Guard against pathologically long text (ReDoS mitigation)
+    if len(text) > 200_000:
+        text = text[:200_000]
 
     # ── LLM preamble removal (full leading sentences) ──
     from .decision_labels import INTERNAL_TOKEN_PREFIXES

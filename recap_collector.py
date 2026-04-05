@@ -22,14 +22,18 @@ from .proxy_pool import em_proxy_session
 
 logger = logging.getLogger(__name__)
 
+import threading as _threading
 _ak = None
+_ak_lock = _threading.Lock()
 
 
 def _get_ak():
     global _ak
     if _ak is None:
-        import akshare as ak
-        _ak = ak
+        with _ak_lock:
+            if _ak is None:
+                import akshare as ak
+                _ak = ak
     return _ak
 
 

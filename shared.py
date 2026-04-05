@@ -1,7 +1,27 @@
-"""Shared prompt blocks reused across all agents.
+"""Shared prompt blocks and constants reused across all agents.
 
 All functions return plain strings with {placeholders} already filled in.
 """
+
+# ── Output tag constants ────────────────────────────────────────────────
+# Used in prompts.py (definition) and bridge.py / web_collector.py (parsing).
+# Changing a tag here updates both sides automatically.
+
+TAG_CATALYST_OUTPUT = "CATALYST_OUTPUT"
+TAG_RISK_OUTPUT = "RISK_OUTPUT"
+TAG_RISK_DEBATER_OUTPUT = "RISK_DEBATER_OUTPUT"
+TAG_MACRO_OUTPUT = "MACRO_OUTPUT"
+TAG_BREADTH_OUTPUT = "BREADTH_OUTPUT"
+TAG_SECTOR_OUTPUT = "SECTOR_OUTPUT"
+TAG_GLOBAL_MACRO_OUTPUT = "GLOBAL_MACRO_OUTPUT"
+TAG_SYNTHESIS_OUTPUT = "SYNTHESIS_OUTPUT"
+TAG_TRADECARD_JSON = "TRADECARD_JSON"
+TAG_TRADE_PLAN_JSON = "TRADE_PLAN_JSON"
+TAG_ORDER_PROPOSAL_JSON = "ORDER_PROPOSAL_JSON"
+
+# Round delimiters for bull/bear debate merging
+ROUND_1_HEADER = "=== Round 1 ==="
+ROUND_2_HEADER = "=== Round 2 ==="
 
 
 def common_input_block(

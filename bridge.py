@@ -21,6 +21,12 @@ from .trace_models import (
     compute_hash,
 )
 from .replay_store import ReplayStore
+from .shared import (
+    TAG_CATALYST_OUTPUT, TAG_RISK_OUTPUT, TAG_RISK_DEBATER_OUTPUT,
+    TAG_MACRO_OUTPUT, TAG_BREADTH_OUTPUT, TAG_SECTOR_OUTPUT,
+    TAG_SYNTHESIS_OUTPUT, TAG_TRADECARD_JSON, TAG_TRADE_PLAN_JSON,
+    TAG_ORDER_PROPOSAL_JSON,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,25 +113,39 @@ def parse_catalyst_json(text: str) -> List[Dict]:
     """Extract CATALYST_OUTPUT: [...] JSON block."""
     # Handle markdown code block: CATALYST_OUTPUT:\n```json\n[...]\n```
     cb_m = re.search(
-        r'CATALYST_OUTPUT:\s*\n\s*```(?:json)?\s*\n([\s\S]*?)\n\s*```', text
+        rf'{TAG_CATALYST_OUTPUT}:\s*\n\s*```(?:json)?\s*\n([\s\S]*?)\n\s*```', text
     )
     if cb_m:
         inner = cb_m.group(1).strip()
         if inner.startswith('['):
-            text = text[:cb_m.start()] + "CATALYST_OUTPUT:\n" + inner + text[cb_m.end():]
+            text = text[:cb_m.start()] + f"{TAG_CATALYST_OUTPUT}:\n" + inner + text[cb_m.end():]
 
     # Find start of CATALYST_OUTPUT array
-    start_m = re.search(r'CATALYST_OUTPUT:\s*\n?\s*\[', text)
+    start_m = re.search(rf'{TAG_CATALYST_OUTPUT}:\s*\n?\s*\[', text)
     if not start_m:
         return []
-    # Find the matching closing bracket (handle nested arrays)
+    # Find the matching closing bracket (string-aware to skip brackets inside "...")
     arr_start = start_m.end() - 1  # position of opening [
     depth = 0
     arr_end = arr_start
+    in_str = False
+    escape = False
     for i in range(arr_start, len(text)):
-        if text[i] == '[':
+        c = text[i]
+        if escape:
+            escape = False
+            continue
+        if c == '\\' and in_str:
+            escape = True
+            continue
+        if c == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if c == '[':
             depth += 1
-        elif text[i] == ']':
+        elif c == ']':
             depth -= 1
             if depth == 0:
                 arr_end = i + 1
@@ -258,7 +278,7 @@ def parse_scenario_output(text: str) -> Dict[str, Any]:
 
 def parse_synthesis_output(text: str) -> Dict[str, Any]:
     """Extract SYNTHESIS_OUTPUT: key=value or JSON block."""
-    block = _extract_tagged_block("SYNTHESIS_OUTPUT", text)
+    block = _extract_tagged_block(TAG_SYNTHESIS_OUTPUT, text)
     if not block:
         return {}
     j = _try_json_parse(block)
@@ -270,7 +290,7 @@ def parse_synthesis_output(text: str) -> Dict[str, Any]:
 def parse_risk_output(text: str) -> Dict[str, Any]:
     """Extract RISK_OUTPUT: block including risk_flags array."""
     result = {}
-    block = _extract_tagged_block("RISK_OUTPUT", text)
+    block = _extract_tagged_block(TAG_RISK_OUTPUT, text)
     if not block:
         return result
 
@@ -323,7 +343,7 @@ def parse_risk_output(text: str) -> Dict[str, Any]:
 
 def parse_risk_debater_output(text: str) -> Dict[str, Any]:
     """Extract RISK_DEBATER_OUTPUT: key=value block from risk debater output."""
-    block = _extract_tagged_block("RISK_DEBATER_OUTPUT", text)
+    block = _extract_tagged_block(TAG_RISK_DEBATER_OUTPUT, text)
     if not block:
         return {}
     j = _try_json_parse(block)
@@ -336,8 +356,10 @@ def _iter_json_code_blocks(text: str):
     """Yield (label_or_empty, json_str) for each fenced code block containing JSON."""
     # Match optional label on line before code fence, then the code block content.
     # Two patterns: labeled (label on preceding line) and bare (code fence at start).
+    _JSON_TAGS = (TAG_TRADECARD_JSON, TAG_TRADE_PLAN_JSON, TAG_ORDER_PROPOSAL_JSON)
+    _tags_re = "|".join(re.escape(t) for t in _JSON_TAGS)
     for m in re.finditer(
-        r'(?:(?:^|\n)\s*(?:#{0,4}\s*)?(TRADECARD_JSON|TRADE_PLAN_JSON|ORDER_PROPOSAL_JSON)[:\s]*\n'
+        rf'(?:(?:^|\n)\s*(?:#{{0,4}}\s*)?({_tags_re})[:\s]*\n'
         r'\s*```(?:json)?\s*\n([\s\S]*?)\n\s*```'
         r'|(?:^|\n)\s*```(?:json)?\s*\n([\s\S]*?)\n\s*```)',
         text,
@@ -347,7 +369,7 @@ def _iter_json_code_blocks(text: str):
         body = (m.group(2) or m.group(3) or "").strip()
         # Handle label inside code block (Format D)
         if not label:
-            for tag in ("TRADECARD_JSON", "TRADE_PLAN_JSON", "ORDER_PROPOSAL_JSON"):
+            for tag in _JSON_TAGS:
                 if body.startswith(tag):
                     label = tag
                     body = body[len(tag):].lstrip(":").strip()
@@ -359,7 +381,7 @@ def parse_tradecard_json(text: str) -> Dict[str, Any]:
     """Extract TRADECARD_JSON code block."""
     # Priority 1: labeled block
     for label, body in _iter_json_code_blocks(text):
-        if label == "TRADECARD_JSON" and body.startswith('{'):
+        if label == TAG_TRADECARD_JSON and body.startswith('{'):
             try:
                 raw = re.sub(r',\s*}', '}', body)
                 return json.loads(raw)
@@ -399,7 +421,7 @@ def parse_trade_plan_json(text: str) -> Dict[str, Any]:
 
     # Priority 1: labeled block
     for label, body in _iter_json_code_blocks(text):
-        if label == "TRADE_PLAN_JSON" and body.startswith('{'):
+        if label == TAG_TRADE_PLAN_JSON and body.startswith('{'):
             result = _try_parse_trade_plan(body)
             if result is not None:
                 return result
@@ -559,7 +581,7 @@ def validate_market_agent_dates(
 
 def parse_macro_output(text: str) -> Dict[str, Any]:
     """Extract MACRO_OUTPUT: key=value block."""
-    block = _extract_tagged_block("MACRO_OUTPUT", text)
+    block = _extract_tagged_block(TAG_MACRO_OUTPUT, text)
     if not block:
         return {}
     j = _try_json_parse(block)
@@ -570,7 +592,7 @@ def parse_macro_output(text: str) -> Dict[str, Any]:
 
 def parse_breadth_output(text: str) -> Dict[str, Any]:
     """Extract BREADTH_OUTPUT: key=value block."""
-    block = _extract_tagged_block("BREADTH_OUTPUT", text)
+    block = _extract_tagged_block(TAG_BREADTH_OUTPUT, text)
     if not block:
         return {}
     j = _try_json_parse(block)
@@ -581,7 +603,7 @@ def parse_breadth_output(text: str) -> Dict[str, Any]:
 
 def parse_sector_output(text: str) -> Dict[str, Any]:
     """Extract SECTOR_OUTPUT: key=value block with array fields."""
-    block = _extract_tagged_block("SECTOR_OUTPUT", text)
+    block = _extract_tagged_block(TAG_SECTOR_OUTPUT, text)
     if not block:
         return {}
     j = _try_json_parse(block)
@@ -1341,6 +1363,7 @@ def _parse_research_output(agent_key: str, text: str, nt: NodeTrace) -> None:
             nt.research_action = tc_action
         tc_conf = tradecard.get("confidence")
         if tc_conf is not None:
+            sd["confidence_raw"] = tc_conf  # preserve pre-normalization value
             nt.confidence = _confidence_to_float(tc_conf)
     if trade_plan:
         sd["trade_plan"] = trade_plan

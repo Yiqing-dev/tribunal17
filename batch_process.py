@@ -112,43 +112,10 @@ def _build_market_context(agent_outputs: dict, trade_date: str) -> dict:
 def _build_ths_to_sw_map() -> dict:
     """Build THS sector name → SW second-level industry code mapping.
 
-    NOTE: This function duplicates akshare_collector._build_ths_to_sw_map().
-    Future refactor should unify into a single shared implementation.
-
-    Returns ``{ths_name: sw_code}`` e.g. ``{"半导体": "801081"}``.
-    Uses exact match first, then fuzzy match (strip trailing ``Ⅱ``).
+    Delegates to the canonical implementation in akshare_collector.
     """
-    try:
-        import akshare as ak
-        sw2 = ak.sw_index_second_info()
-    except Exception as _e:
-        logger.debug("sw_index_second_info failed: %s", _e)
-        return {}
-
-    sw_by_name: dict[str, str] = {}
-    sw_stripped: dict[str, str] = {}
-    for _, row in sw2.iterrows():
-        code = str(row["行业代码"]).replace(".SI", "")
-        name = str(row["行业名称"])
-        sw_by_name[name] = code
-        stripped = name.rstrip("Ⅱ").rstrip()
-        if stripped != name:
-            sw_stripped[stripped] = code
-
-    try:
-        ths = ak.stock_board_industry_name_ths()
-    except Exception as _e:
-        logger.debug("stock_board_industry_name_ths failed: %s", _e)
-        return {}
-
-    mapping: dict[str, str] = {}
-    for _, row in ths.iterrows():
-        ths_name = str(row["name"])
-        if ths_name in sw_by_name:
-            mapping[ths_name] = sw_by_name[ths_name]
-        elif ths_name in sw_stripped:
-            mapping[ths_name] = sw_stripped[ths_name]
-    return mapping
+    from .akshare_collector import _build_ths_to_sw_map as _impl
+    return _impl()
 
 
 def _collect_sector_stocks_sw(sectors: list, ths_sw_map: dict,

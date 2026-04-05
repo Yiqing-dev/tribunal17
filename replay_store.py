@@ -105,11 +105,18 @@ class ReplayStore:
 
     # ── Read ─────────────────────────────────────────────────────────────
 
+    _MAX_TRACE_SIZE = 50 * 1024 * 1024  # 50 MB safety limit
+
     def load(self, run_id: str) -> Optional[RunTrace]:
         """Load a RunTrace by run_id. Returns None if not found."""
         trace_path = self.storage_dir / f"{run_id}.json"
         if not trace_path.exists():
             logger.warning(f"Replay trace not found: {trace_path}")
+            return None
+
+        size = trace_path.stat().st_size
+        if size > self._MAX_TRACE_SIZE:
+            logger.warning("Trace %s too large (%d bytes), skipping", run_id, size)
             return None
 
         try:

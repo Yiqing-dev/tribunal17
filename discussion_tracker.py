@@ -20,8 +20,6 @@ Usage:
     pred = review_prediction("run-abc123def456", actual_price=9.50)
 """
 
-from __future__ import annotations
-
 import logging
 import re
 from dataclasses import asdict, dataclass, field

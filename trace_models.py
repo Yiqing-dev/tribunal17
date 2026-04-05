@@ -11,8 +11,16 @@ import hashlib
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from enum import Enum
+
+# A-share product — all timestamps in CST (UTC+8)
+_CST = timezone(timedelta(hours=8))
+
+
+def _now_cst() -> datetime:
+    """Return timezone-aware 'now' in CST (Asia/Shanghai)."""
+    return datetime.now(tz=_CST)
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -36,7 +44,7 @@ class NodeTrace:
     run_id: str
     node_name: str
     seq: int                          # Execution order within run (0-based)
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=_now_cst)
     duration_ms: float = 0.0
 
     status: NodeStatus = NodeStatus.OK
@@ -138,7 +146,7 @@ class RunTrace:
     ticker_name: str = ""            # Human-readable name (e.g. "贵州茅台")
     trade_date: str = ""
     as_of: str = ""                   # Date the analysis was requested
-    started_at: datetime = field(default_factory=datetime.now)
+    started_at: datetime = field(default_factory=_now_cst)
     completed_at: Optional[datetime] = None
 
     # Config snapshot (non-sensitive)
@@ -175,7 +183,7 @@ class RunTrace:
 
     def finalize(self):
         """Compute summary fields from node traces."""
-        self.completed_at = datetime.now()
+        self.completed_at = _now_cst()
         self.total_nodes = len(self.node_traces)
         self.error_count = sum(1 for n in self.node_traces if n.status == NodeStatus.ERROR)
         self.warn_count = sum(1 for n in self.node_traces if n.status == NodeStatus.WARN)
@@ -233,7 +241,10 @@ class RunTrace:
         d = {}
         for k, v in self.__dict__.items():
             if k.startswith("_"):
-                continue  # skip private/internal attrs like _pm_confidence
+                # Persist known private attrs under un-prefixed keys
+                if k == "_pm_confidence":
+                    d["pm_confidence"] = v
+                continue
             if k == "node_traces":
                 d[k] = [nt.to_dict() for nt in v]
             elif isinstance(v, datetime):
@@ -252,9 +263,13 @@ class RunTrace:
                 d[ts_field] = datetime.fromisoformat(d[ts_field])
             elif ts_field in d and d[ts_field] is None:
                 pass  # keep None
+        # Restore known private attrs before constructing
+        pm_conf = d.pop("pm_confidence", None)
         rt = cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
         if not had_started_at:
             rt.started_at = None  # don't let default_factory mask missing data
+        if pm_conf is not None:
+            rt._pm_confidence = pm_conf
         rt.node_traces = [NodeTrace.from_dict(nd) for nd in node_dicts]
         return rt
 

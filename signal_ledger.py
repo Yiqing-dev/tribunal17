@@ -511,7 +511,7 @@ def repair_ledger(
         return report
 
     with open(ledger_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+        lines = list(f)  # line-by-line; avoids readlines() buffering on huge files
 
     repaired_lines = []
     for line in lines:

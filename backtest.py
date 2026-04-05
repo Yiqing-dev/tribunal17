@@ -28,8 +28,12 @@ def _ts_hash() -> str:
     return hashlib.sha256(ts.encode()).hexdigest()[:6]
 
 
-# Per-ticker Sina kline cache (avoids repeated API calls for same ticker)
+# Per-ticker Sina kline cache (avoids repeated API calls for same ticker).
+# Thread-safe with max-size eviction to prevent unbounded growth.
+import threading as _threading
 _sina_cache: Dict[str, List[Dict]] = {}
+_sina_cache_lock = _threading.Lock()
+_SINA_CACHE_MAX = 500
 
 
 # ── Configuration ─────────────────────────────────────────────────────────
@@ -274,9 +278,7 @@ def fetch_forward_bars(
     # Calculate datalen large enough to cover from signal_date to today + window
     approx_trading_days = int((datetime.now() - sig_dt).days * 5 / 7) + window_days + 10
     datalen = max(60, approx_trading_days)
-    if bare_key not in _sina_cache or len(_sina_cache[bare_key]) < datalen:
-        _sina_cache[bare_key] = _fetch_sina_klines(ticker, datalen=datalen)
-    all_bars = _sina_cache[bare_key]
+    all_bars = _cached_klines(bare_key, ticker, datalen)
     if all_bars:
         forward = [b for b in all_bars if b["date"] > signal_date]
         if forward:
@@ -285,6 +287,20 @@ def fetch_forward_bars(
     # Sina couldn't find data — give up
     logger.info(f"No Sina data for {ticker} after {signal_date}")
     return []
+
+
+def _cached_klines(bare_key: str, ticker: str, datalen: int) -> List[Dict]:
+    """Thread-safe cache lookup + fetch for Sina klines with max-size eviction."""
+    with _sina_cache_lock:
+        if bare_key in _sina_cache and len(_sina_cache[bare_key]) >= datalen:
+            return _sina_cache[bare_key]
+    bars = _fetch_sina_klines(ticker, datalen=datalen)
+    with _sina_cache_lock:
+        if len(_sina_cache) >= _SINA_CACHE_MAX:
+            # Evict oldest entry (FIFO)
+            _sina_cache.pop(next(iter(_sina_cache)), None)
+        _sina_cache[bare_key] = bars
+    return bars
 
 
 def fetch_signal_day_close(ticker: str, signal_date: str) -> float:
@@ -302,9 +318,7 @@ def fetch_signal_day_close(ticker: str, signal_date: str) -> float:
     # Calculate datalen large enough to cover back to signal_date
     approx_trading_days = int((datetime.now() - sig_dt).days * 5 / 7) + 10
     datalen = max(60, approx_trading_days)
-    if bare_key not in _sina_cache or len(_sina_cache[bare_key]) < datalen:
-        _sina_cache[bare_key] = _fetch_sina_klines(ticker, datalen=datalen)
-    all_bars = _sina_cache[bare_key]
+    all_bars = _cached_klines(bare_key, ticker, datalen)
     if all_bars:
         # Find exact date or closest before
         for b in reversed(all_bars):
