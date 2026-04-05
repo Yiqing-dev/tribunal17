@@ -50,9 +50,16 @@ subagent_pipeline/
 │  ── Data Layer (no LLM) ──
 ├── akshare_collector.py   Stock data → AkshareBundle (12 APIs) + _retry_call() utility
 │                          Market data → MarketSnapshot (indices/sectors/northbound/limits)
+│                          collect(use_cache=True) skips API calls on same-day re-runs
+├── data_cache.py          SHA1-keyed file cache: DataCache.get/put/invalidate/clear
+│                          Storage: data/cache/{sha1}.json, thread-safe, stats tracking
 ├── recap_collector.py     Daily recap → DailyRecapData (index K/MACD/RSI, sector heatmap, limits)
 │                          Uses _retry_call from akshare_collector for transient failure retry
 ├── verification.py        Cross-validation prompt + PASS/FAIL parse
+├── reflection.py          Post-hoc analysis: prediction vs actual outcome
+│                          ReflectionRecord (error_type, pillar_blame, lesson)
+│                          ReflectionReport (aggregation, markdown, save_json)
+│                          generate_reflection_prompt() for LLM-based deep analysis
 │
 │  ── Prompt Layer ──
 ├── prompts.py             17 agent prompt functions, each returns rendered string
@@ -651,7 +658,7 @@ These rules exist because of past bugs that produced silently wrong reports. Vio
 
 ## Tests
 
-Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 834 tests, no API keys needed:
+Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 857 tests, no API keys needed:
 
 ```bash
 # All tests
