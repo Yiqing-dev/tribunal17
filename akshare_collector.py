@@ -1685,16 +1685,20 @@ def collect_market_snapshot(
     return ms
 
 
-def collect(ticker: str, trade_date: str = "") -> AkshareBundle:
+def collect(ticker: str, trade_date: str = "", *, use_cache: bool = True) -> AkshareBundle:
     """Collect all available akshare data for a single A-share ticker.
 
     Args:
         ticker: 6-digit A-share code (e.g. "601985")
         trade_date: Analysis date (default: today)
+        use_cache: If True, return cached bundle when available for
+            the same ticker+date.  Same-day re-runs skip API calls.
 
     Returns:
         AkshareBundle with structured data + markdown report
     """
+    from .data_cache import DataCache
+
     # Strip suffix if present
     bare = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
     if not re.match(r'^\d{6}$', bare):
@@ -1708,6 +1712,20 @@ def collect(ticker: str, trade_date: str = "") -> AkshareBundle:
             f"rolling back to last trading day {rolled}."
         )
         effective_date = rolled
+
+    # ── Cache check (bundle-level) ──
+    cache = DataCache()
+    if use_cache:
+        cached = cache.get("collect_bundle", bare, effective_date)
+        if cached is not None:
+            try:
+                b = AkshareBundle(**{k: v for k, v in cached.items()
+                                     if k in AkshareBundle.__dataclass_fields__})
+                logger.info(f"Cache HIT: {bare} {effective_date} ({b.name})")
+                return b
+            except (TypeError, ValueError) as e:
+                logger.debug("Cache deserialize failed, re-collecting: %s", e)
+
     b = AkshareBundle(
         ticker=bare,
         trade_date=effective_date,
@@ -1726,6 +1744,15 @@ def collect(ticker: str, trade_date: str = "") -> AkshareBundle:
 
     b.collection_seconds = time.time() - t0
     b.markdown_report = _build_markdown(b)
+
+    # ── Cache store ──
+    if use_cache and b.apis_succeeded:
+        try:
+            bundle_dict = {k: v for k, v in b.__dict__.items()
+                          if not k.startswith("_")}
+            cache.put("collect_bundle", bare, effective_date, bundle_dict)
+        except Exception as e:
+            logger.debug("Cache write failed: %s", e)
 
     logger.info(
         f"Collected {bare} {b.name}: "
