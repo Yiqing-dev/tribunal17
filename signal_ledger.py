@@ -128,12 +128,30 @@ class SignalLedger:
 
     # ── Write ─────────────────────────────────────────────────────────────
 
-    def append(self, record: SignalRecord) -> None:
+    def _has_run_id(self, run_id: str) -> bool:
+        """Check if run_id already exists in ledger (O(n) scan)."""
+        if not self.path.exists():
+            return False
+        needle = f'"run_id": "{run_id}"'
+        try:
+            with open(self.path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if needle in line:
+                        return True
+        except OSError:
+            pass
+        return False
+
+    def append(self, record: SignalRecord, *, allow_duplicate: bool = False) -> None:
         """Append a single signal record.
 
         Uses atomic write-to-temp-then-append with file locking to
         prevent concurrent writers from interleaving or losing lines.
+        Skips if run_id already exists (unless allow_duplicate=True).
         """
+        if not allow_duplicate and record.run_id and self._has_run_id(record.run_id):
+            logger.info("Skipping duplicate run_id=%s in ledger", record.run_id)
+            return
         if not record.recorded_at:
             record.recorded_at = datetime.now().isoformat()
         line = json.dumps(record.to_dict(), ensure_ascii=False, allow_nan=False) + "\n"

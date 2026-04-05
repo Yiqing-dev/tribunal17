@@ -633,6 +633,7 @@ def assemble_market_context(
     global_macro: Optional[Dict[str, str]] = None,
     *,
     raw_texts: Optional[Dict[str, str]] = None,
+    strict_date_check: bool = False,
 ) -> Dict[str, Any]:
     """Combine 3 market agent outputs into a canonical market_context dict.
 
@@ -643,12 +644,12 @@ def assemble_market_context(
         raw_texts: Optional dict of raw agent output texts keyed by
             ``"macro"``, ``"breadth"``, ``"sector"``.  When provided *and*
             *trade_date* is set, each text's embedded content date is validated
-            against *trade_date*.  Raises :class:`StaleMarketDataError` on
-            mismatch.
+            against *trade_date*.
+        strict_date_check: When True, raises ``StaleMarketDataError`` on date
+            mismatch instead of logging a warning.  Use this in production
+            orchestration to prevent stale L1 data from poisoning downstream.
     """
     # ── Date validation guard ──
-    # Downgraded from hard exception to warning: LLM agents may write
-    # imprecise dates in prose even when analyzing correct-date data.
     if raw_texts and trade_date:
         try:
             validate_market_agent_dates(
@@ -658,6 +659,8 @@ def assemble_market_context(
                 sector_text=raw_texts.get("sector", ""),
             )
         except StaleMarketDataError as e:
+            if strict_date_check:
+                raise
             logger.warning("Date mismatch (non-fatal): %s", e)
 
     regime = str(macro.get("regime") or "NEUTRAL").upper()

@@ -127,8 +127,8 @@ class TestSignalLedgerAppendRead:
 
     def test_filter_by_ticker(self, tmp_path):
         ledger = SignalLedger(path=str(tmp_path / "signals.jsonl"))
-        rec_a = self._make_record(ticker="601985.SS", trade_date="2026-03-14")
-        rec_b = self._make_record(ticker="000710.SZ", trade_date="2026-03-14")
+        rec_a = self._make_record(run_id="run-a", ticker="601985.SS", trade_date="2026-03-14")
+        rec_b = self._make_record(run_id="run-b", ticker="000710.SZ", trade_date="2026-03-14")
         ledger.append(rec_a)
         ledger.append(rec_b)
 
@@ -138,16 +138,16 @@ class TestSignalLedgerAppendRead:
 
     def test_filter_by_action(self, tmp_path):
         ledger = SignalLedger(path=str(tmp_path / "signals.jsonl"))
-        ledger.append(self._make_record(trade_date="2026-03-14", action="BUY"))
-        ledger.append(self._make_record(ticker="000710.SZ", trade_date="2026-03-14", action="SELL"))
+        ledger.append(self._make_record(run_id="run-buy", trade_date="2026-03-14", action="BUY"))
+        ledger.append(self._make_record(run_id="run-sell", ticker="000710.SZ", trade_date="2026-03-14", action="SELL"))
 
         buys = ledger.read(action="BUY")
         assert all(r.action == "BUY" for r in buys)
 
     def test_filter_by_after_date(self, tmp_path):
         ledger = SignalLedger(path=str(tmp_path / "signals.jsonl"))
-        ledger.append(self._make_record(trade_date="2026-03-10"))
-        ledger.append(self._make_record(ticker="000710.SZ", trade_date="2026-03-20"))
+        ledger.append(self._make_record(run_id="run-early", trade_date="2026-03-10"))
+        ledger.append(self._make_record(run_id="run-late", ticker="000710.SZ", trade_date="2026-03-20"))
 
         results = ledger.read(after="2026-03-15")
         assert len(results) == 1
@@ -588,3 +588,186 @@ class TestComputeHash:
         result = compute_hash("   ")
         assert len(result) == 16
         assert result != "0" * 16
+
+
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  Audit-fix tests: _safe_filename, _now_cst, write-time dedup,      ║
+# ║  pm_confidence roundtrip, replay store size guard, TAG_* constants  ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+
+class TestSafeFilename:
+    """Tests for report_renderer._safe_filename()."""
+
+    def test_normal_ticker(self):
+        from subagent_pipeline.renderers.report_renderer import _safe_filename
+        assert _safe_filename("601985.SS") == "601985.SS"
+
+    def test_path_traversal_stripped(self):
+        from subagent_pipeline.renderers.report_renderer import _safe_filename
+        result = _safe_filename("../../etc/passwd")
+        assert "/" not in result
+        # Slashes are gone — path traversal impossible regardless of dots
+        assert os.sep not in result
+
+    def test_special_chars(self):
+        from subagent_pipeline.renderers.report_renderer import _safe_filename
+        result = _safe_filename("ticker<script>alert(1)</script>")
+        assert "<" not in result
+        assert ">" not in result
+
+    def test_empty_string(self):
+        from subagent_pipeline.renderers.report_renderer import _safe_filename
+        assert _safe_filename("") == ""
+
+
+class TestNowCst:
+    """Tests for trace_models._now_cst()."""
+
+    def test_returns_aware_datetime(self):
+        from subagent_pipeline.trace_models import _now_cst
+        dt = _now_cst()
+        assert dt.tzinfo is not None
+
+    def test_utc_offset_is_8h(self):
+        from subagent_pipeline.trace_models import _now_cst
+        from datetime import timedelta
+        dt = _now_cst()
+        offset = dt.utcoffset()
+        assert offset == timedelta(hours=8)
+
+    def test_node_trace_default_is_aware(self):
+        nt = NodeTrace(run_id="test", node_name="test", seq=0)
+        assert nt.timestamp.tzinfo is not None
+
+    def test_run_trace_default_is_aware(self):
+        rt = RunTrace(ticker="601985")
+        assert rt.started_at.tzinfo is not None
+
+
+class TestPmConfidenceRoundtrip:
+    """Tests for _pm_confidence serialization in RunTrace."""
+
+    def test_pm_confidence_survives_roundtrip(self):
+        rt = RunTrace(ticker="601985")
+        rt._pm_confidence = 0.72
+        d = rt.to_dict()
+        assert "pm_confidence" in d
+        assert d["pm_confidence"] == 0.72
+
+        restored = RunTrace.from_dict(d)
+        assert hasattr(restored, "_pm_confidence")
+        assert restored._pm_confidence == 0.72
+
+    def test_no_pm_confidence_still_loads(self):
+        """Old traces without pm_confidence should load fine."""
+        d = {"ticker": "601985", "node_traces": []}
+        rt = RunTrace.from_dict(d)
+        assert not hasattr(rt, "_pm_confidence")
+
+    def test_private_attrs_excluded_except_known(self):
+        rt = RunTrace(ticker="601985")
+        rt._unknown_private = "secret"
+        rt._pm_confidence = 0.5
+        d = rt.to_dict()
+        assert "pm_confidence" in d
+        assert "unknown_private" not in d
+
+
+class TestWriteTimeDedup:
+    """Tests for SignalLedger write-time dedup."""
+
+    def test_duplicate_run_id_skipped(self, tmp_path):
+        ledger = SignalLedger(path=str(tmp_path / "signals.jsonl"))
+        rec = SignalRecord(
+            run_id="run-abc123",
+            trade_date="2026-04-04",
+            ticker="601985.SS",
+            action="BUY",
+            confidence=0.8,
+        )
+        ledger.append(rec)
+        ledger.append(rec)  # duplicate — should be skipped
+        records = ledger.read()
+        assert len(records) == 1
+
+    def test_allow_duplicate_flag(self, tmp_path):
+        ledger = SignalLedger(path=str(tmp_path / "signals.jsonl"))
+        rec = SignalRecord(
+            run_id="run-abc123",
+            trade_date="2026-04-04",
+            ticker="601985.SS",
+            action="BUY",
+            confidence=0.8,
+        )
+        ledger.append(rec)
+        ledger.append(rec, allow_duplicate=True)
+        # read() dedup by (ticker, date), so only 1 visible
+        # but raw lines should have 2
+        with open(ledger.path) as f:
+            lines = [l for l in f if l.strip()]
+        assert len(lines) == 2
+
+    def test_different_run_ids_both_kept(self, tmp_path):
+        ledger = SignalLedger(path=str(tmp_path / "signals.jsonl"))
+        for i, rid in enumerate(["run-aaa", "run-bbb"]):
+            rec = SignalRecord(
+                run_id=rid,
+                trade_date=f"2026-04-0{i+1}",
+                ticker="601985.SS",
+                action="BUY",
+                confidence=0.8,
+            )
+            ledger.append(rec)
+        records = ledger.read()
+        assert len(records) == 2
+
+
+class TestReplayStoreSizeGuard:
+    """Tests for ReplayStore max file size guard."""
+
+    def test_oversized_file_returns_none(self, tmp_path):
+        from subagent_pipeline.replay_store import ReplayStore
+        store = ReplayStore(storage_dir=str(tmp_path))
+        # Create a file larger than _MAX_TRACE_SIZE
+        run_id = "run-oversized"
+        path = tmp_path / f"{run_id}.json"
+        # Write just enough to trigger the guard (set a low threshold)
+        old_max = ReplayStore._MAX_TRACE_SIZE
+        try:
+            ReplayStore._MAX_TRACE_SIZE = 100  # 100 bytes
+            path.write_text('{"ticker": "601985", "node_traces": []}' + " " * 200)
+            result = store.load(run_id)
+            assert result is None
+        finally:
+            ReplayStore._MAX_TRACE_SIZE = old_max
+
+
+class TestTagConstants:
+    """Verify TAG_* constants are consistent between shared.py and bridge.py."""
+
+    def test_all_tags_importable(self):
+        from subagent_pipeline.shared import (
+            TAG_CATALYST_OUTPUT, TAG_RISK_OUTPUT, TAG_RISK_DEBATER_OUTPUT,
+            TAG_MACRO_OUTPUT, TAG_BREADTH_OUTPUT, TAG_SECTOR_OUTPUT,
+            TAG_SYNTHESIS_OUTPUT, TAG_TRADECARD_JSON, TAG_TRADE_PLAN_JSON,
+            TAG_ORDER_PROPOSAL_JSON,
+        )
+        tags = [TAG_CATALYST_OUTPUT, TAG_RISK_OUTPUT, TAG_RISK_DEBATER_OUTPUT,
+                TAG_MACRO_OUTPUT, TAG_BREADTH_OUTPUT, TAG_SECTOR_OUTPUT,
+                TAG_SYNTHESIS_OUTPUT, TAG_TRADECARD_JSON, TAG_TRADE_PLAN_JSON,
+                TAG_ORDER_PROPOSAL_JSON]
+        # All should be non-empty strings
+        for t in tags:
+            assert isinstance(t, str) and len(t) > 0
+
+    def test_bridge_imports_match_shared(self):
+        """bridge.py should import the TAG_* constants it uses."""
+        import subagent_pipeline.shared as shared
+        import subagent_pipeline.bridge as bridge
+        # TAG_GLOBAL_MACRO_OUTPUT is used in web_collector, not bridge
+        skip = {"TAG_GLOBAL_MACRO_OUTPUT"}
+        for attr in dir(shared):
+            if attr.startswith("TAG_") and attr not in skip:
+                assert getattr(bridge, attr) == getattr(shared, attr), \
+                    f"{attr} mismatch between bridge and shared"

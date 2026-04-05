@@ -779,3 +779,130 @@ class TestFormatMarketContextBlock:
         }
         block = format_market_context_block(ctx)
         assert "无" in block
+
+
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  Audit-fix tests: bracket parser, confidence normalization,         ║
+# ║  strict_date_check, negation window 12 chars                       ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+
+class TestCatalystBracketParser:
+    """Tests for string-aware bracket matching in parse_catalyst_json."""
+
+    def test_simple_array(self):
+        from subagent_pipeline.bridge import parse_catalyst_json
+        text = 'CATALYST_OUTPUT:\n[{"name": "test", "impact": "high"}]'
+        result = parse_catalyst_json(text)
+        assert len(result) == 1
+        assert result[0]["name"] == "test"
+
+    def test_brackets_inside_strings_ignored(self):
+        from subagent_pipeline.bridge import parse_catalyst_json
+        text = 'CATALYST_OUTPUT:\n[{"name": "Price at [100, 105]", "impact": "high"}]'
+        result = parse_catalyst_json(text)
+        assert len(result) == 1
+        assert "[100, 105]" in result[0]["name"]
+
+    def test_nested_arrays(self):
+        from subagent_pipeline.bridge import parse_catalyst_json
+        text = 'CATALYST_OUTPUT:\n[{"tags": ["a", "b"], "impact": "high"}]'
+        result = parse_catalyst_json(text)
+        assert len(result) == 1
+        assert result[0]["tags"] == ["a", "b"]
+
+    def test_empty_output(self):
+        from subagent_pipeline.bridge import parse_catalyst_json
+        assert parse_catalyst_json("no output here") == []
+
+
+class TestConfidenceNormalization:
+    """Tests for the >= 10 boundary fix in parse_claims."""
+
+    def _make_claim_text(self, confidence):
+        # parse_claims splits on "\nCLAIM:" — needs preceding newline
+        return f"Preamble\nCLAIM: Test claim\nEVIDENCE: [E1]\nCONFIDENCE: {confidence}"
+
+    def test_confidence_10_normalized(self):
+        from subagent_pipeline.bridge import parse_claims
+        claims = parse_claims(self._make_claim_text(10))
+        assert len(claims) >= 1
+        # 10 >= 10 → divided by 100 → 0.1
+        assert claims[0]["confidence"] == pytest.approx(0.1, abs=0.01)
+
+    def test_confidence_75_normalized(self):
+        from subagent_pipeline.bridge import parse_claims
+        claims = parse_claims(self._make_claim_text(75))
+        assert len(claims) >= 1
+        assert claims[0]["confidence"] == pytest.approx(0.75, abs=0.01)
+
+    def test_confidence_0_8_unchanged(self):
+        from subagent_pipeline.bridge import parse_claims
+        claims = parse_claims(self._make_claim_text(0.8))
+        assert len(claims) >= 1
+        assert claims[0]["confidence"] == pytest.approx(0.8, abs=0.01)
+
+    def test_confidence_5_normalized_as_1_10_scale(self):
+        from subagent_pipeline.bridge import parse_claims
+        claims = parse_claims(self._make_claim_text(5))
+        assert len(claims) >= 1
+        # 5 > 1.0 but < 10 → divide by 10 → 0.5
+        assert claims[0]["confidence"] == pytest.approx(0.5, abs=0.01)
+
+
+class TestStrictDateCheck:
+    """Tests for strict_date_check in assemble_market_context."""
+
+    def test_strict_raises_on_stale(self):
+        from subagent_pipeline.bridge import assemble_market_context, StaleMarketDataError
+        macro = {"regime": "RISK_ON"}
+        breadth = {"breadth_state": "BROAD"}
+        sector = {}
+        # Raw text with wrong date
+        raw = {"macro": "日期: 2026-01-01\nregime=RISK_ON", "breadth": "", "sector": ""}
+        with pytest.raises(StaleMarketDataError):
+            assemble_market_context(
+                macro, breadth, sector,
+                trade_date="2026-04-04",
+                raw_texts=raw,
+                strict_date_check=True,
+            )
+
+    def test_non_strict_logs_warning(self):
+        from subagent_pipeline.bridge import assemble_market_context
+        macro = {"regime": "RISK_ON"}
+        breadth = {"breadth_state": "BROAD"}
+        sector = {}
+        raw = {"macro": "日期: 2026-01-01\nregime=RISK_ON", "breadth": "", "sector": ""}
+        # Should not raise — warning only
+        result = assemble_market_context(
+            macro, breadth, sector,
+            trade_date="2026-04-04",
+            raw_texts=raw,
+            strict_date_check=False,
+        )
+        assert result["regime"] == "RISK_ON"
+
+
+class TestNegationWindow:
+    """Tests for the 12-char Chinese negation window."""
+
+    def test_short_negation_detected(self):
+        from subagent_pipeline.bridge import _has_positive
+        # "不建议买入" — negation within 5 chars
+        assert _has_positive("不建议买入", "买入") is False
+
+    def test_long_prefix_negation_detected(self):
+        from subagent_pipeline.bridge import _has_positive
+        # "坚决不建议买入" — negation at 7 chars before keyword
+        # Old 5-char window would miss this; 12-char window catches it
+        assert _has_positive("坚决不建议买入", "买入") is False
+
+    def test_positive_no_negation(self):
+        from subagent_pipeline.bridge import _has_positive
+        assert _has_positive("建议买入该股票", "买入") is True
+
+    def test_cautious_buy_is_positive(self):
+        from subagent_pipeline.bridge import _has_positive
+        # "谨慎买入" = buy cautiously, NOT negation
+        assert _has_positive("谨慎买入", "买入") is True
