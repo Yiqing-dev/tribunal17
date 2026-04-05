@@ -605,6 +605,14 @@ Fallbacks degrade gracefully — some fields (e.g., limit counts from THS, net_p
 - All agents with model assignments have a corresponding pipeline stage
 - Non-LLM agents (in stages but not in models) are auto-detected, not hardcoded
 
+### Filename Sanitization
+
+`renderers.report_renderer._safe_filename(part)` strips all non-alphanumeric characters (except `._-`) from a string before using it in file paths. All renderers that construct output file names from ticker or run_id must use this function to prevent path traversal via `../` in user-supplied values.
+
+### NaN Protection
+
+`MarketSnapshot.to_json()` uses `allow_nan=False` — any `NaN` or `Infinity` in snapshot data will raise `ValueError` at serialization time rather than producing invalid JSON. This prevents downstream parsers from silently consuming bad data.
+
 ## Critical Data Integrity Rules
 
 These rules exist because of past bugs that produced silently wrong reports. Violating them will produce misleading data.
@@ -618,11 +626,14 @@ These rules exist because of past bugs that produced silently wrong reports. Vio
 4. **Risk Judge does not default to HOLD**: If RISK_OUTPUT omits `research_action`, the PM's direction is preserved. Never hardcode a default action.
 5. **AVOID ≠ SELL**: TRADE_PLAN bias=AVOID means "don't participate" (risk_cleared=FALSE or VETO). It maps to HOLD, not SELL.
 6. **Stale threshold is 0.02**: Confidence is on a 0.0–1.0 scale. The stale-signal threshold in `opinion_tracker.py` is `abs(confidence_delta) < 0.02`, not 2.0.
+7. **Confidence normalization uses >= 10**: `parse_claims()` normalizes confidence values ≥10 by dividing by 100 (0-100 scale → 0-1). Values >1.0 but <10 are divided by 10 (1-10 scale → 0-1). Result is clamped to [0, 1].
+8. **Chinese negation window is 12 characters**: `_has_positive()` looks back 12 characters (not 5) before a keyword to detect negation. This catches multi-char modifiers like "坚决不建议买入".
 
 ## Known Limitations
 
 ### Naming quirks
 - **Parameter naming**: `risk_manager()` and `research_output()` use `company_name` as first param while analysts use `ticker`. Callers must pass ticker value as `company_name` for those two.
+- **All prompt functions accept `**kw`**: Forward-compatible — new keyword args can be added without breaking existing callers.
 - **`current_date` must be set explicitly**: `PIPELINE_CONFIG["current_date"]` defaults to `""`. Callers must set it (use `config._today()` utility). This prevents stale dates from import-time evaluation.
 
 ### By design
@@ -634,7 +645,7 @@ These rules exist because of past bugs that produced silently wrong reports. Vio
 
 ## Tests
 
-Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 384+ tests, no API keys needed:
+Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 803 tests, no API keys needed:
 
 ```bash
 # All tests
