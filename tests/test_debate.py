@@ -1,6 +1,9 @@
 """Tests for AI Investment Committee — debate_view + debate_renderer."""
 
 import pytest
+
+pytest.importorskip("dashboard", reason="dashboard package not installed")
+
 from dashboard.debate_view import (
     DebateView,
     ParticipantView,

@@ -10,6 +10,14 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+try:
+    import dashboard  # noqa: F401
+    _HAS_DASH = True
+except ImportError:
+    _HAS_DASH = False
+
+_skip_no_dash = pytest.mark.skipif(not _HAS_DASH, reason="dashboard package not installed")
+
 
 # ────────────────────────────────────────────────────────────────────
 # Fixtures
@@ -406,6 +414,7 @@ class TestRecapConfig:
 # 2. Renderer tests
 # ────────────────────────────────────────────────────────────────────
 
+@_skip_no_dash
 class TestRecapRenderer:
     """Test recap_renderer functions."""
 
@@ -631,6 +640,7 @@ class TestRecapRenderer:
         assert "max-width: 767px" in _RECAP_CSS
 
 
+@_skip_no_dash
 class TestSectorColor:
     def test_strong_up(self):
         from dashboard.recap_renderer import _sector_color
@@ -657,6 +667,7 @@ class TestSectorColor:
         assert _sector_color(-5.0) == "#f87171"
 
 
+@_skip_no_dash
 class TestPctHelpers:
     def test_pct_class(self):
         from dashboard.recap_renderer import _pct_class
@@ -671,6 +682,7 @@ class TestPctHelpers:
         assert _pct_str(0) == "0.00%"
 
 
+@_skip_no_dash
 class TestEsc:
     def test_escapes_html(self):
         from dashboard.recap_renderer import _esc
@@ -687,6 +699,7 @@ class TestEsc:
 # 3. Static export test
 # ────────────────────────────────────────────────────────────────────
 
+@_skip_no_dash
 class TestStaticExport:
     def test_generate_report(self):
         from dashboard.recap_renderer import generate_daily_recap_report
@@ -718,6 +731,7 @@ class TestStaticExport:
 # 3b. Market Context Panel tests
 # ────────────────────────────────────────────────────────────────────
 
+@_skip_no_dash
 class TestMarketContextPanel:
     """Test _render_market_context_panel in recap renderer."""
 
@@ -852,6 +866,7 @@ class TestMarketContextPanel:
 # 4. Route tests
 # ────────────────────────────────────────────────────────────────────
 
+@_skip_no_dash
 class TestRecapRoute:
     def test_load_recap_data_by_date(self):
         from dashboard.routes.recap import _load_recap_data
@@ -893,6 +908,7 @@ class TestRecapRoute:
 # 5. Integration: collector → renderer round-trip
 # ────────────────────────────────────────────────────────────────────
 
+@_skip_no_dash
 class TestRoundTrip:
     """Test that collector data flows correctly through renderer."""
 

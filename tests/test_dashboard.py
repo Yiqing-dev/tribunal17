@@ -3,6 +3,9 @@
 import pytest
 from datetime import datetime
 
+pytest.importorskip("tradingagents", reason="tradingagents package not installed")
+pytest.importorskip("dashboard", reason="dashboard package not installed")
+
 from tradingagents.observability.trace_models import NodeTrace, RunTrace, RunMetrics, NodeStatus
 from tradingagents.observability.replay_store import ReplayStore
 from tradingagents.observability.replay_service import ReplayService

@@ -54,7 +54,7 @@ class NodeTrace:
     output_hash: str = ""
 
     # Structured output excerpt (short summary, not full text)
-    output_excerpt: str = ""          # Max 500 chars — for quick scan
+    output_excerpt: str = ""          # Max 150000 chars — full agent output for semantic matching
 
     # Protocol metadata
     parse_status: str = ""            # ParseStatus value if applicable

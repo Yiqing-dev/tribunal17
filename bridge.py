@@ -997,7 +997,7 @@ def build_node_trace(
         seq=seq,
         timestamp=datetime.now(),
         output_hash=compute_hash(text),
-        output_excerpt=text[:500] if text else "",
+        output_excerpt=text[:150000] if text else "",
     )
 
     # Default parse status

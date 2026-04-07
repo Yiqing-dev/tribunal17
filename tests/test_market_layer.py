@@ -18,6 +18,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+try:
+    import dashboard  # noqa: F401
+    _HAS_DASH = True
+except ImportError:
+    _HAS_DASH = False
+
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║  P1: Market Agents + market_context                            ║
@@ -832,6 +838,7 @@ class TestMarketSnapshot:
 # ╚══════════════════════════════════════════════════════════════════╝
 
 
+@pytest.mark.skipif(not _HAS_DASH, reason="dashboard package not installed")
 class TestMarketRoute:
     """Test market route helper."""
 

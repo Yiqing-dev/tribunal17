@@ -388,6 +388,121 @@ def _safe_float(val: Any, default: float = 0.0) -> float:
         return default
 
 
+# ── Semantic Detection Helpers ─────────────────────────────────────────────
+
+# Rebuttal keywords: phrases that indicate a risk debater is pushing back
+_REBUTTAL_PATTERNS = re.compile(
+    r"不同意|反对|过于|风险被低估|仓位过高|仓位过重|应当降低|建议减仓"
+    r"|PM.*忽略|PM.*低估|PM.*过于乐观|PM.*过于保守"
+    r"|研究总监.*忽略|研究总监.*低估"
+    r"|disagree|overestimate|underestimate|too aggressive|too conservative"
+    r"|上调.*仓位|下调.*仓位|收窄.*仓位|缩减.*敞口|扩大.*仓位",
+    re.IGNORECASE,
+)
+
+
+def _has_rebuttal_language(text: str) -> bool:
+    """Check if text contains explicit rebuttal/challenge language."""
+    return bool(_REBUTTAL_PATTERNS.search(text))
+
+
+# Financial vocabulary for semantic matching (even without adjacent numbers)
+_FINANCIAL_TERMS = frozenset({
+    # Dimensions
+    "基本面", "技术面", "资金面", "催化", "估值",
+    # Profitability
+    "毛利", "净利", "扣非", "营收", "减亏", "亏损", "扭亏", "盈利",
+    # Valuation metrics
+    "PE", "PB", "PEG", "ROE", "EPS", "PS",
+    # Fund flow
+    "主力", "北向", "净流入", "净流出", "换手",
+    # Technical
+    "支撑", "阻力", "突破", "跌破", "下降通道", "金叉", "死叉", "均线",
+    # Risk / governance
+    "质押", "减持", "解禁", "回购", "诉讼", "退市",
+    # Events / catalysts
+    "年报", "季报", "快报", "定增", "分红", "并购",
+})
+
+
+def _extract_key_phrases(claims: list, excerpt: str) -> list:
+    """Extract short key phrases from claims for semantic matching.
+
+    Returns a list of 2-6 char Chinese keyword fragments that represent
+    the claim's core topic (e.g. "毛利率", "ROE", "CGI", "质押").
+
+    Uses two passes:
+    1. Numeric-adjacent patterns (e.g. "ROE 12%", "毛利率53%")
+    2. Financial vocabulary matching (standalone terms without numbers)
+    """
+    phrases: list = []
+
+    # Build claim-only text (for Pass 2 — avoids inflating phrase pool from raw excerpt)
+    claim_text = ""
+    for c in claims:
+        claim_text += " " + str(c.get("text", ""))
+        claim_text += " " + str(c.get("dimension", ""))
+
+    # Pass 1: numeric-adjacent keywords from claims + excerpt
+    for c in claims:
+        text = str(c.get("text", ""))
+        for m in re.finditer(r"([\u4e00-\u9fff]{2,6}|[A-Z]{2,6})\s*[=≈><]?\s*[\d.]+", text):
+            phrases.append(m.group(1))
+        dim = str(c.get("dimension", ""))
+        if dim and len(dim) >= 2:
+            phrases.append(dim)
+
+    for m in re.finditer(r"([\u4e00-\u9fff]{2,4}|[A-Z]{2,6})[\s:：]*[\d.]+", excerpt):
+        phrases.append(m.group(1))
+
+    # Pass 2: financial vocabulary in claims only (not raw excerpt — keeps pool tight)
+    for term in _FINANCIAL_TERMS:
+        if term in claim_text:
+            phrases.append(term)
+
+    # Deduplicate preserving order
+    seen: set = set()
+    unique: list = []
+    for p in phrases:
+        if p not in seen:
+            seen.add(p)
+            unique.append(p)
+    return unique
+
+
+def _estimate_pm_consumption_semantic(
+    pm_node: "NodeTrace",
+    bull_claims: list,
+    bear_claims: list,
+    bull_excerpt: str,
+    bear_excerpt: str,
+) -> float:
+    """Estimate PM consumption rate via topic matching when claim IDs are unavailable.
+
+    Identifies which financial topics the debate covered (using _FINANCIAL_TERMS),
+    then checks how many of those topics the PM's output also mentions.
+    This avoids noisy regex fragments and focuses on meaningful topic coverage.
+    """
+    pm_text = pm_node.output_excerpt or ""
+    if not pm_text:
+        return 0.0
+
+    # Build debate topic set: financial terms that appear in claims
+    debate_text = bull_excerpt + " " + bear_excerpt
+    for c in bull_claims + bear_claims:
+        debate_text += " " + str(c.get("text", ""))
+
+    debate_topics = [t for t in _FINANCIAL_TERMS if t in debate_text]
+
+    if not debate_topics:
+        # No financial terms found — fall back to dimension coverage
+        dims_in_pm = sum(1 for d in DIMENSIONS if d in pm_text)
+        return min(1.0, dims_in_pm / 5.0)
+
+    matched = sum(1 for t in debate_topics if t in pm_text)
+    return min(1.0, matched / len(debate_topics))
+
+
 # ── Core Functions ─────────────────────────────────────────────────────────
 
 
@@ -444,13 +559,15 @@ def _assess_debate_quality(trace: RunTrace) -> DebateQualityScore:
     if pm_node:
         pm_claim_ids.update(pm_node.claim_ids_referenced)
 
-    if total_claim_ids:
+    if total_claim_ids and pm_claim_ids:
+        # Both sides have structured claim IDs — use precise intersection
         dq.pm_consumption_rate = len(pm_claim_ids & total_claim_ids) / len(total_claim_ids)
-    elif pm_node and (dq.bull_claims_count + dq.bear_claims_count) > 0:
-        # Fallback: use counts if IDs are not available
-        total = dq.bull_claims_count + dq.bear_claims_count
-        consumed = len(pm_node.claim_ids_referenced)
-        dq.pm_consumption_rate = min(1.0, consumed / total) if total > 0 else 0.0
+    elif pm_node and (dq.bull_claims_count + dq.bear_claims_count > 0
+                      or bull_excerpt or bear_excerpt):
+        # Fall back to semantic matching (works with claims OR raw excerpts)
+        dq.pm_consumption_rate = _estimate_pm_consumption_semantic(
+            pm_node, bull_claims, bear_claims, bull_excerpt, bear_excerpt,
+        )
 
     # ── PM missed strong claims ──
     strong_claim_ids = set()
@@ -474,14 +591,34 @@ def _assess_debate_quality(trace: RunTrace) -> DebateQualityScore:
     risk_judge = _find_node(trace, _RISK_JUDGE_NODE)
 
     if risk_nodes and pm_node:
-        # Challenge rate: did any risk debater disagree with PM direction?
+        # Challenge rate: action disagreement OR position-size disagreement
+        # OR explicit rebuttal language in output text.
         pm_action = pm_node.research_action or ""
+        pm_sd = pm_node.structured_data or {}
+        pm_position = _safe_float(pm_sd.get("target_position_pct",
+                                  pm_sd.get("position_size_pct", -1)))
         challengers = 0
         for rn in risk_nodes:
             rn_action = rn.research_action or ""
             sd = rn.structured_data or {}
             rn_recommendation = sd.get("recommendation", rn_action)
-            if rn_recommendation and rn_recommendation != pm_action:
+
+            # Check 1: action-level disagreement (original logic)
+            action_diff = rn_recommendation and rn_recommendation != pm_action
+
+            # Check 2: position-size disagreement (>50% relative difference)
+            rn_position = _safe_float(sd.get("position_size_pct", -1))
+            position_diff = False
+            if pm_position > 0 and rn_position >= 0:
+                position_diff = abs(rn_position - pm_position) / pm_position > 0.5
+            elif pm_position == 0 and rn_position > 0:
+                position_diff = True  # PM says 0%, debater says nonzero
+
+            # Check 3: rebuttal language in output text
+            rn_text = rn.output_excerpt or ""
+            rebuttal_diff = _has_rebuttal_language(rn_text)
+
+            if action_diff or position_diff or rebuttal_diff:
                 challengers += 1
         dq.risk_challenge_rate = challengers / len(risk_nodes) if risk_nodes else 0.0
 

@@ -11,6 +11,18 @@ Covers:
 import json
 import pytest
 
+try:
+    import tradingagents  # noqa: F401
+    _HAS_TA = True
+except ImportError:
+    _HAS_TA = False
+
+try:
+    import dashboard  # noqa: F401
+    _HAS_DASH = True
+except ImportError:
+    _HAS_DASH = False
+
 
 # ────────────────────────────────────────────────────────────────────
 # Fixtures
@@ -59,6 +71,7 @@ def _wrap_in_llm_output(plan_dict: dict, label: str = "TRADE_PLAN_JSON") -> str:
 # 1. Protocol tests
 # ────────────────────────────────────────────────────────────────────
 
+@pytest.mark.skipif(not _HAS_TA, reason="tradingagents package not installed")
 class TestTradePlanProtocol:
     """Test TradePlan dataclass and serialization."""
 
@@ -282,6 +295,7 @@ TRADE_PLAN_JSON
 # 4. Renderer tests
 # ────────────────────────────────────────────────────────────────────
 
+@pytest.mark.skipif(not _HAS_DASH, reason="dashboard package not installed")
 class TestRenderTradePlanCard:
     """Test _render_trade_plan_card in report_renderer."""
 
@@ -385,6 +399,7 @@ class TestRenderTradePlanCard:
 # 5. View integration
 # ────────────────────────────────────────────────────────────────────
 
+@pytest.mark.skipif(not _HAS_DASH, reason="dashboard package not installed")
 class TestViewIntegration:
     """Test trade_plan field exists in ResearchView and StockDivergenceRow."""
 

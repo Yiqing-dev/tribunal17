@@ -122,7 +122,8 @@ subagent_pipeline/
 │   ├── test_trade_plan.py     31 tests — trade plan parsing + views
 │   ├── test_dashboard.py     125 tests — dashboard views + routes
 │   ├── test_opinion_tracker.py 61 tests — opinion drift analysis
-│   └── test_web_collector.py  46 tests — web collector parsers + integration
+│   ├── test_web_collector.py  46 tests — web collector parsers + integration
+│   └── test_discussion_tracker.py 29 tests — debate quality + semantic detection
 │
 ├── requirements.txt       akshare>=1.10
 ```
@@ -666,7 +667,7 @@ These rules exist because of past bugs that produced silently wrong reports. Vio
 
 ## Tests
 
-Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 937 tests, no API keys needed:
+Run from the **project root** (parent of `subagent_pipeline/`), not from `subagent_pipeline/` itself — some tests import from `dashboard.*` which requires the project root on `sys.path`. 781 tests (691 run + 90 skip when `dashboard`/`tradingagents` packages are absent), no API keys needed:
 
 ```bash
 # All tests

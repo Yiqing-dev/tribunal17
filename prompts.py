@@ -521,6 +521,7 @@ def bull_researcher(
 5. **催化剂** (Catalysts): Upcoming positive events — policy tailwinds, new products, earnings beats, sector rotation.
 
 **Debate Rules:**
+- **MANDATORY**: You MUST explicitly address ALL 5 dimensions above. For each dimension, state the dimension name (基本面/估值/技术/资金/催化) and your score. Do NOT skip any dimension even if data is limited — state what is available and score conservatively.
 - Directly counter the bear analyst's weakest arguments with specific data.
 - Do NOT concede points without a rebuttal.
 - Quantify your claims (e.g., "ROE improved from 8% to 12% YoY" not just "ROE is improving").
@@ -567,6 +568,7 @@ def bear_researcher(
 5. **风险事件** (Risk Events): Lock-up expiry, insider selling, litigation, regulatory crackdown, industry downturn.
 
 **Debate Rules:**
+- **MANDATORY**: You MUST explicitly address ALL 5 dimensions above. For each dimension, state the dimension name (基本面/估值/技术/资金/风险事件) and your risk score. Do NOT skip any dimension even if data is limited — state what is available and score conservatively.
 - Directly attack the bull analyst's weakest arguments with specific data.
 - Quantify downside scenarios (e.g., "If margins compress 5%, EPS drops to X, fair value = Y").
 - Expose logical fallacies or over-optimistic assumptions in the bull case.
