@@ -719,6 +719,7 @@ M3. Scenario Tree (Base / Bull / Bear)
 M4. Preliminary Decision (BUY / HOLD / SELL)
 - Action: Entry / Reduce / Wait
 - Triggers: Price + Fundamental conditions
+- **宏观压力测试**: 若次日大盘出现 ±3% 级别的系统性波动（如停火/战争/关税突变），当前信号是否仍成立？如果 SELL 信号在大盘 +3% 日会被β反噬，须在 open_questions 中注明"宏观催化剂风险"并适当降低 confidence。
 
 M5. Novice Mode Output
 - **manager_score** (0-16, sum of 4 analysts if available, else estimate)
@@ -977,7 +978,13 @@ R4. Output Table (Mandatory)
 Columns: Check | Status | Pass/Fail | Comment
 (Markdown Table)
 
-**R5. 信念保护规则（Conviction Preservation）**
+**R5. β安全阀（Macro Beta Override）**
+当市场环境 regime = RISK_ON 且全市场成交额 > 2万亿时：
+- SELL 信号自动降级为 HOLD，**除非**存在 R1 硬性事件（财报/监管锁定）或个股当日逆市下跌
+- 理由：极端 RISK_ON 环境下，β驱动的普涨会系统性反噬 SELL 信号，造成不必要的逆势损失
+- 降级后须在 risk_flags 中标注 `{{category: "beta_override", severity: "medium", description: "SELL→HOLD: RISK_ON β安全阀触发"}}`
+
+**R6. 信念保护规则（Conviction Preservation）**
 当研究总监的 confidence ≥ 0.70 且 research_action 为 BUY 或 SELL 时:
 a) **禁止翻转方向**（BUY→SELL 或 SELL→BUY），除非 R1 硬性事件锁触发
 b) 你可以调整 max_position_pct（降低仓位），但必须保留行动方向
