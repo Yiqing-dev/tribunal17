@@ -711,6 +711,13 @@ M2. Arbitration (Crucial)
   c) Confidence score
 - Explain WHY one side is credible, citing specific claim IDs.
 
+**M2a. 逐条裁决协议（Claim-by-Claim Adjudication）**
+- 对双方所有置信度 ≥ 0.60 的 claims，**必须逐条给出裁决**：采纳(ACCEPT)/驳回(REJECT)/搁置(DEFER)
+- 格式：`[clm-xxx] ACCEPT/REJECT/DEFER — 一句话理由`
+- REJECT 必须引用反方的反驳证据或指出逻辑漏洞
+- DEFER 仅用于"等待Q1数据/年报确认"等信息不足情况
+- 未裁决的高置信 claim 视为分析疏漏，将被 L8.5 讨论质量审查标记
+
 M3. Scenario Tree (Base / Bull / Bear)
 - Base Case (50% prob): Driver + Trigger + Invalid
 - Bull Case (25% prob): Catalyst + Target
