@@ -131,6 +131,8 @@ class AkshareBundle:
     news_articles: list = field(default_factory=list)
     research_reports: list = field(default_factory=list)
     lhb_records: list = field(default_factory=list)
+    margin_data: list = field(default_factory=list)     # 融资融券(近5日)
+    block_trades: list = field(default_factory=list)    # 大宗交易(近30天)
 
     # ── Financial statement summaries ──
     financial_summary: dict = field(default_factory=dict)
@@ -941,6 +943,110 @@ def _collect_lhb(b: AkshareBundle):
     b.lhb_records = rows
 
 
+# ── Margin trading (融资融券) ──
+
+def _collect_margin(b: AkshareBundle) -> None:
+    """Collect margin trading data (融资融券余额) for the ticker.
+
+    Margin data is published with a 1-day delay (T+1). If today's data
+    is unavailable, falls back to the previous trading day (up to 3 tries).
+    Collects multiple days when available for trend analysis.
+    """
+    import akshare as ak
+    from datetime import datetime, timedelta
+
+    ticker = b.ticker
+    ref = b.trade_date.replace("-", "") if b.trade_date else ""
+    is_sse = ticker.startswith(("6", "9"))
+    rows: list = []
+
+    # Try up to 3 recent dates (margin data has T+1 delay)
+    try:
+        base_dt = datetime.strptime(ref, "%Y%m%d")
+    except ValueError:
+        return
+
+    for offset in range(3):
+        dt = base_dt - timedelta(days=offset)
+        date_str = dt.strftime("%Y%m%d")
+        try:
+            if is_sse:
+                df = _retry_call(ak.stock_margin_detail_sse, date=date_str)
+            else:
+                df = _retry_call(ak.stock_margin_detail_szse, date=date_str)
+        except Exception:
+            continue
+
+        if df is None or df.empty:
+            continue
+
+        code_col = "标的证券代码" if "标的证券代码" in df.columns else ""
+        if not code_col:
+            continue
+        match = df[df[code_col].astype(str).str.strip() == ticker]
+        if match.empty:
+            continue
+
+        r = match.iloc[0]
+        rows.append({
+            "date": dt.strftime("%Y-%m-%d"),
+            "margin_balance": _safe_float(r.get("融资余额")),
+            "margin_buy": _safe_float(r.get("融资买入额")),
+            "margin_repay": _safe_float(r.get("融资偿还额")),
+            "short_volume": _safe_float(r.get("融券余量")),
+            "short_sell": _safe_float(r.get("融券卖出量")),
+            "short_repay": _safe_float(r.get("融券偿还量")),
+        })
+        if len(rows) >= 3:
+            break
+
+    b.margin_data = rows
+
+
+# ── Block trades (大宗交易) ──
+
+def _collect_block_trades(b: AkshareBundle) -> None:
+    """Collect recent block trades (大宗交易) for the ticker."""
+    import akshare as ak
+
+    ref = b.trade_date.replace("-", "") if b.trade_date else ""
+    # Look back 30 days
+    from datetime import datetime, timedelta
+    try:
+        end_dt = datetime.strptime(ref, "%Y%m%d")
+        start_dt = end_dt - timedelta(days=30)
+        start = start_dt.strftime("%Y%m%d")
+    except ValueError:
+        return
+
+    try:
+        df = _retry_call(ak.stock_dzjy_mrtj, start_date=start, end_date=ref)
+    except Exception:
+        return
+
+    if df is None or df.empty:
+        return
+
+    code_col = "证券代码" if "证券代码" in df.columns else ""
+    if not code_col:
+        return
+    match = df[df[code_col].astype(str).str.strip() == b.ticker]
+    if match.empty:
+        return
+
+    rows: list = []
+    for _, r in match.iterrows():
+        rows.append({
+            "date": str(r.get("交易日期", "")),
+            "close_price": _safe_float(r.get("收盘价")),
+            "deal_price": _safe_float(r.get("成交价")),
+            "premium_rate": _safe_float(r.get("折溢率")),
+            "volume_wan": _safe_float(r.get("成交总量")),
+            "amount_wan": _safe_float(r.get("成交总额")),
+        })
+    b.block_trades = rows[:10]  # Keep latest 10
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Markdown formatter
 # ──────────────────────────────────────────────────────────────────────
@@ -1086,6 +1192,50 @@ def _build_markdown(b: AkshareBundle) -> str:
             )
         lines.append("")
 
+    # ── Margin trading ──
+    if b.margin_data:
+        lines.append("## 融资融券")
+        lines.append("| 日期 | 融资余额 | 融资买入 | 融资偿还 | 融券余量(股) | 融券卖出 | 融券偿还 |")
+        lines.append("|------|---------|---------|---------|------------|---------|---------|")
+        for m in b.margin_data:
+            bal = _fmt_num(m.get("margin_balance"))
+            buy = _fmt_num(m.get("margin_buy"))
+            rep = _fmt_num(m.get("margin_repay"))
+            sv = _fmt_num(m.get("short_volume"), 0)
+            ss = _fmt_num(m.get("short_sell"), 0)
+            sr = _fmt_num(m.get("short_repay"), 0)
+            lines.append(f"| {m.get('date','')} | {bal} | {buy} | {rep} | {sv} | {ss} | {sr} |")
+        # Net direction hint
+        md = b.margin_data[0]
+        mb = md.get("margin_buy", 0) or 0
+        mr = md.get("margin_repay", 0) or 0
+        if mb > 0 and mr > 0:
+            ratio = mb / mr
+            direction = "融资净买入（看多加杠杆）" if ratio > 1.1 else "融资净偿还（看多减杠杆）" if ratio < 0.9 else "融资买卖基本平衡"
+            lines.append(f"- 融资买入/偿还比: {ratio:.2f} → {direction}")
+        lines.append("")
+
+    # ── Block trades ──
+    if b.block_trades:
+        lines.append("## 大宗交易（近30天）")
+        lines.append("| 日期 | 收盘价 | 成交价 | 折溢率 | 成交量(万股) | 成交额(万元) |")
+        lines.append("|------|--------|--------|--------|------------|------------|")
+        for bt in b.block_trades:
+            pr = bt.get("premium_rate", 0) or 0
+            pr_str = f"{pr:+.1%}" if isinstance(pr, (int, float)) else str(pr)
+            lines.append(
+                f"| {bt.get('date','')} | {bt.get('close_price','—')} "
+                f"| {bt.get('deal_price','—')} | {pr_str} "
+                f"| {_fmt_num(bt.get('volume_wan'),1)} | {_fmt_num(bt.get('amount_wan'),1)} |"
+            )
+        # Discount summary
+        discounts = [bt.get("premium_rate", 0) for bt in b.block_trades if bt.get("premium_rate")]
+        if discounts:
+            avg_d = sum(discounts) / len(discounts)
+            hint = "大幅折价减持（内部人看空信号）" if avg_d < -0.1 else "小幅折价（正常交易）" if avg_d < -0.02 else "溢价成交（看多信号）"
+            lines.append(f"- 平均折溢率: {avg_d:+.1%} → {hint}")
+        lines.append("")
+
     return "\n".join(lines)
 
 
@@ -1107,6 +1257,8 @@ _COLLECTORS = [
     ("news",               _collect_news),
     ("research_reports",   _collect_research_reports),
     ("lhb",                _collect_lhb),
+    ("margin",             _collect_margin),
+    ("block_trades",       _collect_block_trades),
 ]
 
 
