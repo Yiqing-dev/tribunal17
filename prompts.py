@@ -151,7 +151,7 @@ def market_analyst(ticker: str, current_date: str, market_context_block: str = "
 """
         _search_guidance = """
 **SUPPLEMENTARY SEARCH（仅搜索 akshare 未覆盖的数据）：**
-1. 技术指标计算值：RSI、MACD、布林带（akshare 提供原始 OHLCV，这些需计算或搜索）
+1. 技术指标已预计算并注入（RSI(14)、MACD(12,26,9)、MA5/10/20、布林带(20,2)），可直接引用"技术指标"表格，无需重新计算或搜索。
 2. 近 24 小时突发市场新闻
 3. 同行业/概念股对比（相对强弱分析）
 """

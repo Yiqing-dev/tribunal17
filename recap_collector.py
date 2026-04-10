@@ -56,7 +56,10 @@ RECAP_CONFIG = {
 }
 
 
-# ── Technical Indicators ─────────────────────────────────────────────
+# ── Technical Indicators (imported from shared module) ───────────────
+
+from .technical import sma as _sma, ema as _ema, compute_rsi as _compute_rsi, compute_macd as _compute_macd
+
 
 def _safe_float(val) -> Optional[float]:
     if val is None:
@@ -66,81 +69,6 @@ def _safe_float(val) -> Optional[float]:
         return v if v == v else None
     except (ValueError, TypeError):
         return None
-
-
-def _sma(closes: List[float], period: int) -> List[Optional[float]]:
-    """Simple Moving Average."""
-    result = []
-    for i in range(len(closes)):
-        if i < period - 1:
-            result.append(None)
-        else:
-            result.append(sum(closes[i - period + 1:i + 1]) / period)
-    return result
-
-
-def _ema(values: List[float], period: int) -> List[float]:
-    """Exponential Moving Average."""
-    if not values:
-        return []
-    k = 2.0 / (period + 1)
-    result = [values[0]]
-    for v in values[1:]:
-        result.append(v * k + result[-1] * (1 - k))
-    return result
-
-
-def _compute_rsi(closes: List[float], period: int = 14) -> List[float]:
-    """Relative Strength Index (Wilder smoothing)."""
-    n = len(closes)
-    if n < 2:
-        return [50.0] * n
-    deltas = [closes[i] - closes[i - 1] for i in range(1, n)]
-    gains = [max(d, 0) for d in deltas]
-    losses = [max(-d, 0) for d in deltas]
-
-    result = [50.0]  # first close has no delta → neutral RSI
-    if len(gains) < period:
-        return [50.0] * n
-
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
-    # Pad with neutral values for the initial period where RSI is undefined.
-    # We need (period - 1) padding values: indices 1..period-1 in the deltas
-    # correspond to closes 1..period-1; the first real RSI is at close[period].
-    for _ in range(period - 1):
-        result.append(50.0)
-    # First real RSI value from simple average
-    if avg_loss == 0:
-        result.append(100.0)
-    else:
-        rs = avg_gain / avg_loss
-        result.append(round(100.0 - 100.0 / (1.0 + rs), 2))
-    # Wilder smoothing for subsequent values
-    for i in range(period, len(gains)):
-        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
-        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
-        if avg_loss == 0:
-            result.append(100.0)
-        else:
-            rs = avg_gain / avg_loss
-            result.append(round(100.0 - 100.0 / (1.0 + rs), 2))
-    return result
-
-
-def _compute_macd(
-    closes: List[float], fast: int = 12, slow: int = 26, signal: int = 9
-) -> tuple:
-    """MACD: returns (dif[], dea[], hist[])."""
-    if not closes:
-        return [], [], []
-    ema_fast = _ema(closes, fast)
-    ema_slow = _ema(closes, slow)
-    dif = [round(f - s, 4) for f, s in zip(ema_fast, ema_slow)]
-    dea = _ema(dif, signal)
-    dea = [round(d, 4) for d in dea]
-    hist = [round(2 * (d - e), 4) for d, e in zip(dif, dea)]
-    return dif, dea, hist
 
 
 # ── Data Contracts ───────────────────────────────────────────────────

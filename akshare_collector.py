@@ -133,6 +133,11 @@ class AkshareBundle:
     lhb_records: list = field(default_factory=list)
     margin_data: list = field(default_factory=list)     # 融资融券(近5日)
     block_trades: list = field(default_factory=list)    # 大宗交易(近30天)
+    technical_indicators: dict = field(default_factory=dict)  # RSI/MACD/MA/Bollinger
+    earnings_disclosure_date: str = ""                  # 预约披露日期
+    earnings_actually_disclosed: bool = False           # 是否已披露
+    sector_change_pct: Optional[float] = None           # 所属板块当日涨跌
+    stock_alpha: Optional[float] = None                 # 个股超额收益(vs板块)
 
     # ── Financial statement summaries ──
     financial_summary: dict = field(default_factory=dict)
@@ -1047,6 +1052,67 @@ def _collect_block_trades(b: AkshareBundle) -> None:
     b.block_trades = rows[:10]  # Keep latest 10
 
 
+# ── Earnings disclosure calendar (财报披露日) ──
+
+_disclosure_cache: dict = {}
+_disclosure_lock = _threading.Lock()
+
+
+def _collect_earnings_date(b: AkshareBundle) -> None:
+    """Collect scheduled annual report disclosure date (预约披露日期)."""
+    import akshare as ak
+
+    now = datetime.now()
+    if now.month <= 4:
+        period = f"{now.year - 1}年报"
+    elif now.month <= 8:
+        period = f"{now.year}中报"
+    elif now.month <= 10:
+        period = f"{now.year}三季报"
+    else:
+        period = f"{now.year}年报"
+
+    # Module-level cache: one API call for all tickers
+    with _disclosure_lock:
+        if period not in _disclosure_cache:
+            try:
+                df = _retry_call(ak.stock_report_disclosure, market="沪深京", period=period)
+                _disclosure_cache[period] = df
+            except Exception:
+                _disclosure_cache[period] = None
+
+    df = _disclosure_cache.get(period)
+    if df is None or df.empty:
+        return
+
+    code_col = "股票代码" if "股票代码" in df.columns else ""
+    if not code_col:
+        return
+    match = df[df[code_col].astype(str).str.strip() == b.ticker]
+    if match.empty:
+        return
+
+    r = match.iloc[0]
+
+    # Use the latest scheduled date (check change columns in reverse order)
+    scheduled = None
+    for col in ["三次变更", "二次变更", "初次变更", "首次预约"]:
+        val = r.get(col)
+        if val is not None and str(val) not in ("NaT", "NaT", "", "None"):
+            try:
+                scheduled = str(val)[:10]
+                break
+            except Exception:
+                continue
+
+    if scheduled:
+        b.earnings_disclosure_date = scheduled
+
+    actual = r.get("实际披露")
+    if actual is not None and str(actual) not in ("NaT", "", "None"):
+        b.earnings_actually_disclosed = True
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Markdown formatter
 # ──────────────────────────────────────────────────────────────────────
@@ -1087,6 +1153,13 @@ def _build_markdown(b: AkshareBundle) -> str:
     lines.append(f"| 毛利率 | {_fmt_num(b.gross_margin)}% |")
     lines.append(f"| EPS | {_fmt_num(b.eps)}元 |")
     lines.append(f"| 行业 | {b.sector} |")
+    if b.sector_change_pct is not None and b.stock_alpha is not None:
+        alpha_sign = "跑赢" if b.stock_alpha > 0.5 else "跑输" if b.stock_alpha < -0.5 else "持平"
+        lines.append(f"| 板块({b.sector})涨跌 | {b.sector_change_pct:+.2f}% |")
+        lines.append(f"| 个股超额Alpha | {b.stock_alpha:+.2f}% ← {alpha_sign}板块 |")
+    if b.earnings_disclosure_date:
+        status = "已披露" if b.earnings_actually_disclosed else "预约"
+        lines.append(f"| 年报披露日期 | {b.earnings_disclosure_date} ({status}) |")
     lines.append("")
 
     # ── Price history (last 10 days) ──
@@ -1101,6 +1174,43 @@ def _build_markdown(b: AkshareBundle) -> str:
                 f"| {_fmt_num(row['amount'])} "
                 f"| {_fmt_num(row['turnover'])} |"
             )
+        lines.append("")
+
+    # ── Technical indicators ──
+    ti = b.technical_indicators
+    if ti and ti.get("dates"):
+        lines.append("## 技术指标（Python预计算）")
+        lines.append("| 日期 | RSI(14) | MACD DIF | MACD DEA | MACD柱 | MA5 | MA10 | MA20 | 布林上 | 布林中 | 布林下 |")
+        lines.append("|------|---------|----------|----------|--------|-----|------|------|--------|--------|--------|")
+        n = len(ti["dates"])
+        start = max(0, n - 10)
+        for i in range(start, n):
+            def _v(key, idx, decimals=2):
+                vals = ti.get(key, [])
+                if idx < len(vals) and vals[idx] is not None:
+                    return f"{vals[idx]:.{decimals}f}"
+                return "—"
+            lines.append(
+                f"| {ti['dates'][i][-5:]} "
+                f"| {_v('rsi_14', i)} | {_v('macd_dif', i, 4)} | {_v('macd_dea', i, 4)} "
+                f"| {_v('macd_hist', i, 4)} | {_v('ma5', i)} | {_v('ma10', i)} "
+                f"| {_v('ma20', i)} | {_v('boll_upper', i)} | {_v('boll_mid', i)} "
+                f"| {_v('boll_lower', i)} |"
+            )
+        # Summary line
+        lat = ti.get("latest", {})
+        if lat:
+            parts = []
+            if "rsi_14" in lat:
+                parts.append(f"RSI={lat['rsi_14']:.1f}({lat.get('rsi_zone', '')})")
+            if "macd_cross" in lat:
+                parts.append(f"MACD{lat['macd_cross']}")
+            if "boll_position" in lat:
+                parts.append(f"布林{lat['boll_position']}")
+            if "boll_width_pct" in lat:
+                parts.append(f"带宽{lat['boll_width_pct']}%")
+            if parts:
+                lines.append(f"> 最新: {' | '.join(parts)}")
         lines.append("")
 
     # ── Fund flow ──
@@ -1259,6 +1369,7 @@ _COLLECTORS = [
     ("lhb",                _collect_lhb),
     ("margin",             _collect_margin),
     ("block_trades",       _collect_block_trades),
+    ("earnings_date",      _collect_earnings_date),
 ]
 
 
@@ -1276,6 +1387,7 @@ class MarketSnapshot:
 
     # Sector & concept fund flow: list of {name, net_inflow, change_pct, ...}
     sector_fund_flow: list = field(default_factory=list)
+    sector_flow_lookup: dict = field(default_factory=dict)  # {name: change_pct} all sectors
     concept_fund_flow: list = field(default_factory=list)
 
     # Northbound summary: {direction, net_buy, ...}
@@ -1306,6 +1418,7 @@ class MarketSnapshot:
             "trade_date": self.trade_date,
             "index_data": self.index_data,
             "sector_fund_flow": self.sector_fund_flow,
+            "sector_flow_lookup": self.sector_flow_lookup,
             "concept_fund_flow": self.concept_fund_flow,
             "northbound_summary": self.northbound_summary,
             "advance_count": self.advance_count,
@@ -1419,6 +1532,17 @@ def _collect_sector_flow(ms: MarketSnapshot):
         if d["name"] not in seen:
             rows.append(d)
     ms.sector_fund_flow = rows
+
+    # Build full lookup dict for alpha computation (all sectors, not just top/bottom)
+    name_col = "板块" if source == "ths" else "名称"
+    try:
+        for _, r in df_sorted.iterrows():
+            name = str(r.get(name_col, "")).strip()
+            pct = _safe_float(r.get(pct_col, 0))
+            if name and pct is not None:
+                ms.sector_flow_lookup[name] = pct
+    except Exception:
+        pass  # Non-critical: alpha just won't be computed
 
 
 def _collect_concept_flow(ms: MarketSnapshot):
@@ -1868,6 +1992,32 @@ def collect_market_snapshot(
     return ms
 
 
+def enrich_with_market_data(bundle: "AkshareBundle", snapshot: "MarketSnapshot") -> None:
+    """Post-collection enrichment: compute sector-relative alpha.
+
+    Call after collect() when a MarketSnapshot is available for the same date.
+    Populates bundle.sector_change_pct and bundle.stock_alpha.
+    """
+    if not bundle.sector or not bundle.price_history:
+        return
+    # Latest stock daily change
+    last = bundle.price_history[-1]
+    stock_chg = _safe_float(last.get("change_pct"))
+    if stock_chg is None:
+        return
+    # Lookup sector change from full lookup dict
+    sector_pct = snapshot.sector_flow_lookup.get(bundle.sector)
+    if sector_pct is None:
+        # Fuzzy match: try substring containment
+        for name, pct in snapshot.sector_flow_lookup.items():
+            if bundle.sector in name or name in bundle.sector:
+                sector_pct = pct
+                break
+    if sector_pct is not None:
+        bundle.sector_change_pct = sector_pct
+        bundle.stock_alpha = round(stock_chg - sector_pct, 2)
+
+
 def collect(ticker: str, trade_date: str = "", *, use_cache: bool = True) -> AkshareBundle:
     """Collect all available akshare data for a single A-share ticker.
 
@@ -1926,6 +2076,12 @@ def collect(ticker: str, trade_date: str = "", *, use_cache: bool = True) -> Aks
             logger.warning(f"  [FAIL] {bare} {api_name}: {e}")
 
     b.collection_seconds = time.time() - t0
+
+    # Compute technical indicators from price history
+    if b.price_history and len(b.price_history) >= 14:
+        from .technical import compute_stock_indicators
+        b.technical_indicators = compute_stock_indicators(b.price_history)
+
     b.markdown_report = _build_markdown(b)
 
     # ── Cache store ──

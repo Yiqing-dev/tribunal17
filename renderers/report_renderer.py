@@ -193,8 +193,11 @@ def generate_brief_report(
     run_ids: list,
     storage_dir: str = "data/replays",
     trade_date: str = "",
+    market_context: dict = None,
+    watchlist_report: object = None,
 ) -> str:
-    """Generate concise markdown brief -- one line per stock, suitable for push.
+    """Generate enhanced markdown brief with market context, signal flips,
+    pillar scores, stop/target prices, and margin signals.
 
     Groups stocks by action (BUY first, HOLD, SELL, VETO).
     Returns markdown string.
@@ -203,20 +206,64 @@ def generate_brief_report(
 
     store = ReplayStore(storage_dir=storage_dir)
 
+    _PILLAR_NODES = {
+        "Market Analyst": "技",
+        "Fundamentals Analyst": "基",
+        "News Analyst": "新",
+        "Social Analyst": "情",
+    }
+
     entries = []
     for run_id in run_ids:
         trace = store.load(run_id)
         if not trace:
             continue
         action = (trace.research_action or "HOLD").upper()
-        entries.append({
+        e = {
             "ticker": trace.ticker,
             "name": getattr(trace, "ticker_name", ""),
             "action": action,
             "confidence": trace.final_confidence,
             "was_vetoed": trace.was_vetoed,
             "trade_date": trace.trade_date,
-        })
+            "pillars": {},
+            "stop_loss": 0,
+            "take_profit": 0,
+            "catalyst": "",
+            "margin_ratio": 0,
+            "margin_direction": "",
+            "earnings_date": "",
+        }
+        # Extract pillar scores + stop/target from node traces
+        for nt in trace.node_traces:
+            if nt.node_name in _PILLAR_NODES:
+                sd = nt.structured_data or {}
+                score = sd.get("pillar_score", -1)
+                if score >= 0:
+                    e["pillars"][_PILLAR_NODES[nt.node_name]] = score
+            if nt.node_name == "ResearchOutput":
+                sd = nt.structured_data or {}
+                tp = sd.get("trade_plan", {})
+                if tp:
+                    sl = tp.get("stop_loss", {})
+                    if isinstance(sl, dict):
+                        e["stop_loss"] = sl.get("price", 0) or 0
+                    elif isinstance(sl, (int, float)):
+                        e["stop_loss"] = sl
+                tc = sd.get("tradecard", {})
+                if tc:
+                    if not e["stop_loss"]:
+                        e["stop_loss"] = tc.get("stop_loss", 0) or 0
+                    e["take_profit"] = tc.get("take_profit", 0) or 0
+            if nt.node_name == "Catalyst Agent":
+                excerpt = nt.output_excerpt or ""
+                # Extract first catalyst mention (first 80 chars of excerpt)
+                for line in excerpt.split("\n"):
+                    line = line.strip()
+                    if len(line) > 10 and not line.startswith("#"):
+                        e["catalyst"] = line[:60]
+                        break
+        entries.append(e)
 
     if not trade_date and entries:
         trade_date = entries[0].get("trade_date", "")
@@ -230,13 +277,41 @@ def generate_brief_report(
         counts[e["action"]] = counts.get(e["action"], 0) + 1
 
     lines = [
-        f"# \u7814\u7a76\u7b80\u62a5 {trade_date}",
-        f"",
-        f"\u6807\u7684\u6570: {len(entries)} | "
-        + " / ".join(f"{get_action_label(a)} {c}" for a, c in sorted(counts.items(), key=lambda x: order.get(x[0], 9))),
-        f"",
+        f"# 研究简报 {trade_date}",
+        "",
     ]
 
+    # Market context header
+    if market_context:
+        regime = market_context.get("regime", "")
+        weather = market_context.get("market_weather", "")
+        breadth = market_context.get("breadth_state", "")
+        leaders = market_context.get("sector_leaders", [])
+        leader_str = "/".join(leaders[:3]) if leaders else ""
+        lines.append(f"**市场**: {regime} | {breadth} | 主线: {leader_str}")
+        if weather:
+            lines.append(f"> {weather[:80]}")
+        lines.append("")
+
+    # Signal flips from watchlist report
+    if watchlist_report:
+        flips = getattr(watchlist_report, "action_flips", [])
+        today_flips = [f for f in flips if f.get("date") == trade_date]
+        if today_flips:
+            lines.append("## 信号翻转")
+            for f in today_flips:
+                lines.append(f"- {f.get('ticker_name', f.get('ticker',''))}: "
+                           f"{f['from_action']} → {f['to_action']}")
+            lines.append("")
+
+    # Summary line
+    lines.append(
+        f"标的数: {len(entries)} | "
+        + " / ".join(f"{get_action_label(a)} {c}" for a, c in sorted(counts.items(), key=lambda x: order.get(x[0], 9)))
+    )
+    lines.append("")
+
+    # Per-stock details
     current_action = None
     for e in entries:
         if e["action"] != current_action:
@@ -251,11 +326,34 @@ def generate_brief_report(
         ticker = e.get("ticker", "")
         display = f"{ticker} {name}" if name else ticker
         label = get_action_label(e["action"])
-        lines.append(f"- {emoji} **{display}** | {label} ({conf:.0%})")
+
+        # Pillar scores
+        pillars = e.get("pillars", {})
+        pillar_str = " ".join(f"{k}{v}" for k, v in pillars.items()) if pillars else ""
+
+        # Main line
+        main = f"- {emoji} **{display}** | {label} ({conf:.0%})"
+        if pillar_str:
+            main += f" | {pillar_str}"
+        lines.append(main)
+
+        # Stop/target line
+        sl = e.get("stop_loss", 0)
+        tp = e.get("take_profit", 0)
+        details = []
+        if sl:
+            details.append(f"止损:{sl:.2f}")
+        if tp:
+            details.append(f"目标:{tp:.2f}")
+        ed = e.get("earnings_date", "")
+        if ed:
+            details.append(f"财报:{ed}")
+        if details:
+            lines.append(f"  {' | '.join(details)}")
 
     lines.append("")
     lines.append("---")
-    lines.append("*AI \u591a\u667a\u80fd\u4f53\u7cfb\u7edf\u81ea\u52a8\u751f\u6210\uff0c\u4ec5\u4f9b\u7814\u7a76\u53c2\u8003*")
+    lines.append("*AI 多智能体系统自动生成，仅供研究参考*")
 
     return "\n".join(lines)
 
@@ -265,12 +363,17 @@ def generate_brief_report_file(
     storage_dir: str = "data/replays",
     output_dir: str = "data/reports",
     trade_date: str = "",
+    market_context: dict = None,
+    watchlist_report: object = None,
 ) -> Optional[str]:
     """Generate brief report and write to data/reports/brief-{date}.md.
 
     Returns path to generated file, or None if no runs.
     """
-    content = generate_brief_report(run_ids, storage_dir=storage_dir, trade_date=trade_date)
+    content = generate_brief_report(
+        run_ids, storage_dir=storage_dir, trade_date=trade_date,
+        market_context=market_context, watchlist_report=watchlist_report,
+    )
     if not content or not run_ids:
         return None
 
