@@ -38,6 +38,14 @@
 
 > **写文件前**：如果目标文件已存在，先用 `Read(file_path, limit=5)` 读取前5行，然后再用 `Write` 写入完整内容。如果目标文件不存在，可以直接 `Write`。
 
+### Orchestration prompt 长度约束的歧义修复（2026-04-14）
+
+**重要教训**：当 orchestration prompt 写 `"Under 40 words"` 时，agent 会误以为**写入文件的内容**也要控制在 40 字，导致它砍掉 CLAIM/EVIDENCE/CONFIDENCE/INVALIDATION 结构化块、证据引用、可证伪条件——analysis_audit 会降到 4/10 以下。
+
+**每次启动 Agent 时 prompt 必须同时说明**（用此模板）：
+
+> Read `/tmp/prompts/{key}.txt` fully. Generate the COMPLETE structured analysis as the prompt instructs — CLAIM blocks, [E#] citations, 5-dimension scores, falsifiability conditions must all be present in the output file. The length limit (Under N words) applies **ONLY to the confirmation message you return to me**, NOT to the file content. Write to `{output_path}`. DO NOT write to subagent_pipeline/ path. Return under 40 words confirming what you wrote.
+
 在启动 Agent 前，主流程应清除上一轮的旧输出文件（防止旧数据残留）：
 
 ```python

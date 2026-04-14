@@ -1310,11 +1310,14 @@ def _parse_risk_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
             warnings = list(nt.parse_warnings or [])
             warnings.append("risk_flags JSON parse failed, flags may be incomplete")
             nt.parse_warnings = warnings
-        flags = risk.get("risk_flags", [])
-        nt.risk_flag_count = len([f for f in flags if isinstance(f, dict)])
-        nt.risk_flag_categories = list(dict.fromkeys(
-            f.get("category", "") for f in flags if isinstance(f, dict) and f.get("category")
-        ))
+        raw_flags = risk.get("risk_flags", [])
+        # P3 (reflection 2026-04-13): canonicalize + dedupe + top-6 cap.
+        # Raw labels exploded to 200+ synonyms, biasing action → HOLD
+        # without improving predictive power. Collapse to canonical vocabulary.
+        from .shared import dedupe_and_cap_flags
+        flags = dedupe_and_cap_flags(raw_flags, cap=6)
+        nt.risk_flag_count = len(flags)
+        nt.risk_flag_categories = [f["category"] for f in flags]
 
         nt.structured_data = {
             "conclusion": f"风险评分 {nt.risk_score}/10，"
@@ -1323,20 +1326,19 @@ def _parse_risk_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
             "risk_flags": [
                 {
                     "flag_id": f"rf-{i+1:03d}",
-                    "category": f.get("category", ""),
-                    "severity": f.get("severity", "medium").lower()
-                           if str(f.get("severity", "medium")).lower()
-                           in ("low", "medium", "high", "critical")
-                           else "medium",
+                    "category": f["category"],
+                    "severity": f["severity"],
                     "description": f.get("description", ""),
                     "bound_evidence_ids": (
                         [f.get("evidence", "")] if isinstance(f.get("evidence"), str)
-                        else f.get("evidence", [])
+                        else f.get("evidence", []) or []
                     ),
                     "mitigant": f.get("mitigant", ""),
+                    "raw_category": f.get("_raw_category", ""),
                 }
-                for i, f in enumerate(flags) if isinstance(f, dict)
+                for i, f in enumerate(flags)
             ],
+            "raw_risk_flag_count": len([x for x in raw_flags if isinstance(x, dict)]),
         }
 
         nt.evidence_ids_referenced = parse_evidence_citations(text)

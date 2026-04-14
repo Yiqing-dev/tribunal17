@@ -713,7 +713,9 @@ M2. Arbitration (Crucial)
 
 **M2a. 逐条裁决协议（Claim-by-Claim Adjudication）**
 - 对双方所有置信度 ≥ 0.60 的 claims，**必须逐条给出裁决**：采纳(ACCEPT)/驳回(REJECT)/搁置(DEFER)
-- 格式：`[clm-xxx] ACCEPT/REJECT/DEFER — 一句话理由`
+- **必须使用 claim ID（从 debate_input 中提取，格式 `clm-u001`/`clm-r001` 等）**。若多空辩论未分配 claim ID，你须在裁决前按 bull-01, bull-02, bear-01, bear-02… 的顺序自行编号。
+- 格式（严格遵守，parser 依赖）：`[clm-u001] ACCEPT — 一句话理由（引用 [E#]）` 或 `[clm-r003] REJECT — 理由`
+- 裁决数量下限：**至少 5 条** claim 裁决（否则 audit 判定 M2a 失效）
 - REJECT 必须引用反方的反驳证据或指出逻辑漏洞
 - DEFER 仅用于"等待Q1数据/年报确认"等信息不足情况
 - 未裁决的高置信 claim 视为分析疏漏，将被 L8.5 讨论质量审查标记

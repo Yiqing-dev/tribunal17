@@ -24,6 +24,144 @@ ROUND_1_HEADER = "=== Round 1 ==="
 ROUND_2_HEADER = "=== Round 2 ==="
 
 
+# ── Risk flag canonicalization ──────────────────────────────────────────
+# Maps many synonyms (中/英变体) to a small set of canonical categories.
+# Used by bridge._parse_risk_manager() to de-duplicate 200+ raw labels into
+# ~10 categories so downstream consumers see a stable vocabulary.
+# Rationale (2026-04-13 reflection): raw risk flags proliferated to 200+
+# synonyms, causing signal inflation that silently biased action → HOLD
+# without improving early-warning accuracy.
+
+_SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+CANONICAL_RISK_FLAGS = {
+    # fund_flow family
+    "fund_flow": ("fund_flow", "medium"),
+    "capital_flow": ("fund_flow", "medium"),
+    "资金面": ("fund_flow", "medium"),
+    "资金面风险": ("fund_flow", "medium"),
+    "资金流向风险": ("fund_flow", "medium"),
+    "主力流出": ("fund_flow", "high"),
+    "主力净流出": ("fund_flow", "high"),
+    # valuation family
+    "valuation": ("valuation", "medium"),
+    "估值": ("valuation", "medium"),
+    "估值风险": ("valuation", "medium"),
+    "高估值": ("valuation", "high"),
+    "valuation_stretch": ("valuation", "high"),
+    # event risk family
+    "earnings_event": ("event_risk", "high"),
+    "annual_report": ("event_risk", "high"),
+    "年报风险": ("event_risk", "high"),
+    "年报披露": ("event_risk", "high"),
+    "event_risk": ("event_risk", "medium"),
+    "event": ("event_risk", "medium"),
+    "事件风险": ("event_risk", "medium"),
+    # fundamental family
+    "fundamental": ("fundamental", "medium"),
+    "fundamental_weakness": ("fundamental", "high"),
+    "基本面": ("fundamental", "medium"),
+    "基本面风险": ("fundamental", "medium"),
+    "loss": ("fundamental", "high"),
+    "亏损": ("fundamental", "high"),
+    "亏损风险": ("fundamental", "high"),
+    # technical family
+    "technical": ("technical", "medium"),
+    "technical_weakness": ("technical", "medium"),
+    "技术面": ("technical", "medium"),
+    "技术面风险": ("technical", "medium"),
+    "macd_death_cross": ("technical", "medium"),
+    # liquidity family
+    "liquidity": ("liquidity", "medium"),
+    "流动性": ("liquidity", "medium"),
+    "流动性风险": ("liquidity", "medium"),
+    "low_liquidity": ("liquidity", "high"),
+    "低流动性": ("liquidity", "high"),
+    # shareholder / pledge family
+    "pledge": ("shareholder", "high"),
+    "质押": ("shareholder", "high"),
+    "质押风险": ("shareholder", "high"),
+    "shareholder": ("shareholder", "medium"),
+    "大股东减持": ("shareholder", "high"),
+    "forced_liquidation": ("shareholder", "critical"),
+    "强制平仓": ("shareholder", "critical"),
+    "股东风险": ("shareholder", "medium"),
+    # macro / regime family
+    "macro": ("macro", "medium"),
+    "宏观风险": ("macro", "medium"),
+    "regime": ("macro", "medium"),
+    "beta_override": ("macro", "low"),
+    "β反噬": ("macro", "medium"),
+    # sentiment family
+    "sentiment": ("sentiment", "medium"),
+    "情绪": ("sentiment", "medium"),
+    "情绪风险": ("sentiment", "medium"),
+    "crowded_trade": ("sentiment", "high"),
+    "拥挤交易": ("sentiment", "high"),
+    # policy / regulation family
+    "policy": ("policy", "medium"),
+    "政策": ("policy", "medium"),
+    "regulation": ("policy", "medium"),
+    "regulatory": ("policy", "medium"),
+    "监管风险": ("policy", "high"),
+    # geopolitical family
+    "tariff": ("geopolitical", "medium"),
+    "关税": ("geopolitical", "medium"),
+    "geopolitical": ("geopolitical", "medium"),
+    "地缘政治": ("geopolitical", "medium"),
+}
+
+
+def canonicalize_risk_flag(raw_category):
+    """Map a raw risk_flag category string → (canonical_category, default_severity).
+
+    Returns ("other", "medium") for unrecognized categories.
+    Lookup is case-insensitive with substring match.
+    """
+    if not raw_category:
+        return ("other", "medium")
+    key = str(raw_category).strip().lower()
+    if key in CANONICAL_RISK_FLAGS:
+        return CANONICAL_RISK_FLAGS[key]
+    for synonym, mapping in CANONICAL_RISK_FLAGS.items():
+        syn_lower = synonym.lower()
+        if syn_lower in key or (len(key) >= 4 and key in syn_lower):
+            return mapping
+    return ("other", "medium")
+
+
+def dedupe_and_cap_flags(flags, cap=6):
+    """De-duplicate by canonical category and cap at `cap` items.
+
+    Input: list of dicts with at least {"category", "severity", "description"}.
+    Output: list of dicts in canonical form, sorted by severity, truncated to cap.
+    """
+    if not flags:
+        return []
+    by_category = {}
+    for f in flags:
+        if not isinstance(f, dict):
+            continue
+        raw_cat = f.get("category", "")
+        canonical, default_sev = canonicalize_risk_flag(raw_cat)
+        sev = str(f.get("severity", default_sev) or default_sev).lower()
+        if sev not in _SEVERITY_ORDER:
+            sev = default_sev
+        existing = by_category.get(canonical)
+        # Keep the highest-severity instance per canonical category.
+        if existing is None or _SEVERITY_ORDER[sev] < _SEVERITY_ORDER[existing["severity"]]:
+            by_category[canonical] = {
+                "category": canonical,
+                "severity": sev,
+                "description": f.get("description", ""),
+                "evidence": f.get("evidence", ""),
+                "mitigant": f.get("mitigant", ""),
+                "_raw_category": raw_cat,
+            }
+    ordered = sorted(by_category.values(), key=lambda x: _SEVERITY_ORDER[x["severity"]])
+    return ordered[:cap]
+
+
 def common_input_block(
     ticker: str,
     market: str = "CN_A",
@@ -95,11 +233,21 @@ EVIDENCE_PROTOCOL = """
 - At the end list all cited sources: CITED_EVIDENCE: [E1, E3, E5] or CITED_EVIDENCE: [基本面报告, 技术面报告]
 
 **STRUCTURED CLAIMS (append at end of response):**
-For each major claim, output EXACTLY this format:
-CLAIM: <claim text>
+For each major claim, output EXACTLY this format. The `[clm-xNNN]` ID is REQUIRED
+so the Research Manager can later adjudicate each claim by ID.
+  - Bull analysts: use `[clm-u001]`, `[clm-u002]`, …  (u = up/bull)
+  - Bear analysts: use `[clm-r001]`, `[clm-r002]`, …  (r = risk/bear)
+  - Numbering is sequential per analyst, 3 digits, starts at 001.
+
+Format (parser-sensitive — follow exactly):
+
+CLAIM [clm-u001]: <claim text>
 EVIDENCE: [E#, E#] or [report-section, report-section]
 CONFIDENCE: <0.0-1.0>
 INVALIDATION: <what would disprove this>
+
+CLAIM [clm-u002]: <next claim…>
+…
 """
 
 
