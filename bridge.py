@@ -981,11 +981,16 @@ def build_node_trace(
     text: str,
     run_id: str,
     seq: Optional[int] = None,
+    prompt_text: Optional[str] = None,
 ) -> NodeTrace:
     """Build a NodeTrace from agent text output.
 
     Fills structured_data based on agent type, with graceful fallback
     when parsing fails (excerpt-only mode).
+
+    When prompt_text is provided, records its hash in node.input_hash so
+    that rolling monitoring and backtest analysis can stratify results
+    by prompt version. Omitted → input_hash stays "" (backwards compat).
     """
     node_name = AGENT_NODE_MAP.get(agent_key, agent_key)
     if seq is None:
@@ -996,6 +1001,7 @@ def build_node_trace(
         node_name=node_name,
         seq=seq,
         timestamp=datetime.now(),
+        input_hash=compute_hash(prompt_text) if prompt_text else "",
         output_hash=compute_hash(text),
         output_excerpt=text[:150000] if text else "",
     )
@@ -1495,6 +1501,7 @@ def build_run_trace(
     ticker_name: str = "",
     trade_date: str = "",
     run_id: Optional[str] = None,
+    prompts: Optional[Dict[str, str]] = None,
 ) -> RunTrace:
     """Assemble a complete RunTrace from agent outputs dict.
 
@@ -1505,6 +1512,10 @@ def build_run_trace(
         ticker_name: Human-readable name (e.g. "中国核电")
         trade_date: Analysis date (e.g. "2026-03-12")
         run_id: Optional custom run ID (auto-generated if None)
+        prompts: Optional dict mapping agent_key → rendered prompt text.
+                 When provided, each NodeTrace's input_hash is populated
+                 with the SHA-256/16 hash of that agent's prompt, and
+                 RunTrace.prompt_hashes aggregates them for fast lookup.
 
     Returns:
         Finalized RunTrace ready for persistence and report generation.
@@ -1538,12 +1549,17 @@ def build_run_trace(
     )
 
     # Build NodeTraces in execution order
+    prompts = prompts or {}
     for agent_key in sorted(outputs.keys(), key=lambda k: AGENT_SEQ.get(k, 99)):
         text = outputs[agent_key]
         if not text:
             continue
-        nt = build_node_trace(agent_key, text, run_id)
+        prompt_text = prompts.get(agent_key)
+        nt = build_node_trace(agent_key, text, run_id, prompt_text=prompt_text)
         trace.node_traces.append(nt)
+        # Aggregate input_hash (prompt hash) at run level for fast stratified queries
+        if nt.input_hash:
+            trace.prompt_hashes[agent_key] = nt.input_hash
 
     # Publishing Compliance — run lightweight deterministic checks
     # (subagent_pipeline cannot import the full engine from tradingagents/)
@@ -1648,6 +1664,7 @@ def generate_report(
     market_context_block: str = "",
     market_context: Optional[Dict] = None,
     run_config=None,
+    prompts: Optional[Dict[str, str]] = None,
 ) -> Dict[str, str]:
     """Convert subagent outputs to 3-tier HTML reports.
 
@@ -1663,12 +1680,15 @@ def generate_report(
                        Auto-fetched via akshare if None.
         market_context_block: Formatted market context text for prompt injection.
         market_context: Dict from assemble_market_context() — persisted into RunTrace.
+        prompts: Optional dict mapping agent_key → rendered prompt text. When
+                 provided, RunTrace.prompt_hashes is populated for stratified
+                 backtest analysis across prompt versions.
 
     Returns:
         Dict of {"snapshot": path, "research": path, "audit": path, "run_id": id}
     """
     # 1. Build RunTrace
-    trace = build_run_trace(outputs, ticker, ticker_name, trade_date, run_id)
+    trace = build_run_trace(outputs, ticker, ticker_name, trade_date, run_id, prompts=prompts)
 
     # 1a. Inject market context into RunTrace for downstream rendering
     if market_context is not None:

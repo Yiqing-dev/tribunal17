@@ -133,7 +133,7 @@ sector_momentum should be valid JSON array. The "flow" value MUST be a plain num
 # ============================================================
 
 
-def market_analyst(ticker: str, current_date: str, market_context_block: str = "", akshare_md: str = "", **kw) -> str:
+def market_analyst(ticker: str, current_date: str, market_context_block: str = "", akshare_md: str = "", feedback_block: str = "", **kw) -> str:
     """Technical Analyst (Pro v2) — pillar_score 0-4."""
     _mkt_ctx = ""
     if market_context_block:
@@ -142,6 +142,7 @@ def market_analyst(ticker: str, current_date: str, market_context_block: str = "
 {market_context_block}
 请在分析中评估个股技术走势与市场 regime 的对齐度：若市场 RISK_OFF 但个股走势偏强，需特别说明；若市场 RISK_ON 但个股走弱，也需标注。
 """
+    _fb = f"\n{feedback_block}\n" if feedback_block else ""
     _data_instruction = SUBAGENT_DATA_INSTRUCTION_WITH_AKSHARE if akshare_md else SUBAGENT_DATA_INSTRUCTION
     _data_block = ""
     if akshare_md:
@@ -169,6 +170,7 @@ def market_analyst(ticker: str, current_date: str, market_context_block: str = "
 
 {common_input_block(ticker, **kw)}
 {_mkt_ctx}
+{_fb}
 {GLOBAL_CONSTRAINTS}
 
 **ANALYSIS FRAMEWORK (Must Cover Sequence A1-A5):**
@@ -213,9 +215,10 @@ For reference, the current date is {current_date}. The target company for this a
 {LANGUAGE_ZH}"""
 
 
-def fundamentals_analyst(ticker: str, current_date: str, akshare_md: str = "", **kw) -> str:
+def fundamentals_analyst(ticker: str, current_date: str, akshare_md: str = "", feedback_block: str = "", **kw) -> str:
     """Fundamental Analyst (Pro v2) — pillar_score 0-4."""
     _data_instruction = SUBAGENT_DATA_INSTRUCTION_WITH_AKSHARE if akshare_md else SUBAGENT_DATA_INSTRUCTION
+    _fb = f"\n{feedback_block}\n" if feedback_block else ""
     _data_block = ""
     if akshare_md:
         _data_block = f"""
@@ -245,6 +248,7 @@ def fundamentals_analyst(ticker: str, current_date: str, akshare_md: str = "", *
 **OBJECTIVE**: Use S1/S2 evidence to determine the fundamental drivers for {ticker} over 3-6 Months, and output a **pillar_score** (0-4).
 
 {common_input_block(ticker, **kw)}
+{_fb}
 {GLOBAL_CONSTRAINTS_SHORT}
 
 **ANALYSIS FRAMEWORK (Must Cover Sequence B1-B6):**
@@ -293,9 +297,10 @@ For reference, the current date is {current_date}. The target company for this a
 {LANGUAGE_ZH}"""
 
 
-def news_analyst(ticker: str, current_date: str, akshare_md: str = "", **kw) -> str:
+def news_analyst(ticker: str, current_date: str, akshare_md: str = "", feedback_block: str = "", **kw) -> str:
     """News & Catalyst Agent (Pro v2) — pillar_score 0-4."""
     _data_instruction = SUBAGENT_DATA_INSTRUCTION_WITH_AKSHARE if akshare_md else SUBAGENT_DATA_INSTRUCTION
+    _fb = f"\n{feedback_block}\n" if feedback_block else ""
     _data_block = ""
     if akshare_md:
         _data_block = f"""
@@ -326,6 +331,7 @@ def news_analyst(ticker: str, current_date: str, akshare_md: str = "", **kw) -> 
 **OBJECTIVE**: Map past 30 days of info to a "Tradable Catalyst Map" for {ticker}, and output a **pillar_score** (0-4).
 
 {common_input_block(ticker, **kw)}
+{_fb}
 {GLOBAL_CONSTRAINTS_SHORT}
 
 **ANALYSIS FRAMEWORK (Must Cover Sequence C1-C4):**
@@ -362,9 +368,10 @@ For reference, the current date is {current_date}. The target company for this a
 {LANGUAGE_ZH}"""
 
 
-def sentiment_analyst(ticker: str, current_date: str, akshare_md: str = "", **kw) -> str:
+def sentiment_analyst(ticker: str, current_date: str, akshare_md: str = "", feedback_block: str = "", **kw) -> str:
     """Flow & Sentiment Agent (Pro v2) — pillar_score 0-4."""
     _data_instruction = SUBAGENT_DATA_INSTRUCTION_WITH_AKSHARE if akshare_md else SUBAGENT_DATA_INSTRUCTION
+    _fb = f"\n{feedback_block}\n" if feedback_block else ""
     _data_block = ""
     if akshare_md:
         _data_block = f"""
@@ -393,6 +400,7 @@ def sentiment_analyst(ticker: str, current_date: str, akshare_md: str = "", **kw
 **OBJECTIVE**: Assess "Crowding" and "Reflexivity Risk" for {ticker}, and output a **pillar_score** (0-4). (S3 Social data is auxiliary only).
 
 {common_input_block(ticker, **kw)}
+{_fb}
 {GLOBAL_CONSTRAINTS_SHORT}
 
 **ANALYSIS FRAMEWORK (Must Cover Sequence D1-D4):**
@@ -656,11 +664,13 @@ def research_manager(
     ledger_block: str = "",
     past_memory: str = "",
     market_context_block: str = "",
+    feedback_block: str = "",
     current_date: str = "",
     **kw,
 ) -> str:
     """Research Manager / Investment Committee CIRO (Pro v2) — final synthesis."""
     _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
+    _fb = f"\n{feedback_block}\n" if feedback_block else ""
     _mkt_ctx = ""
     if market_context_block:
         _mkt_ctx = f"""
@@ -685,6 +695,7 @@ def research_manager(
 {_date_line}
 {common_input_block(ticker, **kw)}
 {_mkt_ctx}
+{_fb}
 {ledger_block}
 {scenario_block}
 【Global Constraints】

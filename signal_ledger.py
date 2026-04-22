@@ -274,6 +274,14 @@ class SignalLedger:
         # Normalize ticker
         ticker = normalize_ticker(trace.ticker)
 
+        # Auto-extract market_regime from trace if caller didn't supply it.
+        # This prevents the "forgot to pass regime" failure mode (root cause of
+        # many historical signals having market_regime=""). Explicit caller value
+        # still wins to preserve override capability.
+        if not market_regime:
+            mctx = getattr(trace, "market_context", {}) or {}
+            market_regime = str(mctx.get("regime", "") or "").upper()
+
         record = SignalRecord(
             run_id=run_id,
             trade_date=trace.trade_date,

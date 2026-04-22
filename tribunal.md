@@ -199,7 +199,7 @@ mld.save(replays_dir=str(REPLAYS), results_dir=str(RESULTS))
 
 ### L2 — 以下按个股循环（每只股票）
 
-#### Step 0 — 数据采集（无 LLM）
+#### Step 0 — 数据采集 + 反馈块构建（无 LLM）
 
 ```python
 from subagent_pipeline.akshare_collector import collect
@@ -207,22 +207,39 @@ bundle = collect(ticker=ticker, trade_date=trade_date)
 # ticker_name 统一从 bundle 获取，后续所有步骤使用此变量
 ticker_name = bundle.name or ticker_name or ticker
 akshare_md = bundle.markdown_report       # 属性，非方法
+
+# P1 反馈块：基于 ticker 历史准确率 + 教训，per-pillar 隔离以避免同步性偏差
+from subagent_pipeline.reflection import build_feedback_blocks
+feedback_blocks = build_feedback_blocks(
+    ticker=ticker,
+    days=30,
+    ledger_path="data/signals/signals.jsonl",
+    storage_dir=str(REPLAYS),
+    reports_dir=str(REPORTS),
+)
+fb_market = feedback_blocks["market"]
+fb_fund   = feedback_blocks["fundamentals"]
+fb_news   = feedback_blocks["news"]
+fb_sent   = feedback_blocks["sentiment"]
+fb_pm     = feedback_blocks["pm"]
 ```
 
 **重要**: `ticker_name` 从此处开始作为唯一来源，传递给所有后续 Agent（Step 5 `research_manager`、Step 7 `risk_manager`、Step 8 `research_output` 的 `company_name` 参数）。
 
-打印：`[L2.0] {ticker} {ticker_name} 数据采集完毕，{len(bundle.apis_succeeded)}/{len(bundle.apis_succeeded)+len(bundle.apis_failed)} API OK`
+**P1 反馈块 pillar 隔离原则**：每个分析师只看见自己 pillar 的历史统计 — 避免所有分析师读同一份反馈后产生"共识性保守"偏差。PM 看全量跨 pillar 视图。
+
+打印：`[L2.0] {ticker} {ticker_name} 数据采集完毕，{len(bundle.apis_succeeded)}/{len(bundle.apis_succeeded)+len(bundle.apis_failed)} API OK，feedback_blocks={sum(1 for b in feedback_blocks.values() if b)} 个非空`
 
 #### Step 1 — 观星、度支、通政、察言，四司齐奏！（四分析师并行）
 
-**并行** 启动 4 个 Agent（model=sonnet）：
+**并行** 启动 4 个 Agent（model=sonnet）。每个分析师传入**自己 pillar 的** `feedback_block`：
 
 | Agent | prompt 调用 | 输出文件 |
 |-------|------------|---------|
-| 观星司 | `prompts.market_analyst(ticker, trade_date, market_context_block=market_context_block, akshare_md=akshare_md)` | `{ticker}_market_report.txt` |
-| 度支司 | `prompts.fundamentals_analyst(ticker, trade_date, akshare_md=akshare_md)` | `{ticker}_fundamentals_report.txt` |
-| 通政司 | `prompts.news_analyst(ticker, trade_date, akshare_md=akshare_md)` | `{ticker}_news_report.txt` |
-| 察言司 | `prompts.sentiment_analyst(ticker, trade_date, akshare_md=akshare_md)` | `{ticker}_sentiment_report.txt` |
+| 观星司 | `prompts.market_analyst(ticker, trade_date, market_context_block=market_context_block, akshare_md=akshare_md, feedback_block=fb_market)` | `{ticker}_market_report.txt` |
+| 度支司 | `prompts.fundamentals_analyst(ticker, trade_date, akshare_md=akshare_md, feedback_block=fb_fund)` | `{ticker}_fundamentals_report.txt` |
+| 通政司 | `prompts.news_analyst(ticker, trade_date, akshare_md=akshare_md, feedback_block=fb_news)` | `{ticker}_news_report.txt` |
+| 察言司 | `prompts.sentiment_analyst(ticker, trade_date, akshare_md=akshare_md, feedback_block=fb_sent)` | `{ticker}_sentiment_report.txt` |
 
 打印：`[L2.1] 四司齐奏完毕`
 
@@ -287,6 +304,7 @@ model=sonnet → `{ticker}_scenario_report.txt`
 prompts.research_manager(ticker, debate_input=combined_debate,
     scenario_block=scenario_output,
     market_context_block=market_context_block,
+    feedback_block=fb_pm,              # P1: 全量跨 pillar 反馈 + HOLD 基准先验
     current_date=trade_date)
 ```
 model=**opus**。`combined_debate` = bull_merged + bear_merged + catalyst。
@@ -353,9 +371,40 @@ paths = generate_report(
     storage_dir=str(REPLAYS),
     market_context_block=market_context_block,
     market_context=market_context,
+    prompts=prompts_dict,  # maps agent_key → rendered prompt string (for P3 prompt_hash tracking)
 )
 run_id = paths["run_id"]
 ```
+
+**P3 — prompts_dict 装配**: 在构建 outputs 同一段代码中，额外读取每个 agent 的 prompt 文件（`/tmp/prompts/{ticker}_{key}.txt` 等）一并收集到 `prompts_dict`：
+
+```python
+from pathlib import Path
+P = Path("/tmp/prompts")
+prompts_dict = {}
+# 映射 agent_key → prompt 文件名（见 L1/L2 各步骤的 prompt 生成处）
+_prompt_files = {
+    "market_analyst":      P / f"{ticker}_market.txt",
+    "fundamentals_analyst": P / f"{ticker}_fund.txt",
+    "news_analyst":        P / f"{ticker}_news.txt",
+    "sentiment_analyst":   P / f"{ticker}_sent.txt",
+    "catalyst_agent":      P / f"{ticker}_catalyst.txt",
+    "bull_researcher":     P / f"{ticker}_bull_r2.txt",  # 最终轮次
+    "bear_researcher":     P / f"{ticker}_bear_r2.txt",
+    "scenario_agent":      P / f"{ticker}_scenario.txt",
+    "research_manager":    P / f"{ticker}_pm.txt",
+    "aggressive_debator":  P / f"{ticker}_agg.txt",
+    "conservative_debator":P / f"{ticker}_con.txt",
+    "neutral_debator":     P / f"{ticker}_neu.txt",
+    "risk_manager":        P / f"{ticker}_risk_mgr.txt",
+    "research_output":     P / f"{ticker}_ro.txt",
+}
+for k, pf in _prompt_files.items():
+    if pf.exists():
+        prompts_dict[k] = pf.read_text(encoding="utf-8")
+```
+
+即使某些 prompt 文件缺失（如离线重跑旧 trace），`prompts` 参数容错，缺失的 agent 对应 `input_hash` 仍保持 `""` — 与历史 trace 保持兼容。
 
 打印：`[L3] 封卷成册 — run_id={run_id}`
 
@@ -458,6 +507,49 @@ ledger.append_from_trace(run_id, storage_dir=str(REPLAYS))
 report = run_backtest(storage_dir=str(REPLAYS), config=BacktestConfig(), fetch_prices=True)
 generate_backtest_report(report, output_dir=str(REPORTS))
 ```
+
+---
+
+### L7.5 — 滚动监控（P2，每日必做）
+
+计算 30/60/90 日滚动方向准确率，按 regime / action / pillar 分层。跌破阈值
+的层会产生告警，追加到 brief-{date}.md 末尾。阈值硬编码：warn < 40%, alert < 35%,
+最低样本数 = 10。
+
+```python
+from subagent_pipeline.monitoring import compute_rolling_monitor
+
+monitoring_report = compute_rolling_monitor(
+    trade_date=trade_date,
+    ledger_path="data/signals/signals.jsonl",
+    supplement_path="data/signals/regime_supplement.json",
+    storage_dir=str(REPLAYS),
+    output_dir="data/monitoring",
+)
+for alert in monitoring_report.alerts:
+    print(f"[MONITOR] {alert.alert_level.upper()}: {alert.label} "
+          f"{alert.window_days}d acc={alert.accuracy:.0%} n={alert.n}")
+```
+
+**首次运行前必须执行一次性 regime 回填**（只需运行一次，之后 `append_from_trace` 自动提取 regime）：
+```bash
+python -m subagent_pipeline.backfill_regimes
+```
+
+Brief 报告在 L5 生成时传入 `monitoring_report=`：
+```python
+from subagent_pipeline.renderers.report_renderer import generate_brief_report_file
+generate_brief_report_file(
+    run_ids=all_run_ids,
+    output_dir=str(REPORTS),
+    trade_date=trade_date,
+    market_context=market_context,
+    watchlist_report=tracker_report,
+    monitoring_report=monitoring_report,   # ← P2
+)
+```
+
+打印：`[L7.5] 滚动监控完毕 — {len(monitoring_report.alerts)} 个告警`
 
 ---
 

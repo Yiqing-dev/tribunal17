@@ -256,3 +256,118 @@ class TestReflectionReport:
         restored = ReflectionRecord.from_dict(d)
         assert restored.run_id == "run-1"
         assert restored.risk_flags == ["liquidity"]
+
+
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  4. P1 Feedback Blocks                                              ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+
+from subagent_pipeline.reflection import build_feedback_blocks
+
+
+class TestBuildFeedbackBlocks:
+
+    def test_returns_5_keys(self, tmp_path):
+        """Returned dict always has market/fundamentals/news/sentiment/pm keys."""
+        blocks = build_feedback_blocks(
+            ticker="601985.SS", days=30,
+            ledger_path=str(tmp_path / "missing.jsonl"),
+            storage_dir=str(tmp_path / "no_replays"),
+            reports_dir=str(tmp_path / "no_reports"),
+        )
+        assert set(blocks.keys()) == {"market", "fundamentals", "news", "sentiment", "pm"}
+
+    def test_cold_start_all_non_empty(self, tmp_path):
+        """Zero-history ticker → every block still contains the base-rate prior."""
+        blocks = build_feedback_blocks(
+            ticker="999999.SS", days=30,
+            ledger_path=str(tmp_path / "missing.jsonl"),
+            storage_dir=str(tmp_path / "no_replays"),
+            reports_dir=str(tmp_path / "no_reports"),
+        )
+        for key, content in blocks.items():
+            assert content.strip(), f"{key} block is empty"
+            # Every analyst block carries the base-rate prior
+            if key == "pm":
+                assert "HOLD 是默认选项" in content
+            else:
+                assert "基准先验" in content
+                # Pillar label present in each pillar block header
+                assert "历史反馈" in content
+
+    def test_pm_block_distinct_from_pillar_blocks(self, tmp_path):
+        """PM block uses the aggregate prior; pillar blocks use the per-pillar one."""
+        blocks = build_feedback_blocks(
+            ticker="999999.SS", days=30,
+            ledger_path=str(tmp_path / "missing.jsonl"),
+            storage_dir=str(tmp_path / "no_replays"),
+            reports_dir=str(tmp_path / "no_reports"),
+        )
+        # PM block specifically references HOLD as default
+        assert "HOLD 是默认选项" in blocks["pm"]
+        # Pillar blocks specifically reference score=2 as the neutral anchor
+        for key in ("market", "fundamentals", "news", "sentiment"):
+            assert "pillar_score=2" in blocks[key]
+
+    def test_ticker_normalized_in_output(self, tmp_path):
+        """Bare 6-digit ticker gets normalized (e.g., 601985 → 601985.SS)."""
+        blocks = build_feedback_blocks(
+            ticker="601985", days=30,
+            ledger_path=str(tmp_path / "missing.jsonl"),
+            storage_dir=str(tmp_path / "no_replays"),
+            reports_dir=str(tmp_path / "no_reports"),
+        )
+        # Normalized form should appear in each block header
+        for key, content in blocks.items():
+            assert "601985.SS" in content, f"{key} missing normalized ticker"
+
+    def test_days_parameter_reflected_in_header(self, tmp_path):
+        """`days` parameter is surfaced in block headers so analysts know the window."""
+        blocks = build_feedback_blocks(
+            ticker="601985.SS", days=7,
+            ledger_path=str(tmp_path / "missing.jsonl"),
+            storage_dir=str(tmp_path / "no_replays"),
+            reports_dir=str(tmp_path / "no_reports"),
+        )
+        for content in blocks.values():
+            assert "近7天" in content
+
+    def test_reflection_files_loaded_when_present(self, tmp_path):
+        """Recent reflection JSON files contribute lessons to the PM block."""
+        # Craft a minimal reflection-*.json file containing one ticker record
+        reports_dir = tmp_path / "reports"
+        reports_dir.mkdir()
+        refl = {
+            "trade_date": "2026-04-01~2026-04-15",
+            "records": [
+                {
+                    "ticker": "601985.SS",
+                    "trade_date": "2026-04-15",
+                    "lesson": "测试教训：方向错误",
+                    "pillar_blame": "market",
+                    "confidence_calibration": "overconfident",
+                    "predicted_action": "BUY",
+                    "actual_return_pct": -5.0,
+                    "error_type": "direction_wrong",
+                    "risk_flags": [],
+                },
+            ],
+        }
+        (reports_dir / "reflection-test.json").write_text(
+            json.dumps(refl), encoding="utf-8"
+        )
+        blocks = build_feedback_blocks(
+            ticker="601985.SS", days=30,
+            ledger_path=str(tmp_path / "missing.jsonl"),
+            storage_dir=str(tmp_path / "no_replays"),
+            reports_dir=str(reports_dir),
+        )
+        # Lesson must surface in PM block (recent lessons section)
+        assert "测试教训" in blocks["pm"]
+        # Pillar-blame-tagged lesson must surface in market pillar block
+        assert "测试教训" in blocks["market"]
+        # Other pillar blocks should NOT have this lesson (pillar isolation)
+        assert "测试教训" not in blocks["fundamentals"]
+        assert "测试教训" not in blocks["news"]
+        assert "测试教训" not in blocks["sentiment"]

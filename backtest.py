@@ -144,6 +144,10 @@ class BacktestSummary:
     # Per-action breakdown
     action_breakdown: Dict[str, Dict] = field(default_factory=dict)
 
+    # HOLD-specific band-test breakdown (band test: did price stay within stop/TP band?)
+    hold_breakdown: Dict[str, int] = field(default_factory=dict)
+    hold_success_rate_pct: float = 0.0
+
     # Shadow VETO analysis
     shadow_veto_count: int = 0
     shadow_veto_wins: int = 0
@@ -452,12 +456,24 @@ def evaluate_signal(
             result.direction_correct = None
             result.outcome = "neutral"
     elif result.direction_expected == "flat":
-        if abs(result.stock_return_pct) <= neutral_band:
-            result.direction_correct = True
-            result.outcome = "win"
+        # HOLD: evaluate by stop_loss/take_profit band, not by direction.
+        # direction_correct is always None (HOLD is not a directional prediction
+        # and must not pollute direction_accuracy_pct). outcome reflects whether
+        # the band held (hold_success) or was breached (hold_breach).
+        result.direction_correct = None
+        if stop_loss > 0 and take_profit > 0:
+            lo = min(stop_loss, take_profit)
+            hi = max(stop_loss, take_profit)
+            breached_low = result.min_low <= lo
+            breached_high = result.max_high >= hi
+            if breached_low or breached_high:
+                result.outcome = "hold_breach"
+                result.hit_stop_loss = breached_low
+                result.hit_take_profit = breached_high
+            else:
+                result.outcome = "hold_success"
         else:
-            result.direction_correct = False
-            result.outcome = "loss"
+            result.outcome = "hold_no_band"
     elif result.direction_expected == "abstain":
         # VETO signals: refuse to trade, not a directional bet
         result.direction_correct = None
@@ -578,8 +594,13 @@ def compute_summary(
         if not action_results:
             continue
         returns = [r.stock_return_pct for r in action_results]
-        action_wins = [r for r in action_results if r.outcome == "win"]
-        action_losses = [r for r in action_results if r.outcome == "loss"]
+        # For BUY/SELL use directional win/loss; for HOLD use band-test outcomes.
+        if action == "HOLD":
+            action_wins = [r for r in action_results if r.outcome == "hold_success"]
+            action_losses = [r for r in action_results if r.outcome == "hold_breach"]
+        else:
+            action_wins = [r for r in action_results if r.outcome == "win"]
+            action_losses = [r for r in action_results if r.outcome == "loss"]
         ad = len(action_wins) + len(action_losses)
         summary.action_breakdown[action] = {
             "count": len(action_results),
@@ -588,6 +609,21 @@ def compute_summary(
             "loss_count": len(action_losses),
             "win_rate_pct": round(len(action_wins) / ad * 100, 1) if ad > 0 else 0.0,
         }
+
+    # HOLD band-test breakdown (independent of direction_accuracy_pct)
+    hold_results = [r for r in completed if r.action.upper() == "HOLD"]
+    if hold_results:
+        hold_success = sum(1 for r in hold_results if r.outcome == "hold_success")
+        hold_breach = sum(1 for r in hold_results if r.outcome == "hold_breach")
+        hold_no_band = sum(1 for r in hold_results if r.outcome == "hold_no_band")
+        summary.hold_breakdown = {
+            "success": hold_success,
+            "breach": hold_breach,
+            "no_band": hold_no_band,
+        }
+        evaluated = hold_success + hold_breach
+        if evaluated > 0:
+            summary.hold_success_rate_pct = round(hold_success / evaluated * 100, 1)
 
     # Shadow VETO analysis
     shadow_results = [r for r in results if r.eval_status == "shadow_veto"]

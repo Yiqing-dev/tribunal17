@@ -113,20 +113,43 @@ class TestEvaluateSignal:
         assert r.direction_correct is False
         assert r.outcome == "loss"
 
-    def test_hold_correct(self):
-        """HOLD with +1% return (within band) → direction correct → win."""
+    def test_hold_success_within_band(self):
+        """HOLD with stop=9.0/TP=11.0, price range 9.9-10.2 → band held → hold_success."""
         r = self._eval(action="HOLD", signal_close=10.0,
-                       bars=_make_bars([(10.1, 10.2, 9.9)]))
+                       bars=_make_bars([(10.1, 10.2, 9.9)]),
+                       stop_loss=9.0, take_profit=11.0)
         assert r.direction_expected == "flat"
-        assert r.direction_correct is True
-        assert r.outcome == "win"
+        # HOLD is never a directional prediction → direction_correct is None
+        assert r.direction_correct is None
+        assert r.outcome == "hold_success"
 
-    def test_hold_wrong(self):
-        """HOLD with +5% return → direction wrong → outcome loss."""
+    def test_hold_breach_upper_band(self):
+        """HOLD with stop=9.0/TP=10.5, price reaches 11.0 → breach upper."""
         r = self._eval(action="HOLD", signal_close=10.0,
-                       bars=_make_bars([(10.5, 11.0, 10.2)]))
-        assert r.direction_correct is False
-        assert r.outcome == "loss"
+                       bars=_make_bars([(10.5, 11.0, 10.2)]),
+                       stop_loss=9.0, take_profit=10.5)
+        assert r.direction_correct is None
+        assert r.outcome == "hold_breach"
+        assert r.hit_take_profit is True
+        assert r.hit_stop_loss is False
+
+    def test_hold_breach_lower_band(self):
+        """HOLD with stop=9.5/TP=11.0, price falls to 9.0 → breach lower."""
+        r = self._eval(action="HOLD", signal_close=10.0,
+                       bars=_make_bars([(9.2, 9.8, 9.0)]),
+                       stop_loss=9.5, take_profit=11.0)
+        assert r.direction_correct is None
+        assert r.outcome == "hold_breach"
+        assert r.hit_stop_loss is True
+        assert r.hit_take_profit is False
+
+    def test_hold_no_band_skipped(self):
+        """HOLD with no stop/TP → cannot be evaluated → hold_no_band."""
+        r = self._eval(action="HOLD", signal_close=10.0,
+                       bars=_make_bars([(10.5, 11.0, 10.2)]),
+                       stop_loss=0.0, take_profit=0.0)
+        assert r.direction_correct is None
+        assert r.outcome == "hold_no_band"
 
     def test_veto_abstain(self):
         """VETO → abstain, no direction judgment."""
@@ -284,7 +307,8 @@ class TestComputeSummary:
             _completed_result("BUY", 5.0, True, "win"),
             _completed_result("BUY", -3.0, False, "loss"),
             _completed_result("SELL", -4.0, True, "win"),
-            _completed_result("HOLD", 0.5, True, "neutral"),
+            # HOLD under band-test: direction_correct=None, outcome hold_success/hold_breach/hold_no_band
+            _completed_result("HOLD", 0.5, None, "hold_success"),
             _completed_result("VETO", 2.0, None, "neutral"),
         ]
         s = compute_summary(results)
@@ -318,18 +342,25 @@ class TestComputeSummary:
         assert s.win_rate_pct == 100.0
 
     def test_hold_excluded_from_win_rate(self):
-        """HOLD (flat) signals should not affect directional win rate."""
+        """HOLD signals should not affect directional win rate.
+
+        Under band-test semantics, HOLD uses hold_success/hold_breach outcomes
+        (never 'win'/'loss') and direction_correct is always None.
+        """
         results = [
             _completed_result("BUY", 5.0, True, "win"),
-            _completed_result("HOLD", 0.5, True, "win"),
+            _completed_result("HOLD", 0.5, None, "hold_success"),
         ]
         s = compute_summary(results)
         # Main win rate only counts directional (up/down), not flat
         assert s.win_count == 1
         assert s.loss_count == 0
         assert s.win_rate_pct == 100.0
-        # But HOLD win shows up in action_breakdown
+        # HOLD hold_success shows up in action_breakdown
         assert s.action_breakdown["HOLD"]["win_count"] == 1
+        # hold_breakdown populated separately from directional accuracy
+        assert s.hold_breakdown == {"success": 1, "breach": 0, "no_band": 0}
+        assert s.hold_success_rate_pct == 100.0
 
     def test_stop_loss_take_profit_counts(self):
         results = [
@@ -583,12 +614,21 @@ class TestSellDirectionAwareSLTP:
         assert r.hit_stop_loss is True   # min_low 9.0 <= 9.5
         assert r.hit_take_profit is True  # max_high 11.5 >= 11.0
 
-    def test_hold_no_sl_tp(self):
-        """HOLD/flat signals: SL/TP remain False regardless."""
+    def test_hold_band_held_sl_tp_unflagged(self):
+        """HOLD with SL/TP and price stays inside band → neither flag set."""
         r = self._eval(action="HOLD", signal_close=10.0, stop_loss=9.5, take_profit=11.0,
-                       bars=_make_bars([(10.5, 12.0, 8.0)]))
+                       bars=_make_bars([(10.0, 10.5, 9.8)]))
         assert r.hit_stop_loss is False
         assert r.hit_take_profit is False
+        assert r.outcome == "hold_success"
+
+    def test_hold_band_breached_sets_flags(self):
+        """HOLD with SL/TP and price breaches both → both flags set (band test)."""
+        r = self._eval(action="HOLD", signal_close=10.0, stop_loss=9.5, take_profit=11.0,
+                       bars=_make_bars([(10.5, 12.0, 8.0)]))
+        assert r.hit_stop_loss is True   # min_low 8.0 <= 9.5
+        assert r.hit_take_profit is True  # max_high 12.0 >= 11.0
+        assert r.outcome == "hold_breach"
 
 
 class TestNormalizeTicker:

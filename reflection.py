@@ -28,7 +28,7 @@ import logging
 import os
 import tempfile
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -339,7 +339,12 @@ def _enrich_from_trace(rec: ReflectionRecord, trace) -> None:
 def _classify_error(rec: ReflectionRecord) -> None:
     """Classify the error type based on prediction vs outcome."""
     if rec.direction_correct is None:
-        rec.error_type = ""
+        # HOLD uses band-test semantics — direction_correct is always None
+        # but outcome='hold_breach' is a real error (price broke out of stop/TP band).
+        if rec.outcome == "hold_breach":
+            rec.error_type = "hold_breach"
+        else:
+            rec.error_type = ""
         return
 
     if rec.direction_correct:
@@ -424,10 +429,17 @@ def _generate_lesson(rec: ReflectionRecord) -> None:
             if rec.pillar_blame:
                 rec.lesson += f"，建议复查 {rec.pillar_blame} 数据"
 
-    # No evaluation
+    # No evaluation — but HOLD with hold_breach outcome carries a band-test lesson
     if rec.direction_correct is None:
         rec.confidence_calibration = ""
-        rec.lesson = ""
+        if rec.outcome == "hold_breach":
+            # HOLD predicted price would stay within band, but it broke out
+            direction = "上破" if rec.actual_return_pct > 0 else "下破"
+            rec.lesson = f"HOLD 带位测试失败：价格{direction}，实际 {rec.actual_return_pct:+.1f}%"
+        elif rec.outcome == "hold_success":
+            rec.lesson = "HOLD 带位成立：价格留在 stop/TP 区间内"
+        else:
+            rec.lesson = ""
 
 
 def generate_reflection_prompt(report: ReflectionReport) -> str:
@@ -454,3 +466,333 @@ def generate_reflection_prompt(report: ReflectionReport) -> str:
 5. **本轮最佳/最差预测**：各选1个，说明原因。
 
 用中文回复，结构清晰。"""
+
+
+# ── Per-ticker Feedback Block Construction (P1) ────────────────────────────
+
+# Canonical Chinese labels for each pillar — used in per-analyst block headers.
+_PILLAR_LABELS_ZH = {
+    "market": "技术面",
+    "fundamentals": "基本面",
+    "news": "消息面",
+    "sentiment": "情绪面",
+}
+
+# Base-rate prior text — same across all pillars; intentionally repeated so that
+# even zero-history tickers receive the corrective prior. Targets the systematic
+# overconfidence bias observed in the reflection aggregate (43/0 asymmetry).
+_BASE_RATE_PRIOR = (
+    "**基准先验**: 当证据不足时，倾向中性 (pillar_score=2)；"
+    "不要在缺少具体触发条件时给出 ≥3 或 ≤1 的极端评分。"
+    "历史数据显示本系统存在结构性自我夸大倾向 (overconfident=43 / underconfident=0)。"
+)
+
+_PM_BASE_RATE_PRIOR = (
+    "**基准先验**: HOLD 是默认选项；只有在有明确触发条件时才偏离。"
+    "此先验旨在抵消 LLM 的结构性自我夸大倾向（历史 43 overconfident / 0 underconfident）。"
+)
+
+
+def _pillar_dir_from_score(score: Any) -> str:
+    """Local copy of monitoring._pillar_direction to keep reflection import-free."""
+    try:
+        s = int(score)
+    except (TypeError, ValueError):
+        return "neutral"
+    if s < 0:
+        return "neutral"
+    if s >= 3:
+        return "up"
+    if s <= 1:
+        return "down"
+    return "neutral"
+
+
+def _infer_dir_from_return(return_pct: float, band_pct: float = 2.0) -> str:
+    if return_pct is None:
+        return "neutral"
+    if return_pct > band_pct:
+        return "up"
+    if return_pct < -band_pct:
+        return "down"
+    return "neutral"
+
+
+def _load_recent_reflection_records_for_ticker(
+    ticker: str, reports_dir: str, limit: int = 2,
+) -> List[Dict[str, Any]]:
+    """Scan reflection-*.json files in reports_dir, return latest `limit` records
+    for `ticker`, sorted by trade_date descending."""
+    out_dir = Path(reports_dir)
+    if not out_dir.exists():
+        return []
+    records: List[Dict[str, Any]] = []
+    for fp in out_dir.glob("reflection-*.json"):
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        for rec in data.get("records", []):
+            if rec.get("ticker") == ticker:
+                records.append(rec)
+    records.sort(key=lambda r: r.get("trade_date", ""), reverse=True)
+    return records[:limit]
+
+
+def _pillar_accuracy_from_backtest(
+    bt_report: Any,
+    signal_records: List[Any],
+    pillar_score_key: str,
+) -> Dict[str, int]:
+    """Compute per-pillar directional accuracy counts from backtest + signals.
+
+    Returns dict with keys: n, correct, overconfident.
+    A pillar "prediction" is considered valid when pillar_score is non-neutral
+    (≤1 or ≥3) AND market actually moved (actual_direction != neutral).
+    """
+    # Index signals by (ticker, trade_date)
+    sig_index = {(s.ticker, s.trade_date): s for s in signal_records}
+
+    n = correct = overconfident = 0
+    for bt in bt_report.results:
+        if bt.eval_status != "completed":
+            continue
+        sig = sig_index.get((bt.ticker, bt.trade_date))
+        if sig is None:
+            continue
+        score = getattr(sig, pillar_score_key, -1)
+        pdir = _pillar_dir_from_score(score)
+        if pdir == "neutral":
+            continue
+        actual = _infer_dir_from_return(bt.stock_return_pct)
+        if actual == "neutral":
+            continue
+        n += 1
+        if pdir == actual:
+            correct += 1
+        # overconfident: extreme score (0/4) but wrong direction
+        if pdir != actual and int(score) in (0, 4):
+            overconfident += 1
+    return {"n": n, "correct": correct, "overconfident": overconfident}
+
+
+def _format_pillar_block(
+    ticker: str,
+    pillar_key: str,     # "market" | "fundamentals" | "news" | "sentiment"
+    stats: Dict[str, int],
+    recent_errors: List[str],
+    days: int,
+) -> str:
+    """Render a per-pillar analyst feedback block. Never returns empty."""
+    pillar_zh = _PILLAR_LABELS_ZH.get(pillar_key, pillar_key)
+    lines = [f"## 历史反馈（{ticker} / {pillar_key}-{pillar_zh} / 近{days}天）"]
+    n = stats.get("n", 0)
+    if n == 0:
+        lines.append(f"- 近{days}天该 pillar 无足量方向性信号可评估。")
+    else:
+        acc_pct = stats["correct"] / n * 100 if n else 0.0
+        lines.append(
+            f"- {pillar_key} pillar 方向准确率: {acc_pct:.0f}% "
+            f"({stats['correct']}/{n} 次信号)"
+        )
+        if stats.get("overconfident"):
+            lines.append(
+                f"- 其中高分数（0/4）但方向错误: {stats['overconfident']} 次 "
+                "（表明极端评分需更谨慎）"
+            )
+    if recent_errors:
+        lines.append("- 该 pillar 最近失误模式：")
+        for err in recent_errors:
+            lines.append(f"  - {err}")
+    lines.append("")
+    lines.append(_BASE_RATE_PRIOR)
+    return "\n".join(lines)
+
+
+def _format_pm_block(
+    ticker: str,
+    total_n: int,
+    total_correct: int,
+    overconf: int,
+    underconf: int,
+    pillar_blame_counts: Dict[str, int],
+    recent_lessons: List[Dict[str, Any]],
+    days: int,
+) -> str:
+    """Render the aggregate PM (research_manager) feedback block. Never empty."""
+    lines = [f"## 历史反馈（{ticker} 综合 / 近{days}天）"]
+    if total_n == 0:
+        lines.append(f"- 近{days}天无足量方向性信号（HOLD 已排除）。")
+    else:
+        acc = total_correct / total_n * 100
+        lines.append(
+            f"- 方向准确率: {acc:.0f}% ({total_correct}/{total_n} 次信号，HOLD 已排除)"
+        )
+        lines.append(
+            f"- 置信度校准: overconfident={overconf} | underconfident={underconf}"
+        )
+        if pillar_blame_counts:
+            parts = " / ".join(
+                f"{k}={v}"
+                for k, v in sorted(pillar_blame_counts.items(), key=lambda x: -x[1])
+            )
+            lines.append(f"- 跨 pillar 失误归因: {parts}")
+
+    if recent_lessons:
+        lines.append("")
+        lines.append("**最近 2 条教训:**")
+        for r in recent_lessons[:2]:
+            lesson = r.get("lesson") or ""
+            if lesson:
+                lines.append(f"1. {r.get('trade_date','')}: {lesson}")
+    lines.append("")
+    lines.append(_PM_BASE_RATE_PRIOR)
+    return "\n".join(lines)
+
+
+def build_feedback_blocks(
+    ticker: str,
+    days: int = 30,
+    ledger_path: str = "data/signals/signals.jsonl",
+    storage_dir: str = "data/replays",
+    reports_dir: str = "data/reports",
+) -> Dict[str, str]:
+    """Build pillar-filtered feedback blocks for prompt injection.
+
+    Returns a dict with 5 keys: {"market", "fundamentals", "news", "sentiment", "pm"}.
+    Each value is a non-empty markdown string.
+
+    Each analyst block contains ONLY that pillar's statistics to prevent
+    synchronization bias (the failure mode where all analysts read the same
+    feedback and produce consensus-safe but independently-weak decisions).
+    The PM block aggregates cross-pillar view and recent lessons for the
+    final decision maker.
+
+    Cold-start tickers always receive the base-rate prior — blocks are never empty.
+    """
+    from .signal_ledger import SignalLedger
+    from .backtest import run_backtest_from_ledger, BacktestConfig
+
+    # Cutoff: N days before today
+    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    # Normalize ticker for ledger lookup (accept bare 6-digit or suffixed)
+    try:
+        from .signal_ledger import normalize_ticker
+        norm_ticker = normalize_ticker(ticker)
+    except (ImportError, AttributeError):
+        norm_ticker = ticker
+
+    # Load signals + run cheap ledger backtest for this ticker
+    signals: List[Any] = []
+    bt_report = None
+    try:
+        ledger = SignalLedger(path=ledger_path)
+        signals = ledger.read(ticker=norm_ticker, after=cutoff)
+    except FileNotFoundError:
+        signals = []
+    except Exception as e:
+        logger.warning("SignalLedger read failed: %s", e)
+        signals = []
+
+    if signals:
+        try:
+            bt_report = run_backtest_from_ledger(
+                ledger_path=ledger_path,
+                config=BacktestConfig(),
+                ticker=norm_ticker,
+                after=cutoff,
+            )
+        except Exception as e:
+            logger.warning("run_backtest_from_ledger failed: %s", e)
+            bt_report = None
+
+    # Per-pillar stats + recent error extracts
+    pillar_stats: Dict[str, Dict[str, int]] = {}
+    pillar_recent_errors: Dict[str, List[str]] = {
+        "market": [], "fundamentals": [], "news": [], "sentiment": [],
+    }
+    pillar_key_map = {
+        "market": "market_score",
+        "fundamentals": "fundamental_score",
+        "news": "news_score",
+        "sentiment": "sentiment_score",
+    }
+
+    if bt_report is not None:
+        for pkey, sig_key in pillar_key_map.items():
+            pillar_stats[pkey] = _pillar_accuracy_from_backtest(
+                bt_report, signals, sig_key,
+            )
+    else:
+        for pkey in pillar_key_map:
+            pillar_stats[pkey] = {"n": 0, "correct": 0, "overconfident": 0}
+
+    # Load recent lessons from reflection JSON files (for PM block + pillar_blame)
+    recent_reflection_records = _load_recent_reflection_records_for_ticker(
+        norm_ticker, reports_dir, limit=5,
+    )
+    # Populate per-pillar recent_errors: if a reflection record has pillar_blame=X,
+    # surface its lesson to that pillar's block.
+    for r in recent_reflection_records:
+        blame = r.get("pillar_blame") or ""
+        # Reflection uses "fundamental" singular; our keys use plural "fundamentals".
+        blame_key = "fundamentals" if blame == "fundamental" else blame
+        lesson = r.get("lesson") or ""
+        if blame_key in pillar_recent_errors and lesson:
+            pillar_recent_errors[blame_key].append(
+                f"{r.get('trade_date','')}: {lesson}"
+            )
+
+    # PM block aggregates
+    total_n = sum(s.get("n", 0) for s in pillar_stats.values())
+    total_correct = sum(s.get("correct", 0) for s in pillar_stats.values())
+    # Deduplicate — pillar_stats double-counts the same bt result across 4 pillars.
+    # For PM, use the directional BUY/SELL count from bt_report itself.
+    pm_total_n = pm_total_correct = 0
+    pm_overconf = pm_underconf = 0
+    pm_pillar_blame: Dict[str, int] = {}
+    if bt_report is not None:
+        for bt in bt_report.results:
+            if bt.eval_status != "completed":
+                continue
+            if bt.direction_expected not in ("up", "down"):
+                continue
+            if bt.direction_correct is None:
+                continue
+            pm_total_n += 1
+            if bt.direction_correct:
+                pm_total_correct += 1
+    for r in recent_reflection_records:
+        calib = r.get("confidence_calibration") or ""
+        if calib == "overconfident":
+            pm_overconf += 1
+        elif calib == "underconfident":
+            pm_underconf += 1
+        blame = r.get("pillar_blame") or ""
+        if blame:
+            pm_pillar_blame[blame] = pm_pillar_blame.get(blame, 0) + 1
+
+    # Build per-pillar blocks
+    blocks: Dict[str, str] = {}
+    for pkey in pillar_key_map:
+        blocks[pkey] = _format_pillar_block(
+            ticker=norm_ticker,
+            pillar_key=pkey,
+            stats=pillar_stats[pkey],
+            recent_errors=pillar_recent_errors.get(pkey, []),
+            days=days,
+        )
+
+    blocks["pm"] = _format_pm_block(
+        ticker=norm_ticker,
+        total_n=pm_total_n,
+        total_correct=pm_total_correct,
+        overconf=pm_overconf,
+        underconf=pm_underconf,
+        pillar_blame_counts=pm_pillar_blame,
+        recent_lessons=recent_reflection_records,
+        days=days,
+    )
+
+    return blocks

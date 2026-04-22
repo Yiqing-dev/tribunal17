@@ -181,6 +181,11 @@ class RunTrace:
     stale_sources: List[Dict] = field(default_factory=list)
     vendor_freshness: Dict[str, Dict] = field(default_factory=dict)
 
+    # Prompt version tracking — maps agent_key → SHA-256/16 hash of rendered prompt.
+    # Enables stratified backtest analysis across prompt iterations.
+    # Backwards compat: missing from old trace JSON → empty dict.
+    prompt_hashes: Dict[str, str] = field(default_factory=dict)
+
     def finalize(self):
         """Compute summary fields from node traces."""
         self.completed_at = _now_cst()
