@@ -23,7 +23,10 @@ logger = logging.getLogger(__name__)
 
 from .views import MarketView
 from .shared_css import _BRAND_LOGO_SM
-from .shared_utils import _esc, _html_wrap, _pct_to_hex
+from .shared_utils import (
+    _esc, _html_wrap, _pct_to_hex,
+    _priority_chip, _delta_arrow, _heat_cell, _section_divider,
+)
 from .market_treemap import (  # noqa: F401 — treemap/heatmap utilities
     _heatmap_color,
     _heatmap_risk_color,
@@ -468,15 +471,28 @@ def _render_idx_battle_cards(view: MarketView) -> str:
         pct_cls = "up" if pct > 0 else ("down" if pct < 0 else "flat")
         bar_color = "var(--green)" if pct > 0 else ("var(--red)" if pct < 0 else "var(--muted)")
 
-        # Strength tag
+        # V4: Strength tag → priority_chip with severity tier
         if pct > 1.0:
-            tag = '<span class="idx-tag strong">\u5f3a\u52bf\u9886\u6da8</span>'
+            tag = _priority_chip("hot", "\u5f3a\u52bf\u9886\u6da8")
         elif pct > 0:
-            tag = '<span class="idx-tag strong">\u5c0f\u5e45\u8d70\u5f3a</span>'
+            tag = _priority_chip("warm", "\u5c0f\u5e45\u8d70\u5f3a")
         elif pct > -1.0:
-            tag = '<span class="idx-tag weak">\u5c0f\u5e45\u8d70\u5f31</span>'
+            tag = _priority_chip("cool", "\u5c0f\u5e45\u8d70\u5f31")
         else:
-            tag = '<span class="idx-tag weak">\u663e\u8457\u627f\u538b</span>'
+            tag = _priority_chip("hot", "\u663e\u8457\u627f\u538b")
+
+        # V4: volume delta if available
+        vol = info.get("volume", 0)
+        prev_vol = info.get("prev_volume", 0)
+        vol_cell = ""
+        if vol and prev_vol:
+            vol_ratio = vol / prev_vol if prev_vol else 1.0
+            vol_cell = (
+                f'<div style="margin-top:.25rem;font-size:var(--t-xs);color:var(--muted)">'
+                f'\u91cf\u6bd4 {vol_ratio:.2f} '
+                f'{_delta_arrow(prev_vol, vol, "", threshold=prev_vol*0.02, decimals=0)}'
+                f'</div>'
+            )
 
         cards += f"""
         <div class="idx-battle-card mkt-glass mkt-anim mkt-d1">
@@ -484,6 +500,7 @@ def _render_idx_battle_cards(view: MarketView) -> str:
           <div class="idx-close">{close_val:.2f}</div>
           <div class="idx-pct {pct_cls}">{sign}{pct:.2f}%</div>
           {tag}
+          {vol_cell}
           <div class="idx-bar" style="background:{bar_color}"></div>
         </div>"""
 

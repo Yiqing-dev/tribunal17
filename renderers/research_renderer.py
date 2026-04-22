@@ -24,6 +24,8 @@ from .shared_css import _COUNTUP_JS, _BRAND_LOGO_SM
 from .shared_utils import (
     _esc, _html_wrap, _ticker_display, _strip_preamble,
     _format_price_zone, _degraded_banner, _empty_state, _nav_bar,
+    _conf_dots, _conf_tier, _ridge_bar, _section_divider,
+    _priority_chip,
 )
 
 
@@ -284,12 +286,16 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
                 conf = c.get("confidence", 0)
                 conf_pct = int(conf * 100)
                 conf_color = "var(--green)" if conf >= 0.7 else ("var(--yellow)" if conf >= 0.4 else "var(--red)")
-                # Evidence count, not raw IDs
+                # V4: tier class drives left-border width; dots array in top-right
+                tier = _conf_tier(conf)
                 ev_count = len(c.get("evidence_ids", []))
                 ev_label = f"{ev_count}\u6761\u8bc1\u636e" if ev_count else "\u65e0\u5f15\u7528"
                 cards += f"""
-                <div class="claim-card">
-                  {dim_badge}
+                <div class="claim-card conf-{tier}">
+                  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem">
+                    <div style="flex:1;min-width:0">{dim_badge}</div>
+                    <div>{_conf_dots(conf)}</div>
+                  </div>
                   <div>{_esc(_strip_internal_tokens(c.get("text", "")[:150]))}</div>
                   <div class="conf-bar"><div class="conf-fill" style="width:{conf_pct}%;background:{conf_color};"></div></div>
                   <div class="ev-tags">{_esc(ev_label)}</div>

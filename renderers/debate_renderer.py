@@ -20,8 +20,11 @@ from .debate_view import (
     TimelineEntry, DebateRound, VerdictView,
 )
 from .decision_labels import safe_badge_class, AI_DISCLAIMER_BANNER
-from .shared_css import _BASE_CSS, _COUNTUP_JS
-from .shared_utils import _esc, _nav_bar
+from .shared_css import _BASE_CSS, _COUNTUP_JS, _SHARED_SVG_DEFS
+from .shared_utils import (
+    _esc, _nav_bar,
+    _priority_chip, _conf_dots, _conf_tier, _confidence_ring_svg,
+)
 
 
 # ── CSS ───────────────────────────────────────────────────────────────
@@ -134,9 +137,10 @@ _DEBATE_CSS = """
 /* ─────────── Section 2: Timeline ─────────── */
 .debate-timeline { position: relative; padding-left: 30px; }
 .timeline-spine {
-  position: absolute; left: 13px; top: 0; bottom: 0;
-  width: 2px; background: linear-gradient(180deg, var(--blue), var(--green), var(--yellow), var(--red), var(--blue));
-  border-radius: 1px;
+  position: absolute; left: 12px; top: 0; bottom: 0;
+  width: 4px; background: linear-gradient(180deg, var(--blue), var(--green), var(--yellow), var(--red), var(--blue));
+  border-radius: 2px;
+  box-shadow: 0 0 12px rgba(96,165,250,0.25);
 }
 .tl-phase {
   position: relative; margin-bottom: 1.2rem;
@@ -803,11 +807,17 @@ def _render_arena(v: DebateView) -> str:
 
 
 def _render_claim_card(c: ClaimView, side: str) -> str:
-    """Render a single claim card."""
+    """Render a single claim card. V4: confidence tier → left-border + dense dots."""
     conf_pct = int(c.confidence * 100)
-    html = '      <div class="claim-card">\n'
+    tier = _conf_tier(c.confidence)
+    html = f'      <div class="claim-card conf-{tier}">\n'
+    top_row_bits = []
     if c.dimension:
-        html += f'        <div class="claim-dim">{_esc(c.dimension)}</div>\n'
+        top_row_bits.append(f'<div class="claim-dim" style="flex:1;min-width:0">{_esc(c.dimension)}</div>')
+    else:
+        top_row_bits.append('<div style="flex:1"></div>')
+    top_row_bits.append(_conf_dots(c.confidence))
+    html += f'        <div style="display:flex;align-items:flex-start;gap:.5rem">{"".join(top_row_bits)}</div>\n'
     html += f'        <div class="claim-text">{_esc(c.text)}</div>\n'
     html += f'        <div class="claim-meta">\n'
     html += f'          <span class="mono">{conf_pct}%</span>\n'
@@ -832,10 +842,12 @@ def _render_controversies(v: DebateView) -> str:
     html += f'<span class="sec-sub">{len(v.controversies)} 个争议点</span></div>\n'
     html += '  <div class="controversy-list">\n'
 
+    # V4: Controversy items with priority_chip severity (top N = hot, then warm, then cool)
     for i, text in enumerate(v.controversies, 1):
-        html += f"""    <div class="controversy-item">
-      <div class="controversy-icon">\u26a0\ufe0f</div>
-      <div class="controversy-text">{_esc(text)}</div>
+        lvl = "hot" if i <= 1 else ("warm" if i <= 3 else "cool")
+        html += f"""    <div class="controversy-item" style="display:flex;gap:.6rem;align-items:flex-start">
+      <div>{_priority_chip(lvl, f"\u7126\u70b9 {i}")}</div>
+      <div class="controversy-text" style="flex:1">{_esc(text)}</div>
     </div>
 """
 
@@ -990,6 +1002,7 @@ def render_debate_page(view: DebateView) -> str:
 {_COUNTUP_JS}
 </head>
 <body>
+{_SHARED_SVG_DEFS}
 <div class="debate-shell">
 {_nav_bar(view.ticker, view.run_id, "committee")}
 {body}

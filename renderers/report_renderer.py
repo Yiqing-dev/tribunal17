@@ -189,15 +189,34 @@ from .market_renderer import (  # noqa: E402 — re-export for backward compat
 
 # ── Feature 4: Brief Report ─────────────────────────────────────────────
 
+def _pillar_dots_md(score, max_score: int = 4) -> str:
+    """Render a 4-dot pillar score using Unicode ●○ for markdown.
+
+    Mirrors the HTML `_score_pill` primitive visually. Safe on None/invalid.
+    """
+    try:
+        s = int(score) if score is not None else 0
+    except (TypeError, ValueError):
+        s = 0
+    s = max(0, min(max_score, s))
+    return "●" * s + "○" * (max_score - s)
+
+
 def generate_brief_report(
     run_ids: list,
     storage_dir: str = "data/replays",
     trade_date: str = "",
     market_context: dict = None,
     watchlist_report: object = None,
+    format_version: int = 2,
 ) -> str:
     """Generate enhanced markdown brief with market context, signal flips,
     pillar scores, stop/target prices, and margin signals.
+
+    Args:
+        format_version: 1 = legacy layout; 2 (default) = YAML frontmatter +
+            summary table + emoji dividers + aligned alerts table +
+            pillar dots. Opt-out by passing format_version=1.
 
     Groups stocks by action (BUY first, HOLD, SELL, VETO).
     Returns markdown string.
@@ -275,6 +294,16 @@ def generate_brief_report(
     counts = {}
     for e in entries:
         counts[e["action"]] = counts.get(e["action"], 0) + 1
+
+    if format_version >= 2:
+        return _render_brief_v2(
+            entries=entries,
+            counts=counts,
+            trade_date=trade_date,
+            market_context=market_context,
+            watchlist_report=watchlist_report,
+            order=order,
+        )
 
     lines = [
         f"# 研究简报 {trade_date}",
@@ -358,6 +387,179 @@ def generate_brief_report(
     return "\n".join(lines)
 
 
+def _render_brief_v2(entries: list, counts: dict, trade_date: str,
+                     market_context, watchlist_report, order: dict) -> str:
+    """Brief markdown layout v2: YAML frontmatter + summary table + emoji dividers.
+
+    Substantive upgrades over v1:
+    - YAML frontmatter machine-parseable
+    - Top-of-document summary table (动作 / 数量 / 平均置信度 / 主要支柱)
+    - GitHub-flavored callout blockquotes for market status (⚠️ / 📉)
+    - Emoji-prefixed section headers with counts (## 🟢 BUY · 3)
+    - Per-stock line with Unicode pillar dots (●●●○)
+    - Alerts / targets as aligned markdown table (numeric cols right-aligned)
+    - `---` divider between action groups
+    """
+    # ── Aggregate stats for summary table ──
+    by_action = {}
+    for e in entries:
+        a = e["action"]
+        by_action.setdefault(a, []).append(e)
+
+    total = len(entries)
+    avg_conf = {a: (sum(x.get("confidence", 0) for x in items) / len(items) if items else 0)
+                for a, items in by_action.items()}
+
+    # Top sector for each action (by frequency)
+    def _top_sectors(items):
+        sectors = {}
+        for it in items:
+            tag = ""
+            # If available, try to pull sector from catalyst or pillars — fallback to ticker prefix
+            tag = it.get("sector", "") or ""
+            if tag:
+                sectors[tag] = sectors.get(tag, 0) + 1
+        return "/".join(sorted(sectors, key=lambda s: -sectors[s])[:2]) or "—"
+
+    # ── Frontmatter ──
+    lines = [
+        "---",
+        f"date: {trade_date or 'unknown'}",
+        f"run_count: {total}",
+    ]
+    for a in ("BUY", "HOLD", "SELL", "VETO"):
+        lines.append(f"{a.lower()}: {counts.get(a, 0)}")
+    if watchlist_report:
+        today_flips = [f for f in getattr(watchlist_report, "action_flips", [])
+                       if f.get("date") == trade_date]
+        lines.append(f"flips: {len(today_flips)}")
+    lines.append("format_version: 2")
+    lines.append("---")
+    lines.append("")
+    lines.append(f"# 每日研究简报 · {trade_date or '-'}")
+    lines.append("")
+
+    # ── Summary table ──
+    lines.append("| 动作 | 数量 | 平均置信度 | 主要支柱 |")
+    lines.append("|:-----|-----:|-----------:|:---------|")
+    action_order = sorted(by_action.keys(), key=lambda a: order.get(a, 9))
+    for a in action_order:
+        emoji = get_signal_emoji(a)
+        label = get_action_label(a)
+        n = counts.get(a, 0)
+        conf_pct = f"{avg_conf[a]:.0%}" if avg_conf.get(a) else "—"
+        sec = _top_sectors(by_action[a])
+        lines.append(f"| {emoji} {label} | {n} | {conf_pct} | {sec} |")
+    lines.append("")
+
+    # ── Market callouts ──
+    if market_context:
+        regime = market_context.get("regime", "")
+        weather = market_context.get("market_weather", "")
+        breadth = market_context.get("breadth_state", "")
+        leaders = market_context.get("sector_leaders", [])
+        leader_str = "/".join(leaders[:3]) if leaders else "—"
+        bits = [x for x in (regime, breadth, f"主线: {leader_str}" if leader_str != "—" else "") if x]
+        if bits:
+            lines.append(f"> ⚠️ **市场**: {' | '.join(bits)}")
+        if weather:
+            lines.append(f">")
+            lines.append(f"> 📊 {weather[:120]}")
+        lines.append("")
+
+    # ── Signal flips callout ──
+    if watchlist_report:
+        today_flips = [f for f in getattr(watchlist_report, "action_flips", [])
+                       if f.get("date") == trade_date]
+        if today_flips:
+            lines.append(f"> 🔄 **信号翻转 · {len(today_flips)}**")
+            for f in today_flips[:6]:
+                lines.append(
+                    f"> - {f.get('ticker_name', f.get('ticker',''))}: "
+                    f"`{f['from_action']}` → `{f['to_action']}`"
+                )
+            if len(today_flips) > 6:
+                lines.append(f"> - …还有 {len(today_flips) - 6} 条")
+            lines.append("")
+
+    # ── Per-action sections with pillar dots ──
+    first_section = True
+    for a in action_order:
+        if not first_section:
+            lines.append("---")
+            lines.append("")
+        first_section = False
+
+        emoji = get_signal_emoji(a)
+        label = get_action_label(a)
+        n = counts.get(a, 0)
+        lines.append(f"## {emoji} {label} · {n}")
+        lines.append("")
+
+        # For each stock: a one-line summary with dots + optional nested details
+        for e in by_action[a]:
+            conf = e.get("confidence", 0) or 0
+            name = e.get("name", "")
+            ticker = e.get("ticker", "")
+            display = f"**{ticker}** {name}" if name else f"**{ticker}**"
+
+            pillars = e.get("pillars", {})
+            # pillars = {'技':3, '基':2, ...} -> render as dots per pillar
+            pillar_parts = []
+            for k in ("技", "基", "新", "情"):
+                v = pillars.get(k)
+                if v is not None:
+                    pillar_parts.append(f"{k}{_pillar_dots_md(v)}")
+            pillar_str = "  ".join(pillar_parts) if pillar_parts else ""
+
+            main = f"- {display} · `{conf:.0%}`"
+            if pillar_str:
+                main += f" · {pillar_str}"
+            lines.append(main)
+
+            sl = e.get("stop_loss", 0) or 0
+            tp = e.get("take_profit", 0) or 0
+            cat = e.get("catalyst", "")
+            ed = e.get("earnings_date", "")
+            sub = []
+            if sl:
+                sub.append(f"止损 `{sl:.2f}`")
+            if tp:
+                sub.append(f"目标 `{tp:.2f}`")
+            if ed:
+                sub.append(f"财报 {ed}")
+            if cat:
+                sub.append(f"催化 {cat[:40]}")
+            if sub:
+                lines.append(f"  <sub>{' · '.join(sub)}</sub>")
+        lines.append("")
+
+    # ── Alerts table (right-aligned numeric) ──
+    alert_rows = [e for e in entries
+                  if e.get("stop_loss") or e.get("take_profit") or e.get("catalyst")]
+    if alert_rows:
+        lines.append("---")
+        lines.append("")
+        lines.append("## 告警清单")
+        lines.append("")
+        lines.append("| Ticker | 动作 | 置信度 | 止损 | 目标 | 催化 |")
+        lines.append("|:-------|:-----|------:|-----:|-----:|:-----|")
+        for e in alert_rows:
+            ticker = e.get("ticker", "")
+            action = e.get("action", "")
+            emoji = get_signal_emoji(action)
+            conf = f"{e.get('confidence', 0):.0%}" if e.get("confidence") else "—"
+            sl = f"{e['stop_loss']:.2f}" if e.get("stop_loss") else "—"
+            tp = f"{e['take_profit']:.2f}" if e.get("take_profit") else "—"
+            cat = (e.get("catalyst", "") or "—")[:30]
+            lines.append(f"| {ticker} | {emoji} {action} | {conf} | {sl} | {tp} | {cat} |")
+        lines.append("")
+
+    lines.append("---")
+    lines.append("*AI 多智能体系统自动生成，仅供研究参考*")
+    return "\n".join(lines)
+
+
 def generate_brief_report_file(
     run_ids: list,
     storage_dir: str = "data/replays",
@@ -365,8 +567,14 @@ def generate_brief_report_file(
     trade_date: str = "",
     market_context: dict = None,
     watchlist_report: object = None,
+    monitoring_report: object = None,
 ) -> Optional[str]:
     """Generate brief report and write to data/reports/brief-{date}.md.
+
+    Args:
+        monitoring_report: Optional RollingMonitorReport from monitoring module.
+            When provided, its markdown section is appended to the brief so that
+            drift alerts are visible alongside the daily decisions.
 
     Returns path to generated file, or None if no runs.
     """
@@ -376,6 +584,10 @@ def generate_brief_report_file(
     )
     if not content or not run_ids:
         return None
+
+    # Append monitoring section (if any alerts OR report object supplied)
+    if monitoring_report is not None and hasattr(monitoring_report, "to_markdown_section"):
+        content = content.rstrip() + "\n\n" + monitoring_report.to_markdown_section() + "\n"
 
     # Extract date from content header
     if not trade_date:

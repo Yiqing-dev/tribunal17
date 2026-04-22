@@ -38,6 +38,18 @@ _BASE_CSS = """
   --dur-fast: 200ms;
   --dur-med: 360ms;
   --sp-1: 0.5rem; --sp-2: 1rem; --sp-3: 1.5rem; --sp-4: 2rem; --sp-6: 3rem;
+  /* V4: Typography scale */
+  --t-xs: .72rem;  --t-sm: .82rem;  --t-md: .95rem;
+  --t-lg: 1.1rem;  --t-xl: 1.4rem;  --t-2xl: 1.9rem;  --t-3xl: 2.4rem;
+  --lh-tight: 1.15;  --lh-snug: 1.35;  --lh-normal: 1.55;  --lh-loose: 1.75;
+  /* V4: Color-blind副色 (deuteranopia-safe; layered with red/green via icon/pattern redundancy) */
+  --cb-up: #f59e0b;   --cb-down: #60a5fa;
+  /* V4: Severity tiers */
+  --sev-hot: #f87171;  --sev-warm: #fbbf24;  --sev-cool: #60a5fa;  --sev-mute: #64748b;
+  /* V4: Confidence tiers */
+  --conf-hi: #34d399;  --conf-md: #fbbf24;  --conf-lo: #f87171;  --conf-na: #64748b;
+  /* V4: Z-scale */
+  --z-base: 1;  --z-card: 10;  --z-nav: 40;  --z-modal: 90;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 ::selection { background: rgba(96, 165, 250, 0.25); color: var(--white); }
@@ -621,6 +633,128 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); }
 .hm-leg-item { cursor: pointer; transition: opacity var(--dur-fast) var(--ease-out); }
 .hm-leg-item:hover { opacity: .85; }
 
+/* ── V4: Visualization primitives (score_pill / priority_chip / heat_cell / conf_dots / conf_ring / ridge_bar / delta_arrow / section_divider) ── */
+.score-pill {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-family: var(--mono); font-size: var(--t-xs); letter-spacing: 0;
+  vertical-align: middle;
+}
+.score-pill .sp-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+}
+.score-pill .sp-dot.on { border-color: transparent; box-shadow: 0 0 4px currentColor; }
+.score-pill.conf-hi .sp-dot.on { background: var(--conf-hi); color: var(--conf-hi); }
+.score-pill.conf-md .sp-dot.on { background: var(--conf-md); color: var(--conf-md); }
+.score-pill.conf-lo .sp-dot.on { background: var(--conf-lo); color: var(--conf-lo); }
+.score-pill.conf-na .sp-dot.on { background: var(--conf-na); color: var(--conf-na); }
+.score-pill .sp-lab { color: var(--muted); margin-left: .3rem; font-size: var(--t-xs); }
+
+.prio-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 9px; border-radius: 999px;
+  font-size: var(--t-xs); font-weight: 600; letter-spacing: .02em;
+  border: 1px solid transparent;
+}
+.prio-chip .pc-ico { font-size: .8em; line-height: 1; }
+.prio-chip.hot  { background: rgba(248,113,113,0.14); color: var(--sev-hot);  border-color: rgba(248,113,113,0.3); }
+.prio-chip.warm { background: rgba(251,191,36,0.14); color: var(--sev-warm); border-color: rgba(251,191,36,0.3); }
+.prio-chip.cool { background: rgba(96,165,250,0.12); color: var(--sev-cool); border-color: rgba(96,165,250,0.28); }
+.prio-chip.mute { background: rgba(255,255,255,0.04); color: var(--sev-mute); border-color: rgba(255,255,255,0.08); }
+
+.conf-ring { position: relative; display: inline-block; }
+.conf-ring svg { display: block; }
+.conf-ring .cr-val {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-family: var(--mono); font-weight: 800; line-height: 1;
+}
+.conf-ring .cr-pct { font-size: var(--t-lg); color: var(--white); }
+.conf-ring .cr-lab { font-size: var(--t-xs); color: var(--muted); margin-top: 2px; letter-spacing: .05em; }
+
+.ridge-bar { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
+.ridge-bar .rb-seg {
+  flex: 1; min-width: 3px; border-radius: 2px 2px 0 0;
+  background: linear-gradient(180deg, var(--conf-hi), rgba(52,211,153,0.3));
+  transition: transform 180ms var(--ease-out);
+}
+.ridge-bar .rb-seg.neg { background: linear-gradient(180deg, var(--conf-lo), rgba(248,113,113,0.3)); }
+.ridge-bar .rb-seg:hover { transform: scaleY(1.05); }
+.ridge-bar .rb-labels { display: flex; gap: 2px; font-size: var(--t-xs); color: var(--muted); margin-top: 4px; }
+
+.delta-arr { display: inline-flex; align-items: center; gap: 2px; font-size: var(--t-xs); font-family: var(--mono); font-weight: 600; }
+.delta-arr.up { color: var(--green); }
+.delta-arr.down { color: var(--red); }
+.delta-arr.flat { color: var(--muted); }
+
+.v-heat-cell {
+  display: inline-block; position: relative;
+  border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+  font-family: var(--mono); font-size: var(--t-xs); font-weight: 600;
+  text-align: center; line-height: 1;
+}
+.v-heat-cell::after {
+  content: attr(data-label); position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,0.92); text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  font-size: var(--t-xs);
+}
+.v-heat-cell[data-pattern="diag"] { background-image: var(--pat-diag); }
+.v-heat-cell[data-pattern="dot"]  { background-image: var(--pat-dot); }
+
+.conf-dots { display: inline-flex; gap: 2px; align-items: center; }
+.conf-dots .cd-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+}
+.conf-dots .cd-dot.on { background: var(--conf-hi); box-shadow: 0 0 4px var(--conf-hi); }
+.conf-dots[data-tier="md"] .cd-dot.on { background: var(--conf-md); box-shadow: 0 0 4px var(--conf-md); }
+.conf-dots[data-tier="lo"] .cd-dot.on { background: var(--conf-lo); box-shadow: 0 0 4px var(--conf-lo); }
+
+.sec-div {
+  display: flex; align-items: center; gap: .6rem;
+  margin: var(--sp-3) 0 var(--sp-2);
+}
+.sec-div .sd-line {
+  flex: 1; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+}
+.sec-div .sd-title {
+  font-size: var(--t-md); font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--white); display: inline-flex; align-items: center; gap: .4rem;
+}
+.sec-div .sd-count {
+  font-family: var(--mono); font-size: var(--t-xs); color: var(--muted);
+  background: rgba(255,255,255,0.04); padding: 1px 8px; border-radius: 999px;
+}
+
+/* V4: Claim card confidence tiering (used by research_renderer upgrade) */
+.claim-card.conf-hi { border-left: 3px solid var(--conf-hi); }
+.claim-card.conf-md { border-left: 2px solid var(--conf-md); }
+.claim-card.conf-lo { border-left: 1px solid var(--conf-lo); }
+
+/* V4: Audit node-group accordion */
+.audit-group { margin-bottom: var(--sp-2); }
+.audit-group-head {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  padding: .6rem .85rem; border-radius: 14px;
+  background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.06);
+  cursor: pointer; transition: background var(--dur-fast) var(--ease-out);
+}
+.audit-group-head:hover { background: rgba(255,255,255,0.055); }
+.audit-group-head .agh-name { font-weight: 700; color: var(--white); min-width: 8em; }
+.audit-group-head .agh-cells { display: flex; gap: 4px; }
+.audit-group-head .agh-spark { opacity: .85; }
+.audit-group-head .agh-chip { margin-left: auto; }
+.audit-group-body { padding: .5rem .85rem 0; }
+details.audit-group > summary { list-style: none; }
+details.audit-group > summary::-webkit-details-marker { display: none; }
+details.audit-group[open] .audit-group-head { border-radius: 14px 14px 0 0; }
+@media print {
+  details.audit-group { open: true; }
+  details.audit-group > .audit-group-body { display: block !important; }
+}
+
 /* ── Print — consolidated from all renderers ──────────────── */
 @media print {
   @page { margin: 15mm; }
@@ -695,5 +829,42 @@ _BRAND_LOGO_LG = (
     '<rect width="44" height="44" rx="12" fill="rgba(245,158,11,0.12)"/>'
     '<rect x="9" y="11" width="26" height="3" rx="1.5" fill="#f59e0b" opacity="0.9"/>'
     '<rect x="20" y="11" width="4" height="22" rx="2" fill="#f59e0b" opacity="0.9"/>'
+    '</svg>'
+)
+
+
+# V4: Shared SVG defs (patterns + gradients) injected once per HTML page by _html_wrap.
+# Enables `fill="url(#pat-diag)"` etc. in all renderers without per-component duplication.
+# Also removes Recap's ~50KB of inlined gradient defs.
+_SHARED_SVG_DEFS = (
+    '<svg width="0" height="0" style="position:absolute" aria-hidden="true">'
+    '<defs>'
+    '<pattern id="pat-diag" width="6" height="6" patternUnits="userSpaceOnUse">'
+    '<path d="M 0 6 L 6 0" stroke="currentColor" stroke-width="1" opacity="0.35"/>'
+    '</pattern>'
+    '<pattern id="pat-dot" width="4" height="4" patternUnits="userSpaceOnUse">'
+    '<circle cx="2" cy="2" r="0.8" fill="currentColor" opacity="0.45"/>'
+    '</pattern>'
+    '<pattern id="pat-cross" width="6" height="6" patternUnits="userSpaceOnUse">'
+    '<path d="M 0 3 L 6 3 M 3 0 L 3 6" stroke="currentColor" stroke-width="0.5" opacity="0.4"/>'
+    '</pattern>'
+    '<linearGradient id="grad-conf" x1="0" y1="0" x2="1" y2="0">'
+    '<stop offset="0%" stop-color="#f87171"/>'
+    '<stop offset="50%" stop-color="#fbbf24"/>'
+    '<stop offset="100%" stop-color="#34d399"/>'
+    '</linearGradient>'
+    '<linearGradient id="grad-green" x1="0" y1="0" x2="0" y2="1">'
+    '<stop offset="0%" stop-color="#34d399" stop-opacity="0.85"/>'
+    '<stop offset="100%" stop-color="#34d399" stop-opacity="0.25"/>'
+    '</linearGradient>'
+    '<linearGradient id="grad-red" x1="0" y1="0" x2="0" y2="1">'
+    '<stop offset="0%" stop-color="#f87171" stop-opacity="0.85"/>'
+    '<stop offset="100%" stop-color="#f87171" stop-opacity="0.25"/>'
+    '</linearGradient>'
+    '<linearGradient id="grad-blue" x1="0" y1="0" x2="0" y2="1">'
+    '<stop offset="0%" stop-color="#60a5fa" stop-opacity="0.85"/>'
+    '<stop offset="100%" stop-color="#60a5fa" stop-opacity="0.25"/>'
+    '</linearGradient>'
+    '</defs>'
     '</svg>'
 )

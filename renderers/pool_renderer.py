@@ -21,7 +21,11 @@ from .decision_labels import (
     get_regime_label, get_regime_class, AI_DISCLAIMER_BANNER,
 )
 from .shared_css import _BRAND_LOGO_SM, _BRAND_LOGO_LG
-from .shared_utils import _esc, _html_wrap, _empty_state
+from .shared_utils import (
+    _esc, _html_wrap, _empty_state,
+    _confidence_ring_svg, _priority_chip, _score_pill, _delta_arrow,
+    _section_divider, _conf_dots,
+)
 from .market_renderer import _MARKET_CSS
 from .market_treemap import (
     _render_heatmap_legend,
@@ -943,8 +947,15 @@ def _render_pool_risk_chart(view: DivergencePoolView) -> str:
 def _render_pool_table(view: DivergencePoolView) -> str:
     rows_html = ""
     for idx, row in enumerate(view.rows, start=1):
-        risk_text = "、".join(row.primary_risk_categories) if row.primary_risk_categories else "风险较轻"
-        divergence = f"多 {row.bull_score:.2f} / 空 {row.bear_score:.2f}"
+        # Prio level mirrors risk_state_class for consistency with stock cards
+        risk_lvl = {
+            "veto": "hot", "sell": "warm", "hold": "warm", "buy": "cool",
+        }.get(row.risk_state_class, "mute")
+        risk_chip = _priority_chip(risk_lvl, row.risk_state_label)
+        risk_categories = (
+            "、".join(row.primary_risk_categories)
+            if row.primary_risk_categories else "—"
+        )
         metrics = " · ".join(
             part for part in [
                 f"PE {row.pe}" if row.pe else "",
@@ -957,13 +968,19 @@ def _render_pool_table(view: DivergencePoolView) -> str:
           <td><span class="rank-pill">{idx:02d}</span></td>
           <td>
             <div style="font-weight:700">{_esc(row.display_name)}</div>
-            <div style="color:var(--muted); font-size:.78rem;">{_esc(row.risk_state_label)}</div>
+            <div style="margin-top:.25rem">{risk_chip}</div>
           </td>
           <td><span class="badge badge-{row.action_class}">{get_signal_emoji(row.action)} {_esc(row.action_label)}</span></td>
-          <td class="heat-cell"><div class="heat-bar-bg"><div class="heat-bar-fill" style="width:{row.conviction_pct}%;background:{_pool_action_color(row.action_class)}"></div></div><span class="heat-val">{row.conviction_pct}%</span></td>
+          <td class="heat-cell">
+            <div style="display:flex;align-items:center;gap:.4rem;">
+              <div class="heat-bar-bg" style="flex:1"><div class="heat-bar-fill" style="width:{row.conviction_pct}%;background:{_pool_action_color(row.action_class)}"></div></div>
+              <span class="heat-val">{row.conviction_pct}%</span>
+              {_conf_dots(row.confidence, n=5)}
+            </div>
+          </td>
           <td>{_mini_bb(row.bull_score, row.bear_score)}</td>
           <td>{_esc(metrics)}</td>
-          <td>{_esc(risk_text)}</td>
+          <td>{_esc(risk_categories)}</td>
         </tr>"""
 
     return f"""
@@ -1014,8 +1031,8 @@ def _render_claim_panel(title: str, side: str, claims: list, empty_text: str) ->
 
 def _render_sparkline(
     prices: list,
-    width: int = 120,
-    height: int = 36,
+    width: int = 140,
+    height: int = 40,
 ) -> str:
     """Render a mini SVG sparkline from close prices. Returns '' if <2 prices."""
     if len(prices) < 2:
@@ -1189,18 +1206,25 @@ def render_divergence_pool(
 
         signal_bull = int(round(row.bull_ratio * 100))
         signal_bear = 100 - signal_bull
+        # V4: risk state → priority chip (hot if vetoed, warm if flagged, cool if cleared)
+        risk_state_cls = row.risk_state_class
+        risk_state_level = {
+            "veto": "hot", "sell": "warm", "hold": "warm", "buy": "cool",
+        }.get(risk_state_cls, "mute")
         cards.append(f"""
         <article class="stock-card {row.action_class} reveal" data-action="{row.action.upper()}" id="stock-{_esc(row.short_ticker)}">
           <div class="stock-top">
             <div>
               <div class="stock-kicker">{_esc(row.short_ticker)}</div>
               <div class="stock-name">{_esc(row.display_name)}</div>
-              <div class="stock-sub">{_esc(row.risk_state_label)}</div>
+              <div class="stock-sub">{_priority_chip(risk_state_level, row.risk_state_label)}</div>
             </div>
             <div class="stock-side">
               <div class="stock-verdict" style="color:{_pool_action_color(row.action_class)}">{_esc(row.action_label)}</div>
-              <div class="stock-confidence">置信度 {row.conviction_pct}%</div>
-              {_render_sparkline(row.sparkline_prices)}
+              <div style="display:flex;align-items:center;gap:.6rem;justify-content:flex-end;margin-top:.3rem">
+                {_confidence_ring_svg(row.confidence, size=56, label="置信度")}
+                {_render_sparkline(row.sparkline_prices, width=140, height=40)}
+              </div>
             </div>
           </div>
           <div class="signal-card">
@@ -1307,7 +1331,9 @@ def render_divergence_pool(
       {heatmap_section}
       {kpis}
       {charts}
+      {_section_divider("决策总表", icon="📋", count=len(view.rows))}
       {_render_pool_table(view)}
+      {_section_divider("个股档案", icon="🗂", count=len(view.rows))}
       <section class="stock-grid" id="cards">{''.join(cards)}</section>
       {methodology}
       {brand_footer}

@@ -16,7 +16,10 @@ import json as _json
 from pathlib import Path
 from typing import Optional
 
-from .shared_utils import _squarify, _html_wrap, _esc, render_svg_treemap
+from .shared_utils import (
+    _squarify, _html_wrap, _esc, render_svg_treemap,
+    _svg_minify, _priority_chip, _delta_arrow,
+)
 from .decision_labels import (
     get_regime_label, get_regime_class,
     get_breadth_label, get_breadth_class,
@@ -810,7 +813,9 @@ def _render_index_svg(points: list, code: str = "") -> str:
     # RSI hidden by default
     rsi_style = ' style="display:none"'
 
-    return (
+    # V4: _svg_minify strips redundant whitespace from path/rect strings
+    #     (~15-20% size reduction on k-line SVGs that repeat per-index)
+    return _svg_minify(
         f'<svg viewBox="0 0 {w} {total_h}" width="100%" height="auto"'
         f' style="max-height:{total_h}px" xmlns="http://www.w3.org/2000/svg">'
         f'{"".join(candles)}'

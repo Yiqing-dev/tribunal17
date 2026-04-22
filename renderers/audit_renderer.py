@@ -17,22 +17,28 @@ from .decision_labels import (
 )
 from .shared_utils import (
     _esc, _html_wrap, _ticker_display, _status_light, _nav_bar,
+    _score_pill, _priority_chip, _heat_cell, _section_divider,
+    _confidence_ring_svg,
 )
 
 
 def render_audit(view: AuditView) -> str:
     """Render Tier 3 Trust Audit Report -- trust signals first, details below."""
 
-    # ── Trust signals section (new, top of page) ──
+    # ── V4: Trust signals — bigger values + score dots for scanability ──
     trust_html = ""
     if view.trust_signals:
         cards = ""
         for ts in view.trust_signals:
             status = ts.get("status", "warn")
             value = ts.get("value", 0)
+            # 5-dot pill (rounded from pct/20) mirrors audit severity at a glance
+            _pill_score = max(0, min(4, int(round(value * 4))))
+            pill = _score_pill(_pill_score, 4)
             cards += f"""
             <div class="trust-card {status}">
-              <div class="tv">{value:.0%}</div>
+              <div class="tv" style="font-size:var(--t-2xl)">{value:.0%}</div>
+              <div style="margin:.25rem 0">{pill}</div>
               <div class="tl">{_esc(ts.get("label", ""))}</div>
               <div class="te">{_esc(ts.get("explanation", ""))}</div>
             </div>"""
@@ -207,9 +213,21 @@ def render_audit(view: AuditView) -> str:
             else:
                 risk_str = '<span style="color:var(--muted)">\u2014</span>'
 
+            # V4: Heat-cell strip showing ev_count/claim_count/unattr normalized
+            ev_count = len(ev_in)
+            cl_count = len(cl_out) or len(cl_in)
+            attr_ratio = (attr / max(total, 1)) if cl_out else 1.0
+            status_lvl = "cool" if status == "ok" else ("warm" if status == "warn" else "hot")
+            strip = (
+                f'<span style="display:inline-flex;gap:2px;align-items:center;vertical-align:middle">'
+                f'{_heat_cell(ev_count, 0, 10, "sequential", w=22, h=14, label=str(ev_count))}'
+                f'{_heat_cell(cl_count, 0, 10, "sequential", w=22, h=14, label=str(cl_count))}'
+                f'{_heat_cell(attr_ratio, 0, 1, "diverging", w=22, h=14, label=f"{int(attr_ratio*100)}%")}'
+                f'</span>'
+            )
             rows += f"""<tr>
-              <td><span class="badge badge-{'ok' if status == 'ok' else 'warn'}">{_esc(status_cn)}</span></td>
-              <td>{_esc(node)}</td>
+              <td>{_priority_chip(status_lvl, status_cn)}</td>
+              <td>{_esc(node)}<div style="margin-top:.2rem">{strip}</div></td>
               <td style="font-size:.85rem;">{ev_str}</td>
               <td style="font-size:.85rem;">{cl_str}</td>
               <td style="font-size:.85rem;">{decision_str}</td>

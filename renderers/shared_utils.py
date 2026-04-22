@@ -10,7 +10,7 @@ import math
 from typing import Optional
 
 from .decision_labels import EVIDENCE_STRENGTH_LABELS
-from .shared_css import _BASE_CSS
+from .shared_css import _BASE_CSS, _SHARED_SVG_DEFS
 
 
 def _esc(text: str) -> str:
@@ -37,6 +37,7 @@ def _html_wrap(title: str, body: str, tier_label: str, extra_css: str = "",
 {extra_head}
 </head>
 <body>
+{_SHARED_SVG_DEFS}
 <div class="container">
 {nav_html}
 {body}
@@ -563,6 +564,350 @@ def _sparkline_svg(prices: list, width: int = 200, height: int = 60) -> str:
         f'font-size="9" font-family="var(--mono)" fill="{color}" font-weight="600">{price_label}</text>'
         f'</svg>'
     )
+
+
+def _svg_minify(svg: str) -> str:
+    """Strip redundant whitespace and newlines from inline SVG strings.
+
+    Intended for programmatically-generated SVG where human readability of the
+    source isn't needed. Reduces payload by ~15-20% for chart-heavy reports
+    (recap_renderer.py consumes this for K-line / MACD / RSI panels).
+    """
+    if not svg:
+        return ""
+    import re
+    # Collapse any run of whitespace to a single space
+    out = re.sub(r"\s+", " ", svg)
+    # Tighten around tag boundaries (safe for attributes because we already collapsed)
+    out = re.sub(r"\s*(<)\s*", r"\1", out)
+    out = re.sub(r"\s*(/?>)\s*", r"\1", out)
+    return out.strip()
+
+
+# ── V4: Visualization primitives (score_pill, priority_chip, confidence_ring, etc.) ──
+# All primitives return inline HTML/SVG strings. No JS deps. A11y via role="img" + aria-label.
+# Color-blind-safe: red/green are layered with icons (▲/●/○/◆/—) and patterns (url(#pat-*))
+# for deuteranopia/protanopia accessibility.
+
+
+def _conf_tier(conf: float) -> str:
+    """Classify confidence into a tier for CSS class dispatch.
+
+    Returns one of: "hi" (>=0.65), "md" (>=0.50), "lo" (<0.50), "na" (non-finite).
+    """
+    try:
+        c = float(conf)
+    except (TypeError, ValueError):
+        return "na"
+    if not math.isfinite(c):
+        return "na"
+    if c >= 0.65:
+        return "hi"
+    if c >= 0.50:
+        return "md"
+    return "lo"
+
+
+def _score_pill(score, max_score: int = 4, label: str = "") -> str:
+    """Discrete dot-array for pillar scores (default 4 dots for 0-4 scale).
+
+    Colors use --conf-hi/md/lo tier based on fill ratio. Filled dots include
+    a `●` Unicode pre-fill + box-shadow for non-color redundancy.
+
+    Example:
+        >>> _score_pill(3, 4, "技术")  # ●●●○ 技术
+    """
+    try:
+        s = int(score) if score is not None else 0
+    except (TypeError, ValueError):
+        s = 0
+    s = max(0, min(max_score, s))
+    ratio = s / max_score if max_score > 0 else 0
+    tier = "hi" if ratio >= 0.75 else "md" if ratio >= 0.5 else "lo" if ratio >= 0.25 else "na"
+
+    dots = "".join(
+        f'<span class="sp-dot{" on" if i < s else ""}" aria-hidden="true"></span>'
+        for i in range(max_score)
+    )
+    lab_html = f'<span class="sp-lab">{_esc(label)}</span>' if label else ""
+    aria = f"{label}: {s} of {max_score}" if label else f"{s} of {max_score}"
+    return (
+        f'<span class="score-pill conf-{tier}" role="img" aria-label="{_esc(aria)}">'
+        f'{dots}{lab_html}'
+        f'</span>'
+    )
+
+
+_PRIO_ICONS = {"hot": "▲", "warm": "◆", "cool": "●", "mute": "—"}
+
+
+def _priority_chip(level: str, text: str = "") -> str:
+    """Severity chip with icon + color + label.
+
+    Args:
+        level: one of {"hot", "warm", "cool", "mute"}
+        text:  display text (if empty, chip shows only the icon)
+    """
+    lv = level if level in _PRIO_ICONS else "mute"
+    ico = _PRIO_ICONS[lv]
+    body_txt = f'<span class="pc-txt">{_esc(text)}</span>' if text else ""
+    aria = f"{lv} severity: {text}" if text else f"{lv} severity"
+    return (
+        f'<span class="prio-chip {lv}" role="img" aria-label="{_esc(aria)}">'
+        f'<span class="pc-ico" aria-hidden="true">{ico}</span>{body_txt}'
+        f'</span>'
+    )
+
+
+def _confidence_ring_svg(pct, size: int = 72, label: str = "") -> str:
+    """Circular progress ring for a single 0..1 confidence value.
+
+    Renders an SVG with stroke-dasharray progress, colored by conf tier,
+    center text shows percentage. Safe on NaN / None — renders "—".
+    """
+    try:
+        p = float(pct)
+        if not math.isfinite(p):
+            raise ValueError
+        p = max(0.0, min(1.0, p))
+    except (TypeError, ValueError):
+        p = None
+
+    stroke_w = max(4, int(size * 0.10))
+    r = (size - stroke_w) / 2
+    cx = cy = size / 2
+    circumference = 2 * math.pi * r
+
+    if p is None:
+        pct_txt = "—"
+        color = "var(--conf-na)"
+        dash = f"0 {circumference:.1f}"
+    else:
+        tier = _conf_tier(p)
+        color = f"var(--conf-{tier})"
+        pct_txt = f"{int(round(p * 100))}%"
+        dash = f"{circumference * p:.1f} {circumference:.1f}"
+
+    aria = f"confidence {pct_txt}" + (f" ({label})" if label else "")
+    lab_html = f'<div class="cr-lab">{_esc(label)}</div>' if label else ""
+
+    svg = (
+        f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" '
+        f'role="img" aria-label="{_esc(aria)}">'
+        f'<circle cx="{cx}" cy="{cy}" r="{r:.1f}" fill="none" '
+        f'stroke="rgba(255,255,255,0.08)" stroke-width="{stroke_w}"/>'
+        f'<circle cx="{cx}" cy="{cy}" r="{r:.1f}" fill="none" '
+        f'stroke="{color}" stroke-width="{stroke_w}" '
+        f'stroke-dasharray="{dash}" stroke-linecap="round" '
+        f'transform="rotate(-90 {cx} {cy})"/>'
+        f'</svg>'
+    )
+    return (
+        f'<div class="conf-ring" style="width:{size}px;height:{size}px">'
+        f'{svg}'
+        f'<div class="cr-val"><div class="cr-pct">{pct_txt}</div>{lab_html}</div>'
+        f'</div>'
+    )
+
+
+def _ridge_bar(values: list, labels: list = None, height: int = 28) -> str:
+    """Compact horizontal mini-bar strip; auto-scales to max abs.
+
+    Positive values use --conf-hi gradient, negatives use --conf-lo.
+    Labels (optional) render below bars.
+    """
+    if not values:
+        return ""
+    try:
+        vals = [float(v) if v is not None else 0.0 for v in values]
+    except (TypeError, ValueError):
+        vals = [0.0] * len(values)
+    vals = [v if math.isfinite(v) else 0.0 for v in vals]
+
+    max_abs = max((abs(v) for v in vals), default=1.0) or 1.0
+    segs = []
+    for v in vals:
+        ratio = abs(v) / max_abs
+        h_pct = max(4, int(ratio * 100))
+        cls = " neg" if v < 0 else ""
+        segs.append(
+            f'<div class="rb-seg{cls}" style="height:{h_pct}%" '
+            f'title="{v:.2f}" aria-hidden="true"></div>'
+        )
+
+    labels_html = ""
+    if labels and len(labels) == len(vals):
+        lab_items = "".join(
+            f'<span style="flex:1;text-align:center">{_esc(str(l))}</span>'
+            for l in labels
+        )
+        labels_html = f'<div class="rb-labels">{lab_items}</div>'
+
+    aria = f"distribution of {len(vals)} values, max {max_abs:.2f}"
+    return (
+        f'<div role="img" aria-label="{_esc(aria)}">'
+        f'<div class="ridge-bar" style="height:{height}px">{"".join(segs)}</div>'
+        f'{labels_html}'
+        f'</div>'
+    )
+
+
+def _delta_arrow(from_v, to_v, unit: str = "", threshold: float = 0.001, decimals: int = 2) -> str:
+    """Directional arrow showing magnitude of change.
+
+    Returns '▲+2.3%', '▼-1.1%', or '— flat'. Safe on None.
+    """
+    try:
+        fv = float(from_v) if from_v is not None else None
+        tv = float(to_v) if to_v is not None else None
+    except (TypeError, ValueError):
+        return '<span class="delta-arr flat" role="img" aria-label="no delta available">—</span>'
+    if fv is None or tv is None or not math.isfinite(fv) or not math.isfinite(tv):
+        return '<span class="delta-arr flat" role="img" aria-label="no delta available">—</span>'
+
+    diff = tv - fv
+    if abs(diff) < threshold:
+        return f'<span class="delta-arr flat" role="img" aria-label="no change">— {unit}</span>'
+
+    sign = "+" if diff > 0 else ""
+    cls = "up" if diff > 0 else "down"
+    ico = "▲" if diff > 0 else "▼"
+    aria = f"{'increased' if diff > 0 else 'decreased'} by {abs(diff):.{decimals}f}{unit}"
+    return (
+        f'<span class="delta-arr {cls}" role="img" aria-label="{_esc(aria)}">'
+        f'<span aria-hidden="true">{ico}</span>{sign}{diff:.{decimals}f}{_esc(unit)}'
+        f'</span>'
+    )
+
+
+def _heat_cell(value, vmin: float = 0.0, vmax: float = 1.0,
+               scale: str = "diverging", w: int = 40, h: int = 20,
+               label: str = "", pattern: str = "") -> str:
+    """Single heat-map cell with optional pattern overlay for CB-safety.
+
+    Args:
+        value: numeric value to color-map
+        vmin, vmax: domain bounds
+        scale: "diverging" (red→neutral→green) or "sequential" (blue-cool→amber-hot)
+        w, h: pixel dims
+        label: text overlay (typically the value formatted)
+        pattern: "" | "diag" | "dot" — adds pattern fill for CB redundancy
+    """
+    try:
+        v = float(value)
+        if not math.isfinite(v):
+            raise ValueError
+    except (TypeError, ValueError):
+        return (
+            f'<span class="v-heat-cell" style="width:{w}px;height:{h}px;'
+            f'background:rgba(255,255,255,0.05)" '
+            f'role="img" aria-label="no value"'
+            f'{(" data-label=" + chr(34) + _esc(label) + chr(34)) if label else ""}>'
+            f'</span>'
+        )
+
+    if vmax <= vmin:
+        vmax = vmin + 1.0
+    t = (v - vmin) / (vmax - vmin)
+    t = max(0.0, min(1.0, t))
+
+    if scale == "diverging":
+        # 0 -> red, 0.5 -> neutral-ish, 1 -> green
+        if t < 0.5:
+            # red → neutral
+            r, g, b = 248, int(113 + (143 * (t * 2))), int(113 + (160 * (t * 2)))
+        else:
+            # neutral → green
+            k = (t - 0.5) * 2
+            r, g, b = int(248 - 196 * k), int(211 + 0 * k), int(153 + 0 * k)
+            g, b = 211, 153
+            r = int(248 - (248 - 52) * k)
+    else:  # sequential cool→hot
+        r = int(96 + (245 - 96) * t)
+        g = int(165 + (158 - 165) * t)
+        b = int(250 + (11 - 250) * t)
+    color = f"rgb({r},{g},{b})"
+    pat_attr = f' data-pattern="{_esc(pattern)}"' if pattern in ("diag", "dot") else ""
+    lab = label or (f"{v:.2f}" if abs(v) < 100 else f"{v:.0f}")
+    aria = f"{lab}" + (f" ({label})" if label and label != lab else "")
+
+    return (
+        f'<span class="v-heat-cell" style="width:{w}px;height:{h}px;background:{color}" '
+        f'data-label="{_esc(lab)}"{pat_attr} '
+        f'role="img" aria-label="{_esc(aria)}"></span>'
+    )
+
+
+def _conf_dots(conf, n: int = 5) -> str:
+    """Dense 5-dot confidence indicator (denser than _score_pill; for claim cards).
+
+    Dots fill based on round(conf * n), color by conf tier.
+    """
+    try:
+        c = float(conf) if conf is not None else 0.0
+        if not math.isfinite(c):
+            raise ValueError
+    except (TypeError, ValueError):
+        c = 0.0
+    c = max(0.0, min(1.0, c))
+    filled = int(round(c * n))
+    tier = _conf_tier(c)
+    dots = "".join(
+        f'<span class="cd-dot{" on" if i < filled else ""}" aria-hidden="true"></span>'
+        for i in range(n)
+    )
+    aria = f"confidence {int(round(c * 100))}%"
+    return (
+        f'<span class="conf-dots" data-tier="{tier}" role="img" aria-label="{_esc(aria)}">'
+        f'{dots}'
+        f'</span>'
+    )
+
+
+def _section_divider(title: str, icon: str = "", count=None) -> str:
+    """Horizontal divider with title + optional icon + optional count chip.
+
+    Use at section boundaries in long reports.
+    """
+    icon_html = f'<span aria-hidden="true">{icon}</span>' if icon else ""
+    count_html = f'<span class="sd-count">{count}</span>' if count is not None else ""
+    aria = f"{title} section" + (f", {count} items" if count is not None else "")
+    return (
+        f'<div class="sec-div" role="separator" aria-label="{_esc(aria)}">'
+        f'<div class="sd-line" aria-hidden="true"></div>'
+        f'<div class="sd-title">{icon_html}{_esc(title)}{count_html}</div>'
+        f'<div class="sd-line" aria-hidden="true"></div>'
+        f'</div>'
+    )
+
+
+# ── (Enhanced) _empty_state with variant support ──
+def _empty_state_v2(icon: str, title: str, hint: str = "", variant: str = "block") -> str:
+    """Empty-state variant-aware dispatcher. Backwards-compat with _empty_state().
+
+    variant: "block" (default) | "inline" | "error"
+    """
+    aria = f"{title}" + (f": {hint}" if hint else "")
+    if variant == "inline":
+        return (
+            f'<div class="empty-state" role="status" aria-label="{_esc(aria)}" '
+            f'style="padding:.5rem 1rem;flex-direction:row;gap:.6rem">'
+            f'<span class="empty-state-icon" aria-hidden="true" style="font-size:1rem;margin:0">{_esc(icon)}</span>'
+            f'<span class="empty-state-title">{_esc(title)}</span>'
+            f'{f"<span class=\"empty-state-hint\" style=\"margin-left:.5rem\">{_esc(hint)}</span>" if hint else ""}'
+            f'</div>'
+        )
+    if variant == "error":
+        return (
+            f'<div class="empty-state" role="alert" aria-label="{_esc(aria)}" '
+            f'style="border:1px solid rgba(248,113,113,0.3);'
+            f'background:rgba(248,113,113,0.05);border-radius:14px;color:var(--red)">'
+            f'<div class="empty-state-icon" aria-hidden="true" style="color:var(--red)">{_esc(icon)}</div>'
+            f'<div class="empty-state-title">{_esc(title)}</div>'
+            f'{f"<div class=\"empty-state-hint\">{_esc(hint)}</div>" if hint else ""}'
+            f'</div>'
+        )
+    return _empty_state(icon, title, hint)
 
 
 def _nav_bar(ticker: str, run_id: str, current_page: str) -> str:

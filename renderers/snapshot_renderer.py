@@ -27,6 +27,8 @@ from .shared_utils import (
     _empty_state, _format_price_zone, _evidence_strength_label,
     _degraded_banner, _bull_bear_bar, _direction_badge, _radar_svg,
     _trend_arrow, _sparkline_svg, _nav_bar,
+    _confidence_ring_svg, _priority_chip, _score_pill,
+    _delta_arrow, _section_divider,
 )
 
 
@@ -339,17 +341,26 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     _sig_emoji = get_signal_emoji(view.research_action)
     conf_pct = int(view.confidence * 100)
 
-    # Build right-side KPI mini-panels for hero
+    # V4: Hero right-side — confidence ring replaces primary text KPI (more scannable);
+    # secondary KPIs in compact 3-col grid; pp-delta arrow only when meaningful.
     hero_kpis = []
+    _conf_ring_html = ""
+    _conf_delta_html = ""
     if view.confidence >= 0:
-        conf_cls = "buy" if view.confidence >= 0.7 else ("hold" if view.confidence >= 0.4 else "sell")
-        _conf_note = "\u2248" if getattr(view, "confidence_defaulted", False) else ""
-        _conf_sub = ' <span style="font-size:.6rem;color:var(--muted);">(\u9ed8\u8ba4)</span>' if getattr(view, "confidence_defaulted", False) else ""
-        _conf_arrow = _trend_arrow(
-        view.confidence,
-        view.previous_confidence if view.previous_confidence >= 0 else None,
-    )
-    hero_kpis.append(f'<div class="kpi kpi-primary {conf_cls}"><span class="kpi-val">{_conf_note}{conf_pct}%</span>{_conf_arrow}<span class="kpi-label">\u7f6e\u4fe1\u5ea6{_conf_sub}</span></div>')
+        _ring_label = "\u7f6e\u4fe1\u5ea6"
+        if getattr(view, "confidence_defaulted", False):
+            _ring_label = "\u7f6e\u4fe1\u5ea6(\u9ed8\u8ba4)"
+        _conf_ring_html = _confidence_ring_svg(view.confidence, size=100, label=_ring_label)
+        if view.previous_confidence >= 0:
+            _cdiff = view.confidence - view.previous_confidence
+            if abs(_cdiff) >= 0.005:
+                sign = "+" if _cdiff > 0 else ""
+                cls = "up" if _cdiff > 0 else "down"
+                ico = "\u25b2" if _cdiff > 0 else "\u25bc"
+                _conf_delta_html = (
+                    f'<span class="delta-arr {cls}" role="img" aria-label="confidence delta">'
+                    f'<span aria-hidden="true">{ico}</span>{sign}{_cdiff*100:.1f}pp</span>'
+                )
     hero_kpis.append(f'<div class="kpi kpi-secondary"><span class="kpi-val">{view.total_evidence}</span><span class="kpi-label">\u8bc1\u636e\u6761\u6570</span></div>')
     hero_kpis.append(f'<div class="kpi kpi-secondary"><span class="kpi-val">{view.attributed_rate:.0%}</span><span class="kpi-label">\u7ed1\u5b9a\u7387</span></div>')
     ev_label = _evidence_strength_label(view.evidence_strength)
@@ -360,7 +371,15 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     if getattr(view, "price_history", None) and len(view.price_history) >= 2:
         _sparkline_html = f'<div class="hero-sparkline">{_sparkline_svg(view.price_history)}</div>'
 
-    hero_kpi_grid = f'{_sparkline_html}<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;">{"".join(hero_kpis)}</div>'
+    _ring_block = (
+        f'<div style="display:flex;flex-direction:column;align-items:center;gap:.3rem;margin-bottom:.6rem">'
+        f'{_conf_ring_html}{_conf_delta_html}'
+        f'</div>'
+    ) if _conf_ring_html else ""
+    hero_kpi_grid = (
+        f'{_ring_block}{_sparkline_html}'
+        f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;">{"".join(hero_kpis)}</div>'
+    )
 
     conclusion = f"""
     <div class="hero reveal">
@@ -380,19 +399,29 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
       </div>
     </div>"""
 
-    # ── Status lights bar ──
-    lights = [
-        _status_light(view.risk_cleared or False, "\u98ce\u63a7: \u901a\u8fc7" if view.risk_cleared else "\u98ce\u63a7: \u672a\u901a\u8fc7"),
-        _status_light(view.compliance_status in ("allow", ""), "\u5408\u89c4: \u901a\u8fc7" if view.compliance_status in ("allow", "") else "\u5408\u89c4: " + view.compliance_status),
-        _status_light(view.freshness_ok, "\u6570\u636e: \u65b0\u9c9c" if view.freshness_ok else "\u6570\u636e: \u8fc7\u671f"),
-        _status_light(not view.was_vetoed, "\u5426\u51b3: \u65e0" if not view.was_vetoed else (
-            "\u5426\u51b3: \u98ce\u63a7\u95e8\u7981" if getattr(view, "veto_source", "") == "risk_gate"
-            else ("\u5426\u51b3: \u7814\u7a76\u5426\u51b3" if getattr(view, "veto_source", "") == "agent_veto"
-                  else "\u5426\u51b3: \u662f"))),
-    ]
+    # ── V4: Status bar as priority-chip row (multi-level severity, not binary lights) ──
+    _risk_lvl = "cool" if view.risk_cleared else "hot"
+    _risk_txt = ("\u98ce\u63a7\u901a\u8fc7" if view.risk_cleared else "\u98ce\u63a7\u672a\u901a\u8fc7")
+    _comp_ok = view.compliance_status in ("allow", "")
+    _comp_lvl = "cool" if _comp_ok else ("warm" if view.compliance_status in ("warn", "defer") else "hot")
+    _comp_txt = ("\u5408\u89c4\u901a\u8fc7" if _comp_ok else ("\u5408\u89c4" + view.compliance_status))
+    _fresh_lvl = "cool" if view.freshness_ok else "warm"
+    _fresh_txt = ("\u6570\u636e\u65b0\u9c9c" if view.freshness_ok else "\u6570\u636e\u8fc7\u671f")
+    if view.was_vetoed:
+        _veto_lvl = "hot"
+        _src = getattr(view, "veto_source", "")
+        _veto_txt = (
+            "\u98ce\u63a7\u95e8\u7981" if _src == "risk_gate"
+            else ("\u7814\u7a76\u5426\u51b3" if _src == "agent_veto" else "\u88ab\u5426\u51b3")
+        )
+    else:
+        _veto_lvl, _veto_txt = "cool", "\u5426\u51b3\u65e0"
     lights_html = f"""
-    <div class="status-bar reveal reveal-d1">
-      {"".join(f'<span>{l}</span>' for l in lights)}
+    <div class="status-bar reveal reveal-d1" style="gap:.6rem">
+      {_priority_chip(_risk_lvl, _risk_txt)}
+      {_priority_chip(_comp_lvl, _comp_txt)}
+      {_priority_chip(_fresh_lvl, _fresh_txt)}
+      {_priority_chip(_veto_lvl, _veto_txt)}
     </div>"""
 
     # ── Fundamentals metrics card ──
