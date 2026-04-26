@@ -1017,9 +1017,12 @@ def _render_claim_panel(title: str, side: str, claims: list, empty_text: str) ->
         for claim in claims:
             supports = claim.get("supports", [])
             evidence = ", ".join(str(s) for s in supports[:2]) if supports else "结构化主张"
+            _c = claim.get("confidence", 0) or 0
+            if isinstance(_c, (int, float)) and _c < 0:
+                _c = 0  # -1.0 sentinel → display as 0
             parts.append(
                 f'<div class="claim-item"><div>{_esc(claim.get("text", ""))}</div>'
-                f'<div class="claim-meta"><span>{_esc(evidence)}</span><span>{claim.get("confidence", 0):.0%}</span></div></div>'
+                f'<div class="claim-meta"><span>{_esc(evidence)}</span><span>{_c:.0%}</span></div></div>'
             )
         claims_html = "".join(parts)
     return f"""

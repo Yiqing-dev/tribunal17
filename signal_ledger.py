@@ -605,7 +605,7 @@ def repair_ledger(
         if changed:
             report["affected_run_ids"].append(run_id)
 
-        repaired_lines.append(json.dumps(d, ensure_ascii=False))
+        repaired_lines.append(json.dumps(d, ensure_ascii=False, allow_nan=False))
 
     if not dry_run:
         # Atomic write: temp file → rename (with file lock)

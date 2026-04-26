@@ -11,6 +11,8 @@ Extracted from report_renderer.py to reduce file size.
 from .views import (
     ResearchView,
     _strip_internal_tokens,
+    _summarize_display_text,
+    _truncate_display_text,
 )
 from .decision_labels import (
     get_action_label, get_action_class, get_action_explanation,
@@ -102,6 +104,14 @@ def _render_trade_plan_card(tp: dict) -> str:
     Shows 6 key lines: bias, breakout entry, pullback entry, stop loss,
     targets, and invalidation conditions.
     """
+    def _normalize_confidence(val) -> float:
+        # Trade-plan cards have historically treated unparseable/missing as 0
+        # (they are already inside a "low-confidence" visual context). Preserve
+        # that UI behavior while delegating parsing to the canonical helper.
+        from .shared_utils import normalize_confidence_value
+        conf = normalize_confidence_value(val)
+        return 0.0 if conf < 0 else conf
+
     bias = tp.get("bias", "WAIT")
     bias_labels = {"LONG": ("\u504f\u591a", "buy"), "WAIT": ("\u7b49\u5f85", "hold"), "AVOID": ("\u56de\u907f", "sell")}
     bias_label, bias_class = bias_labels.get(bias, ("\u7b49\u5f85", "hold"))
@@ -117,7 +127,7 @@ def _render_trade_plan_card(tp: dict) -> str:
     targets = tp.get("take_profit", [])
     invalidators = tp.get("invalidators", [])
     horizon = tp.get("holding_horizon", "")
-    confidence = tp.get("confidence", 0)
+    confidence = _normalize_confidence(tp.get("confidence", 0))
 
     horizon_labels = {"short_swing": "\u77ed\u7ebf\u6ce2\u6bb5", "medium_term": "\u4e2d\u671f\u6301\u6709"}
     horizon_label = horizon_labels.get(horizon, horizon)
@@ -226,17 +236,34 @@ def _render_trade_plan_card(tp: dict) -> str:
     </div>"""
 
 
+def _format_lineage_confidence(value) -> str:
+    """Format lineage confidence only when the source actually provided it."""
+    try:
+        conf = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if conf < 0:
+        return ""
+    if conf > 1.0:
+        conf = conf / 100.0 if conf > 10 else conf / 10.0
+    conf = max(0.0, min(1.0, conf))
+    return f"{conf:.0%}"
+
+
 def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     """Render Tier 2 Research Report -- cards not essays, zero LLM leakage.
 
-    When is_degraded=True, shows warning banner + synthesis + risk only.
-    Hides bull/bear cards, catalysts, scenarios to avoid displaying
-    unreliable structured data.
+    When is_degraded=True, prepends a warning banner but continues with the
+    normal card layout — each section renderer already guards against
+    missing data, so bull/bear debate, catalysts and scenarios still appear
+    when their underlying nodes parsed cleanly. Only the affected sections
+    will be empty.
     """
 
-    # ── Degraded Mode: warning + synthesis + risk only ──
+    # Degradation banner — prepended to normal content when parse issues exist.
+    degradation_banner_html = ""
     if view.is_degraded:
-        return _render_research_degraded(view)
+        degradation_banner_html = _degraded_banner(view.degradation_reasons)
 
     # Executive summary -- hero cockpit
     _sig_emoji_r = get_signal_emoji(view.research_action)
@@ -284,6 +311,9 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
                 dim_text = get_dimension_label(c.get("dimension", "")) if c.get("dimension") else ""
                 dim_badge = f'<div class="dim">{_esc(dim_text)}</div>' if dim_text else ""
                 conf = c.get("confidence", 0)
+                # -1.0 sentinel means "not provided" — display as 0 for UI.
+                if isinstance(conf, (int, float)) and conf < 0:
+                    conf = 0
                 conf_pct = int(conf * 100)
                 conf_color = "var(--green)" if conf >= 0.7 else ("var(--yellow)" if conf >= 0.4 else "var(--red)")
                 # V4: tier class drives left-border width; dots array in top-right
@@ -296,14 +326,14 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
                     <div style="flex:1;min-width:0">{dim_badge}</div>
                     <div>{_conf_dots(conf)}</div>
                   </div>
-                  <div>{_esc(_strip_internal_tokens(c.get("text", "")[:150]))}</div>
+                  <div>{_esc(_truncate_display_text(c.get("text", ""), max_chars=180))}</div>
                   <div class="conf-bar"><div class="conf-fill" style="width:{conf_pct}%;background:{conf_color};"></div></div>
                   <div class="ev-tags">{_esc(ev_label)}</div>
                 </div>"""
             content = f'<div class="claim-grid">{cards}</div>'
         else:
             # Fallback: truncated excerpt, strip tokens
-            content = f'<div class="excerpt excerpt-short">{_esc(_strip_internal_tokens(_strip_preamble(excerpt)[:500]))}</div>'
+            content = f'<div class="excerpt excerpt-short">{_esc(_summarize_display_text(_strip_preamble(excerpt), max_chars=320))}</div>'
 
         # Summary line: use counts not raw IDs
         ev_count_total = len(evidence)
@@ -333,14 +363,14 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     thesis_label = get_thesis_label(view.thesis_effect)
     thesis_ok = view.thesis_effect in ("unchanged", "strengthened", "strengthen", "")
 
-    synth_body = f'<div style="font-size:.95rem; margin:.5rem 0;">{_esc(_strip_internal_tokens(_strip_preamble(view.synthesis_excerpt)[:300]))}</div>'
+    synth_body = f'<div style="font-size:.95rem; margin:.5rem 0;">{_esc(_summarize_display_text(_strip_preamble(view.synthesis_excerpt), max_chars=360))}</div>'
 
     if view.synthesis_detail:
         cases = ""
         for key, label in [("base_case", "\u57fa\u51c6\u60c5\u666f"), ("bull_case", "\u4e50\u89c2\u60c5\u666f"), ("bear_case", "\u60b2\u89c2\u60c5\u666f")]:
             text = view.synthesis_detail.get(key, "")
             if text:
-                cases += f'<div style="margin:.5rem 0;"><strong>{label}:</strong> {_esc(_strip_internal_tokens(text[:200]))}</div>'
+                cases += f'<div style="margin:.5rem 0;"><strong>{label}:</strong> {_esc(_truncate_display_text(text, max_chars=220))}</div>'
         if cases:
             synth_body += cases
 
@@ -367,9 +397,9 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
         base_arrow = "" if abs(base_pct - 33) < 5 else ("\u25b2" if base_pct > 33 else "\u25bc")
         bull_arrow = "" if abs(bull_pct - 33) < 5 else ("\u25b2" if bull_pct > 33 else "\u25bc")
         bear_arrow = "" if abs(bear_pct - 33) < 5 else ("\u25b2" if bear_pct > 33 else "\u25bc")
-        base_tip = _esc(sp.get("base_trigger", "")[:80])
-        bull_tip = _esc(sp.get("bull_trigger", "")[:80])
-        bear_tip = _esc(sp.get("bear_trigger", "")[:80])
+        base_tip = _esc(_truncate_display_text(sp.get("base_trigger", ""), max_chars=90))
+        bull_tip = _esc(_truncate_display_text(sp.get("bull_trigger", ""), max_chars=90))
+        bear_tip = _esc(_truncate_display_text(sp.get("bear_trigger", ""), max_chars=90))
         base_lbl = f"\u57fa\u51c6 {base_pct}%{base_arrow}" if base_pct > 18 else ""
         bull_lbl = f"\u4e50\u89c2 {bull_pct}%{bull_arrow}" if bull_pct > 18 else ""
         bear_lbl = f"\u60b2\u89c2 {bear_pct}%{bear_arrow}" if bear_pct > 18 else ""
@@ -385,17 +415,17 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
         <div class="prob-seg" style="width:{bull_pct}%;background:var(--green);color:var(--white);" data-tip="{bull_tip}">{bull_lbl}</div>
         <div class="prob-seg" style="width:{bear_pct}%;background:var(--red);color:var(--white);" data-tip="{bear_tip}">{bear_lbl}</div>
       </div>
-      <div style="font-size:.85rem; margin-top:.5rem;">
-        <div><strong>\u57fa\u51c6\u89e6\u53d1:</strong> {_esc(sp.get("base_trigger", "")[:150])}</div>
-        <div><strong>\u4e50\u89c2\u89e6\u53d1:</strong> {_esc(sp.get("bull_trigger", "")[:150])}</div>
-        <div><strong>\u60b2\u89c2\u89e6\u53d1:</strong> {_esc(sp.get("bear_trigger", "")[:150])}</div>
+        <div style="font-size:.85rem; margin-top:.5rem;">
+        <div><strong>\u57fa\u51c6\u89e6\u53d1:</strong> {_esc(_truncate_display_text(sp.get("base_trigger", ""), max_chars=180))}</div>
+        <div><strong>\u4e50\u89c2\u89e6\u53d1:</strong> {_esc(_truncate_display_text(sp.get("bull_trigger", ""), max_chars=180))}</div>
+        <div><strong>\u60b2\u89c2\u89e6\u53d1:</strong> {_esc(_truncate_display_text(sp.get("bear_trigger", ""), max_chars=180))}</div>
       </div>
     </div>"""
     elif view.scenario_excerpt:
         scenario_html = f"""
     <div class="card">
       <h3>\u60c5\u666f\u5206\u6790</h3>
-      <div class="excerpt excerpt-short">{_esc(_strip_internal_tokens(_strip_preamble(view.scenario_excerpt)[:800]))}</div>
+      <div class="excerpt excerpt-short">{_esc(_summarize_display_text(_strip_preamble(view.scenario_excerpt), max_chars=420))}</div>
     </div>"""
 
     # ── Risk review -- card-per-flag with severity color ──
@@ -407,12 +437,12 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
             ev_count = len(f.get("evidence_ids", []))
             ev_label = f"{ev_count}\u6761\u8bc1\u636e" if ev_count else "\u65e0\u5f15\u7528"
             mitigant = f.get("mitigant", "")
-            mitigant_html = f'<div style="font-size:.8rem;color:var(--muted);margin-top:.25rem;">\u7f13\u91ca: {_esc(_strip_internal_tokens(mitigant))}</div>' if mitigant else ""
+            mitigant_html = f'<div style="font-size:.8rem;color:var(--muted);margin-top:.25rem;">\u7f13\u91ca: {_esc(_truncate_display_text(mitigant, max_chars=120))}</div>' if mitigant else ""
             risk_content += f"""
             <div class="claim-card">
               <span class="badge badge-{sev_cls}">{_esc(sev_label)}</span>
               <strong>{_esc(get_risk_label(f.get("category", "")))}</strong>
-              <div style="margin-top:.25rem;">{_esc(_strip_internal_tokens(f.get("description", "")[:150]))}</div>
+              <div style="margin-top:.25rem;">{_esc(_truncate_display_text(f.get("description", ""), max_chars=180))}</div>
               <div class="ev-tags">{_esc(ev_label)}</div>
               {mitigant_html}
             </div>"""
@@ -444,7 +474,7 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
         catalyst_html = f"""
     <div class="card">
       <h3>\u50ac\u5316\u5242\u5206\u6790</h3>
-      <div class="excerpt excerpt-short">{_esc(_strip_internal_tokens(_strip_preamble(view.catalyst_excerpt)[:600]))}</div>
+      <div class="excerpt excerpt-short">{_esc(_summarize_display_text(_strip_preamble(view.catalyst_excerpt), max_chars=420))}</div>
     </div>"""
 
     # Invalidation
@@ -488,12 +518,14 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
                 bind_note = f"\uff08{attr}\u6761\u6709\u636e\uff09" if attr > 0 else ""
                 parts.append(f'\u4ea7\u51fa {len(cl_out)} \u6761\u8bba\u636e{bind_note}')
             if cl_in:
-                parts.append(f'\u6d88\u8d39 {len(cl_in)} \u6761\u8bba\u636e')
+                parts.append(f'\u6574\u5408 {len(cl_in)} \u6761\u8bba\u636e')
             if action_raw:
                 action_cn = get_soft_action_label(action_raw)
                 thesis_cn = get_thesis_label(thesis_raw) if thesis_raw else ""
                 thesis_badge = f' \u00b7 \u8bba\u9898{_esc(thesis_cn)}' if thesis_cn and thesis_cn != "\u65e0" else ""
-                parts.append(f'<strong>{_esc(action_cn)} ({confidence:.0%})</strong>{thesis_badge}')
+                conf_label = _format_lineage_confidence(confidence)
+                action_label = f'{_esc(action_cn)} ({conf_label})' if conf_label else _esc(action_cn)
+                parts.append(f'<strong>{action_label}</strong>{thesis_badge}')
             if isinstance(risk, dict) and risk.get('flags'):
                 cats = risk.get('categories', [])
                 cat_str = "\u3001".join(_esc(c) for c in cats[:3])
@@ -520,6 +552,7 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     <h1>{_esc(_ticker_display(view))}</h1>
     <p class="subtitle">{_esc(view.trade_date)} &middot; \u6df1\u5ea6\u7814\u7a76\u62a5\u544a</p>
     <div class="banner">{AI_DISCLAIMER_BANNER}</div>
+    {degradation_banner_html}
     {exec_summary}
     <nav style="font-size:.8rem;margin:.5rem 0;">
       <a href="#bull-bear" style="color:var(--blue);text-decoration:none;">\u591a\u7a7a\u5206\u6790</a> &middot;

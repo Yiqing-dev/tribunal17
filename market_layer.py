@@ -93,7 +93,7 @@ class MarketLayerData:
         d = self.trade_date
 
         # 1. market_context
-        ctx_json = json.dumps(self.market_context, ensure_ascii=False, indent=2)
+        ctx_json = json.dumps(self.market_context, ensure_ascii=False, indent=2, allow_nan=False)
         (rp / f"market_context_{d}.json").write_text(ctx_json, encoding="utf-8")
         (rs / "market_context.json").write_text(ctx_json, encoding="utf-8")
 

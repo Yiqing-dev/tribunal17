@@ -73,7 +73,7 @@ class ReplayStore:
             "veto_source": trace.veto_source,
             "compliance_status": trace.compliance_status,
         }
-        line = json.dumps(manifest_entry, ensure_ascii=False) + "\n"
+        line = json.dumps(manifest_entry, ensure_ascii=False, allow_nan=False) + "\n"
         with open(self._manifest_path, "a", encoding="utf-8") as f:
             fcntl.flock(f.fileno(), fcntl.LOCK_EX)
             try:
@@ -194,7 +194,7 @@ class ReplayStore:
                     "veto_source": trace.veto_source,
                     "compliance_status": trace.compliance_status,
                 }
-                line = json.dumps(entry, ensure_ascii=False) + "\n"
+                line = json.dumps(entry, ensure_ascii=False, allow_nan=False) + "\n"
                 with open(self._manifest_path, "a", encoding="utf-8") as f:
                     fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                     try:

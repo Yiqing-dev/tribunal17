@@ -203,7 +203,7 @@ class DailyRecapData:
         return asdict(self)
 
     def to_json(self) -> str:
-        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2, default=str)
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2, default=str, allow_nan=False)
 
     @classmethod
     def from_json(cls, json_str: str) -> "DailyRecapData":

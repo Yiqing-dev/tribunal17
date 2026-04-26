@@ -77,7 +77,7 @@ def backfill_regime_supplement(
             newly_added += 1
 
     # Atomic write via temp+rename
-    content = json.dumps(enriched, ensure_ascii=False, indent=2, sort_keys=True)
+    content = json.dumps(enriched, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False)
     fd, tmp = tempfile.mkstemp(dir=str(out_path.parent), suffix=".tmp", prefix=".regime-")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:

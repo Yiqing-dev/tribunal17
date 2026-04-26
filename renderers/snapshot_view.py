@@ -15,8 +15,8 @@ from ..trace_models import RunTrace
 from .views import (
     BannerView,
     _check_degradation,
-    _enforce_thesis_limit,
     _strip_internal_tokens,
+    _summarize_display_text,
 )
 
 
@@ -126,37 +126,35 @@ class SnapshotView:
         bear_out = service.show_node_output(run_id, "Bear Researcher")
         catalyst_out = service.show_node_output(run_id, "Catalyst Agent")
 
-        # ── One-line summary: prefer structured conclusion, enforce 50-char limit ──
+        # ── One-line summary: prefer structured conclusion, but keep it readable ──
         one_line = ""
         if pm_out:
             pm_sd = pm_out.get("structured_data") or {}
             if pm_sd.get("conclusion"):
-                one_line = pm_sd["conclusion"][:200]
+                one_line = _summarize_display_text(pm_sd["conclusion"], max_chars=120)
             else:
-                # Fallback: first substantive sentence from excerpt
-                excerpt = pm_out.get("output_excerpt", "")
-                for line in excerpt.split("\n"):
-                    stripped = line.strip()
-                    if not stripped or stripped.startswith("#") or stripped.startswith("|") or stripped.startswith("---"):
-                        continue
-                    if stripped.startswith("**") and stripped.endswith("**"):
-                        continue
-                    if stripped.startswith(("-", "*", "•")) and len(stripped) < 200:
-                        continue
-                    for sep in ("。", "；"):
-                        if sep in stripped:
-                            one_line = stripped[:stripped.index(sep) + 1]
-                            break
-                    if not one_line:
-                        one_line = stripped[:200]
-                    break
+                one_line = _summarize_display_text(pm_out.get("output_excerpt", ""), max_chars=120)
         if not one_line:
-            one_line = f"研究经理综合判断：{label}，置信度 {f'{trace.final_confidence:.0%}' if trace.final_confidence >= 0 else '—'}"
-        # Strip internal tokens + enforce single-sentence limit
-        one_line = _enforce_thesis_limit(one_line, max_chars=50)
+            one_line = _summarize_display_text(
+                f"研究经理综合判断：{label}，置信度 {f'{trace.final_confidence:.0%}' if trace.final_confidence >= 0 else '—'}",
+                max_chars=120,
+            )
 
         # ── Core drivers: prefer structured bull claims ──
         core_drivers = []
+        _driver_keys = set()
+
+        def _append_driver(text: str) -> None:
+            cleaned = _summarize_display_text(text, max_chars=120)
+            if not cleaned:
+                return
+            # Exact-match dedup: numeric variants ("ROE 12%" vs "ROE 8%") are
+            # legitimately distinct claims and should both be shown.
+            if cleaned in _driver_keys:
+                return
+            _driver_keys.add(cleaned)
+            core_drivers.append(cleaned)
+
         if bull_out:
             bull_sd = bull_out.get("structured_data") or {}
             bull_claims_list = bull_sd.get("supporting_claims") or []
@@ -164,9 +162,7 @@ class SnapshotView:
                 # Top 3 by confidence
                 sorted_claims = sorted(bull_claims_list, key=lambda c: c.get("confidence", 0), reverse=True)
                 for c in sorted_claims[:3]:
-                    text = c.get("text", "")[:100]
-                    if text:
-                        core_drivers.append(text)
+                    _append_driver(c.get("text", ""))
             else:
                 # Fallback: extract from excerpt
                 excerpt = bull_out.get("output_excerpt", "")
@@ -175,19 +171,15 @@ class SnapshotView:
                     if stripped.startswith("**结论") or stripped.startswith("**核心"):
                         clean = stripped.strip("*#- ").strip()
                         if clean and len(clean) > 5:
-                            core_drivers.append(clean[:120])
+                            _append_driver(clean)
                     elif stripped.startswith("#### ") or stripped.startswith("### "):
                         clean = stripped.lstrip("#* ").strip()
                         if clean and len(clean) > 5:
-                            core_drivers.append(clean[:120])
+                            _append_driver(clean)
                     if len(core_drivers) >= 3:
                         break
                 if not core_drivers:
-                    for line in excerpt.split("\n"):
-                        stripped = line.strip()
-                        if stripped and not stripped.startswith("#") and not stripped.startswith("---") and len(stripped) > 20:
-                            core_drivers.append(stripped[:150])
-                            break
+                    _append_driver(excerpt)
 
         # ── Main risks: prefer structured risk flags ──
         main_risks: list = []
@@ -293,14 +285,10 @@ class SnapshotView:
                     continue
                 score = min(max(score, 0), 4)
                 emoji = PILLAR_EMOJI.get(score, "\u26aa")
-                # Use first line of excerpt as label fallback
-                excerpt = nd_out.get("output_excerpt", "")
-                first_line = ""
-                for ln in excerpt.split("\n"):
-                    ln_stripped = ln.strip()
-                    if ln_stripped and not ln_stripped.startswith("#") and len(ln_stripped) > 5:
-                        first_line = _strip_internal_tokens(ln_stripped[:40])
-                        break
+                first_line = _summarize_display_text(nd_out.get("output_excerpt", ""), max_chars=40)
+                if not first_line:
+                    bias = "偏多" if score >= 3 else ("中性" if score == 2 else "偏空")
+                    first_line = f"维度评分 {score}/4，综合判断{bias}"
                 pillar_checklist.append({
                     "pillar": pillar_label,
                     "score": score,
@@ -377,18 +365,30 @@ class SnapshotView:
             trade_plan_data = ro_sd.get("trade_plan") or {}
 
         # ── Signal History (Feature 5) ──
+        # Load per-run confidence for the sparkline. Manifest stores only the
+        # action string, so we dereference each trace — capped at 5 entries
+        # to bound load time.
         signal_history: List[Dict] = []
         try:
             past_runs = service.store.list_runs(ticker=trace.ticker, limit=10)
             count = 0
             for pr in past_runs:
-                if pr.get("run_id") == run_id:
+                pr_rid = pr.get("run_id", "")
+                if pr_rid == run_id:
                     continue
+                pr_conf = 0.0
+                if pr_rid:
+                    try:
+                        pr_trace = service.store.load(pr_rid)
+                        if pr_trace and pr_trace.final_confidence >= 0:
+                            pr_conf = float(pr_trace.final_confidence)
+                    except Exception:
+                        pass
                 signal_history.append({
                     "trade_date": pr.get("trade_date", ""),
                     "action": pr.get("research_action", ""),
-                    "confidence": 0.0,  # manifest doesn't store confidence
-                    "run_id": pr.get("run_id", ""),
+                    "confidence": pr_conf,
+                    "run_id": pr_rid,
                 })
                 count += 1
                 if count >= 5:

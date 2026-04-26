@@ -12,11 +12,17 @@ data/reports/
 data/signals/
 data/ledgers/
 data/pilot/
+data/cache/
+data/monitoring/
 agent_artifacts/results/
 
 # External AI system files
 .qwen/
 QWEN.md
+.codex
+
+# Stray pip-install stdout (e.g. "=1.10" captured as a filename)
+=*
 
 # Archives
 *.zip

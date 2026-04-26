@@ -20,6 +20,56 @@ def _esc(text: str) -> str:
             .replace("'", "&#39;"))
 
 
+_CONFIDENCE_LABELS = {
+    "high": 0.8, "med": 0.5, "medium": 0.5, "low": 0.2,
+    "高": 0.8, "中": 0.5, "低": 0.2,
+}
+
+
+def normalize_confidence_value(val) -> float:
+    """Canonical confidence normalizer → [0.0, 1.0].
+
+    Handles numeric, percent-strings, and high/med/low labels. Returns -1.0
+    when the value is negative, None, unparseable, or explicitly sentinel.
+    Numeric scales: >10 → 0-100 (/100), >1 → 1-10 (/10). Matches CLAUDE.md rule #7.
+    """
+    if val is None:
+        return -1.0
+    if isinstance(val, bool):
+        return -1.0  # avoid treating True/False as 1.0/0.0
+    if isinstance(val, (int, float)):
+        conf = float(val)
+    elif isinstance(val, str):
+        mapped = _CONFIDENCE_LABELS.get(val.strip().lower())
+        if mapped is not None:
+            return mapped
+        raw = val.strip().rstrip("%")
+        try:
+            conf = float(raw)
+        except (ValueError, TypeError):
+            return -1.0
+        if val.strip().endswith("%"):
+            conf = conf / 100.0
+    else:
+        return -1.0
+
+    if conf < 0:
+        return -1.0
+    # CLAUDE.md rule #7: values ≥10 treated as 0-100 scale (/100);
+    # values >1 but <10 treated as 1-10 scale (/10).
+    if conf >= 10:
+        conf = conf / 100.0
+    elif conf > 1.0:
+        conf = conf / 10.0
+    return max(0.0, min(1.0, conf))
+
+
+def format_confidence_pct(val) -> str:
+    """Format a confidence value as 'NN%', or empty string when missing/unparseable."""
+    conf = normalize_confidence_value(val)
+    return "" if conf < 0 else f"{conf:.0%}"
+
+
 def _html_wrap(title: str, body: str, tier_label: str, extra_css: str = "",
                extra_head: str = "", nav_html: str = "") -> str:
     """Wrap body content in a full HTML document.
@@ -861,6 +911,296 @@ def _conf_dots(conf, n: int = 5) -> str:
         f'<span class="conf-dots" data-tier="{tier}" role="img" aria-label="{_esc(aria)}">'
         f'{dots}'
         f'</span>'
+    )
+
+
+def _price_ladder_svg(
+    stop_loss: float = 0.0,
+    entries: list = None,
+    targets: list = None,
+    current: float = 0.0,
+    width: int = 280,
+    height: int = 220,
+) -> str:
+    """Vertical price ladder — stop (red band, bottom) → current → entries → targets (green bands, top).
+
+    Inputs are plain floats / price tuples. Each entry/target is either a single
+    float or a [low, high] tuple (price zone). Draws a labelled vertical axis
+    with shaded zones. Gracefully degrades to empty string when there's no data.
+
+    Colour-blind safety: zones are labelled with ✖ / ● / ▲ so redundant with hue.
+    """
+    entries = [e for e in (entries or []) if e]
+    targets = [t for t in (targets or []) if t]
+    # Collect all numeric prices to determine range
+    prices: list = []
+
+    def _pair(v):
+        if isinstance(v, (list, tuple)) and v:
+            try:
+                return float(v[0]), float(v[-1])
+            except (TypeError, ValueError):
+                return None
+        try:
+            f = float(v)
+            return f, f
+        except (TypeError, ValueError):
+            return None
+
+    e_pairs = [p for p in (_pair(e) for e in entries) if p]
+    t_pairs = [p for p in (_pair(t) for t in targets) if p]
+    if stop_loss and stop_loss > 0:
+        prices.append(float(stop_loss))
+    prices.extend(lo for lo, _ in e_pairs)
+    prices.extend(hi for _, hi in e_pairs)
+    prices.extend(lo for lo, _ in t_pairs)
+    prices.extend(hi for _, hi in t_pairs)
+    if current and current > 0:
+        prices.append(float(current))
+    prices = [p for p in prices if p and p > 0]
+    if len(prices) < 2:
+        return ""
+
+    lo, hi = min(prices), max(prices)
+    pad = max((hi - lo) * 0.08, 0.01)
+    lo, hi = lo - pad, hi + pad
+    span = hi - lo or 1.0
+
+    pad_top, pad_bot = 14, 14
+    plot_h = height - pad_top - pad_bot
+    axis_x = 62
+
+    def _y(price: float) -> float:
+        return pad_top + plot_h * (1 - (price - lo) / span)
+
+    parts: list = []
+    # Background track
+    parts.append(
+        f'<rect x="{axis_x - 1}" y="{pad_top}" width="2" height="{plot_h}" '
+        f'fill="rgba(255,255,255,0.06)" rx="1"/>'
+    )
+
+    # Gridline ticks at 4 evenly spaced prices
+    n_ticks = 4
+    for i in range(n_ticks + 1):
+        p = lo + span * i / n_ticks
+        y = _y(p)
+        parts.append(
+            f'<line x1="{axis_x - 4}" y1="{y:.1f}" x2="{axis_x + 4}" y2="{y:.1f}" '
+            f'stroke="rgba(255,255,255,0.15)" stroke-width="1"/>'
+        )
+        parts.append(
+            f'<text x="{axis_x - 8}" y="{y + 3:.1f}" text-anchor="end" '
+            f'fill="var(--muted)" font-size="10" font-family="var(--mono)">{p:.2f}</text>'
+        )
+
+    def _zone(lo_p: float, hi_p: float, color: str, opacity: str = "0.22"):
+        y_top = _y(hi_p)
+        y_bot = _y(lo_p)
+        h = max(3.0, y_bot - y_top)
+        parts.append(
+            f'<rect x="{axis_x + 3}" y="{y_top:.1f}" width="{width - axis_x - 8}" height="{h:.1f}" '
+            f'fill="{color}" fill-opacity="{opacity}" rx="3"/>'
+        )
+
+    def _label(price_y: float, text: str, icon: str, color: str):
+        parts.append(
+            f'<circle cx="{axis_x}" cy="{price_y:.1f}" r="5" fill="{color}" '
+            f'stroke="rgba(9,20,32,0.9)" stroke-width="1.5"/>'
+        )
+        parts.append(
+            f'<text x="{axis_x + 12}" y="{price_y + 3.5:.1f}" fill="{color}" '
+            f'font-size="11" font-weight="600">{_esc(icon)} {_esc(text)}</text>'
+        )
+
+    # Stop loss: red band from plot_bottom to stop price
+    if stop_loss and stop_loss > 0:
+        _zone(lo, float(stop_loss), "var(--red)")
+        _label(_y(float(stop_loss)), f"止损 {stop_loss:.2f}", "✖", "var(--red)")
+
+    # Entry zones: yellow bands
+    for i, (e_lo, e_hi) in enumerate(e_pairs[:3], start=1):
+        _zone(e_lo, e_hi, "var(--yellow)", opacity="0.28")
+        mid = (e_lo + e_hi) / 2
+        lbl = f"{e_lo:.2f}-{e_hi:.2f}" if e_hi != e_lo else f"{e_lo:.2f}"
+        _label(_y(mid), f"买点{i} {lbl}", "●", "var(--yellow)")
+
+    # Targets: green bands
+    for i, (t_lo, t_hi) in enumerate(t_pairs[:3], start=1):
+        _zone(t_lo, t_hi, "var(--green)")
+        mid = (t_lo + t_hi) / 2
+        lbl = f"{t_lo:.2f}-{t_hi:.2f}" if t_hi != t_lo else f"{t_lo:.2f}"
+        _label(_y(mid), f"目标{i} {lbl}", "▲", "var(--green)")
+
+    # Current-price marker (blue, drawn last so it's on top)
+    if current and current > 0:
+        cy = _y(float(current))
+        parts.append(
+            f'<line x1="{axis_x + 3}" y1="{cy:.1f}" x2="{width - 6}" y2="{cy:.1f}" '
+            f'stroke="var(--blue)" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.85"/>'
+        )
+        _label(cy, f"现价 {float(current):.2f}", "◆", "var(--blue)")
+
+    aria = (
+        f"price ladder: stop {stop_loss or 0:.2f}, "
+        f"{len(e_pairs)} entry zones, {len(t_pairs)} targets"
+    )
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" role="img" aria-label="{_esc(aria)}" '
+        f'class="price-ladder">'
+        + "".join(parts)
+        + '</svg>'
+    )
+
+
+def _stacked_prob_bar(segments: list, height: int = 22) -> str:
+    """Horizontal stacked probability bar. Renders labels below/inside the bar.
+
+    Args:
+        segments: list of {"label": str, "value": float (0-1 or 0-100), "color": css_color, "icon": optional}
+    Returns HTML string; values auto-normalized to sum 100.
+    """
+    if not segments:
+        return ""
+    # Parse values
+    parsed = []
+    for s in segments:
+        try:
+            v = float(s.get("value", 0) or 0)
+        except (TypeError, ValueError):
+            v = 0.0
+        if v <= 0:
+            continue
+        if v <= 1.0:
+            v *= 100.0
+        parsed.append({
+            "label": str(s.get("label", "") or ""),
+            "value": v,
+            "color": s.get("color") or "var(--blue)",
+            "icon": s.get("icon", ""),
+        })
+    if not parsed:
+        return ""
+    total = sum(p["value"] for p in parsed) or 1.0
+    if total <= 0:
+        return ""
+    # Normalize
+    for p in parsed:
+        p["pct"] = round(p["value"] * 100 / total)
+
+    segs_html = "".join(
+        f'<div class="spb-seg" style="width:{p["pct"]}%;background:{p["color"]}" '
+        f'title="{_esc(p["label"])} {p["pct"]}%">'
+        f'<span class="spb-seg-label">{_esc(p["icon"])} {p["pct"]}%</span>'
+        f'</div>'
+        for p in parsed
+    )
+    legend_html = "".join(
+        f'<span class="spb-legend-item">'
+        f'<span class="spb-legend-swatch" style="background:{p["color"]}"></span>'
+        f'<span class="spb-legend-label">{_esc(p["label"])}</span>'
+        f'<span class="spb-legend-value mono">{p["pct"]}%</span>'
+        f'</span>'
+        for p in parsed
+    )
+    aria = "probability breakdown: " + ", ".join(f'{p["label"]} {p["pct"]}%' for p in parsed)
+    return (
+        f'<div class="stacked-prob" role="img" aria-label="{_esc(aria)}">'
+        f'<div class="spb-track" style="height:{height}px">{segs_html}</div>'
+        f'<div class="spb-legend">{legend_html}</div>'
+        f'</div>'
+    )
+
+
+def _pillar_bar(score, max_score: int = 4, label: str = "") -> str:
+    """4-segment progress bar for pillar scores.
+
+    Like _score_pill but drawn as horizontal segments with gap — reads faster
+    at a glance than a row of dots when the user is scanning multiple pillars.
+    """
+    try:
+        n = int(float(score))
+    except (TypeError, ValueError):
+        n = 0
+    n = max(0, min(n, max_score))
+    tier = _conf_tier(n / max_score if max_score else 0)
+    segs = "".join(
+        f'<span class="pb-seg{" on" if i < n else ""}" aria-hidden="true"></span>'
+        for i in range(max_score)
+    )
+    aria = f"{label or 'pillar'} score {n} of {max_score}"
+    return (
+        f'<span class="pillar-bar" data-tier="{tier}" role="img" aria-label="{_esc(aria)}">'
+        f'{segs}'
+        f'<span class="pb-text mono">{n}/{max_score}</span>'
+        f'</span>'
+    )
+
+
+def _history_sparkline(
+    points: list,
+    width: int = 220,
+    height: int = 44,
+) -> str:
+    """Confidence/price sparkline with color-coded action dots.
+
+    Args:
+        points: list of dicts with {"value": 0-1 float, "action": "BUY"/"SELL"/"HOLD"/"VETO",
+                                     "date": "YYYY-MM-DD" (optional)}
+    Returns SVG string. Empty when fewer than 2 points.
+    """
+    if not points or len(points) < 2:
+        return ""
+    vals: list = []
+    for p in points:
+        try:
+            v = float(p.get("value", 0) or 0)
+        except (TypeError, ValueError):
+            v = 0.0
+        vals.append(max(0.0, min(1.0, v)))
+
+    pad = 6
+    plot_w = width - pad * 2
+    plot_h = height - pad * 2
+    n = len(vals)
+    step = plot_w / (n - 1) if n > 1 else plot_w
+
+    def _coord(i: int, v: float):
+        return pad + i * step, pad + plot_h * (1 - v)
+
+    pts = [_coord(i, v) for i, v in enumerate(vals)]
+    path_d = "M " + " L ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+
+    # Fill under line (area sparkline)
+    area_d = path_d + f" L {pts[-1][0]:.1f},{pad + plot_h:.1f} L {pts[0][0]:.1f},{pad + plot_h:.1f} Z"
+
+    _ACTION_COLORS = {
+        "BUY": "var(--green)",
+        "SELL": "var(--red)",
+        "VETO": "var(--red)",
+        "HOLD": "var(--yellow)",
+        "WAIT": "var(--yellow)",
+    }
+    dots_html = ""
+    for i, (p, (x, y)) in enumerate(zip(points, pts)):
+        action = str(p.get("action", "") or "").upper()
+        color = _ACTION_COLORS.get(action, "var(--blue)")
+        title = f'{p.get("date", "")} {action} {int(vals[i] * 100)}%'
+        dots_html += (
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{color}" '
+            f'stroke="rgba(9,20,32,0.9)" stroke-width="1"><title>{_esc(title)}</title></circle>'
+        )
+
+    aria = f"signal history sparkline, {n} points, latest {int(vals[-1] * 100)}%"
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" role="img" aria-label="{_esc(aria)}" class="hist-spark">'
+        f'<path d="{area_d}" fill="var(--blue)" fill-opacity="0.12"/>'
+        f'<path d="{path_d}" stroke="var(--blue)" stroke-width="1.5" fill="none" '
+        f'stroke-linejoin="round" stroke-linecap="round"/>'
+        f'{dots_html}'
+        f'</svg>'
     )
 
 

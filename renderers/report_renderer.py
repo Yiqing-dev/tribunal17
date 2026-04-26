@@ -202,6 +202,38 @@ def _pillar_dots_md(score, max_score: int = 4) -> str:
     return "●" * s + "○" * (max_score - s)
 
 
+def _trade_plan_target_price(tp: dict) -> float:
+    """Extract the primary numeric take-profit target from a trade plan."""
+    if not isinstance(tp, dict):
+        return 0.0
+
+    targets = tp.get("take_profit", [])
+    if isinstance(targets, (int, float)):
+        return float(targets)
+    if not isinstance(targets, list) or not targets:
+        return 0.0
+
+    first = targets[0]
+    if isinstance(first, (int, float)):
+        return float(first)
+    if not isinstance(first, dict):
+        return 0.0
+
+    zone = first.get("price_zone", [])
+    if isinstance(zone, list) and zone:
+        try:
+            if len(zone) >= 2:
+                return (float(zone[0]) + float(zone[1])) / 2.0
+            return float(zone[0])
+        except (ValueError, TypeError):
+            return 0.0
+
+    price = first.get("price")
+    if isinstance(price, (int, float)):
+        return float(price)
+    return 0.0
+
+
 def generate_brief_report(
     run_ids: list,
     storage_dir: str = "data/replays",
@@ -269,18 +301,42 @@ def generate_brief_report(
                         e["stop_loss"] = sl.get("price", 0) or 0
                     elif isinstance(sl, (int, float)):
                         e["stop_loss"] = sl
+                    e["take_profit"] = _trade_plan_target_price(tp)
                 tc = sd.get("tradecard", {})
                 if tc:
                     if not e["stop_loss"]:
                         e["stop_loss"] = tc.get("stop_loss", 0) or 0
-                    e["take_profit"] = tc.get("take_profit", 0) or 0
+                    if not e["take_profit"]:
+                        e["take_profit"] = tc.get("take_profit", 0) or 0
             if nt.node_name == "Catalyst Agent":
                 excerpt = nt.output_excerpt or ""
-                # Extract first catalyst mention (first 80 chars of excerpt)
+                # Catalyst reports open with frontmatter (#-headers, --- dividers,
+                # and "**key**: value" rows like "**分析日期**: 2026-04-24"). We want
+                # the first sentence of real prose. Strategy: skip headers / dividers
+                # / metadata / bullets, and require at least one CJK punctuation or
+                # adequate length so we don't pick up a list label.
+                e["catalyst"] = ""
                 for line in excerpt.split("\n"):
                     line = line.strip()
-                    if len(line) > 10 and not line.startswith("#"):
-                        e["catalyst"] = line[:60]
+                    if not line:
+                        continue
+                    if line.startswith("#") or line.startswith("---"):
+                        continue
+                    # Skip "**key**: value" metadata rows.
+                    if _re.match(r"^\*\*[^*]+\*\*\s*[:：]", line):
+                        continue
+                    # Skip bullet / numbered list items — they're usually short labels.
+                    if _re.match(r"^[-*+\d]\s", line) or _re.match(r"^\d+[.、]", line):
+                        continue
+                    # Skip Markdown table rows / dividers.
+                    if line.startswith("|") or _re.match(r"^\|?\s*[:\-]+\s*\|", line):
+                        continue
+                    # Strip inline markdown emphasis + evidence refs.
+                    clean = _re.sub(r"\[E\d+(?:,\s*E\d+)*\]", "", line)
+                    clean = _re.sub(r"\*\*([^*]+)\*\*", r"\1", clean).strip()
+                    # Require a prose-like length to skip stragglers.
+                    if len(clean) >= 20:
+                        e["catalyst"] = clean[:60]
                         break
         entries.append(e)
 

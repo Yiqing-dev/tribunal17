@@ -1388,6 +1388,26 @@ def generate_backtest_report(
         + '</div></div></div></div>'
     )
 
+    # ── Empty-state: no evaluated signals ──
+    # If all signals are still pending (e.g., backtest run with fetch_prices=False
+    # or no price data available), render a prominent banner explaining why
+    # every statistic below shows 0.0% — prevents the misleading zero-table.
+    if s.total_signals > 0 and s.completed == 0:
+        html_parts.append(
+            '<div style="background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.35);'
+            'border-radius:12px;padding:16px 20px;margin:16px 0;color:#fbbf24;">'
+            '<div style="font-size:1.05rem;font-weight:700;margin-bottom:.5rem;">'
+            '&#9888; 未评估任何信号'
+            '</div>'
+            '<div style="color:var(--fg);font-size:.9rem;line-height:1.6;">'
+            f'Ledger 中共有 <strong>{s.total_signals}</strong> 个信号，但尚未评估任何一个。'
+            '最常见原因：回测运行时 <code>fetch_prices=False</code>，没有拉取前向价格数据。'
+            '<br>解决：重新运行 <code>run_backtest(..., fetch_prices=True)</code>，'
+            '或等待评估窗口结束后再次运行。'
+            '下方表格中全部 0.0% 为占位，不代表实际命中率。'
+            '</div></div>'
+        )
+
     # ── Donut gauges ──
     if s.completed:
         dir_color = "var(--green)" if s.direction_accuracy_pct >= 50 else "var(--red)"
@@ -1468,11 +1488,17 @@ def generate_backtest_report(
             '<th class="sortable">平均收益</th></tr></thead><tbody>'
         )
         for tk, ts in sorted(report.per_ticker_summaries.items()):
+            # Pick the most recent ticker_name (latest signal wins) — ledger
+            # history may carry stale names from earlier runs where akshare
+            # returned a different display name for the same ticker.
             name = ""
+            latest_ts = ""
             for r in report.results:
                 if r.ticker == tk and r.ticker_name:
-                    name = r.ticker_name
-                    break
+                    r_ts = getattr(r, "trade_date", "") or ""
+                    if r_ts >= latest_ts:
+                        name = r.ticker_name
+                        latest_ts = r_ts
             display = f"{_esc(name or tk)}"
             html_parts.append(
                 f'<tr><td>{display}</td>'

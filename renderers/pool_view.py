@@ -69,13 +69,13 @@ class StockDivergenceRow:
 
     @property
     def bull_score(self) -> float:
-        """Aggregate confidence of top bull claims."""
-        return sum(float(c.get("confidence", 0) or 0) for c in self.bull_claims)
+        """Aggregate confidence of top bull claims. Skips -1.0 sentinel (missing)."""
+        return sum(max(float(c.get("confidence", 0) or 0), 0.0) for c in self.bull_claims)
 
     @property
     def bear_score(self) -> float:
-        """Aggregate confidence of top bear claims."""
-        return sum(float(c.get("confidence", 0) or 0) for c in self.bear_claims)
+        """Aggregate confidence of top bear claims. Skips -1.0 sentinel (missing)."""
+        return sum(max(float(c.get("confidence", 0) or 0), 0.0) for c in self.bear_claims)
 
     @property
     def bull_ratio(self) -> float:
@@ -247,11 +247,13 @@ class DivergencePoolView:
 
     @property
     def featured_long(self) -> Optional[StockDivergenceRow]:
-        """Highest-conviction BUY idea."""
+        """Highest-conviction BUY idea. Returns None when no BUY exists —
+        do not fall back to HOLD here, as that would collide with
+        featured_watch and render the same stock twice in the hero spotlights."""
         for row in self.rows:
             if row.action.upper() == "BUY":
                 return row
-        return self.rows[0] if self.rows else None
+        return None
 
     @property
     def featured_short(self) -> Optional[StockDivergenceRow]:
@@ -263,9 +265,18 @@ class DivergencePoolView:
 
     @property
     def featured_watch(self) -> Optional[StockDivergenceRow]:
-        """Most representative HOLD idea."""
+        """Most representative HOLD idea — skip any row already claimed by
+        featured_long / featured_short so the three hero spotlights never
+        show the same ticker twice."""
+        claimed = {
+            id(r) for r in (self.featured_long, self.featured_short) if r is not None
+        }
         for row in self.rows:
-            if row.action.upper() == "HOLD":
+            if row.action.upper() == "HOLD" and id(row) not in claimed:
+                return row
+        # Fall back to any row not already claimed.
+        for row in self.rows:
+            if id(row) not in claimed:
                 return row
         return None
 

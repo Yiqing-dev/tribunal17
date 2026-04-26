@@ -24,7 +24,8 @@ from .replay_store import ReplayStore
 from .shared import (
     TAG_CATALYST_OUTPUT, TAG_RISK_OUTPUT, TAG_RISK_DEBATER_OUTPUT,
     TAG_MACRO_OUTPUT, TAG_BREADTH_OUTPUT, TAG_SECTOR_OUTPUT,
-    TAG_SYNTHESIS_OUTPUT, TAG_TRADECARD_JSON, TAG_TRADE_PLAN_JSON,
+    TAG_SYNTHESIS_OUTPUT, TAG_SCENARIO_OUTPUT,
+    TAG_TRADECARD_JSON, TAG_TRADE_PLAN_JSON,
     TAG_ORDER_PROPOSAL_JSON,
 )
 
@@ -38,12 +39,28 @@ _ENG_NEG = re.compile(r'\b(?:NOT|NO|DONT|DON\'T|AVOID|NEVER|AGAINST)\b')
 # Window widened from 5→12 to catch multi-char modifiers like "坚决不建议".
 _NEG = re.compile(r'(?:不要|不宜|不建议|切勿|勿|避免|别|禁止|不应|不可|不得|不适合)')
 
+# Double-negation markers: when one of these appears before a _NEG match,
+# the overall sentence is affirmative — e.g., "并非不建议买入" = "certainly
+# recommend buying". Scanned in a wider 24-char window preceding the keyword.
+_DOUBLE_NEG = re.compile(r'(?:并非|绝非|并不是|并未|并无|并没)')
+
 
 def _has_positive(text: str, kw: str) -> bool:
-    """Return True if *kw* appears in *text* without a preceding Chinese negation."""
+    """Return True if *kw* appears in *text* without a preceding Chinese negation.
+
+    A double-negation marker (并非/绝非/…) appearing before the negation
+    inverts the sign back to affirmative.
+    """
     for m in re.finditer(re.escape(kw), text):
         window = text[max(0, m.start() - 12):m.start()]
-        if _NEG.search(window):
+        neg_match = _NEG.search(window)
+        if neg_match:
+            # Check a wider window for a double-negation marker preceding
+            # the negation match (e.g., "并非不建议买入").
+            wider = text[max(0, m.start() - 24):m.start()]
+            neg_start_in_wider = wider.find(neg_match.group(0))
+            if neg_start_in_wider > 0 and _DOUBLE_NEG.search(wider[:neg_start_in_wider]):
+                return True
             continue
         return True
     return False
@@ -152,17 +169,63 @@ def parse_catalyst_json(text: str) -> List[Dict]:
                 break
     if arr_end <= arr_start:
         return []
+    raw = text[arr_start:arr_end]
+    # Fix common JSON issues: trailing commas, Python-style literals.
+    raw_fixed = re.sub(r',\s*]', ']', raw)
+    raw_fixed = re.sub(r',\s*}', '}', raw_fixed)
+    raw_fixed = re.sub(r'\bTrue\b', 'true', raw_fixed)
+    raw_fixed = re.sub(r'\bFalse\b', 'false', raw_fixed)
+    raw_fixed = re.sub(r'\bNone\b', 'null', raw_fixed)
     try:
-        raw = text[arr_start:arr_end]
-        # Fix common JSON issues: trailing commas
-        raw = re.sub(r',\s*]', ']', raw)
-        raw = re.sub(r',\s*}', '}', raw)
-        catalysts = json.loads(raw)
+        catalysts = json.loads(raw_fixed)
         if isinstance(catalysts, list):
             return catalysts
     except (json.JSONDecodeError, ValueError) as e:
-        logger.warning(f"Failed to parse CATALYST_OUTPUT JSON: {e}")
-    return []
+        logger.warning(f"Failed to parse CATALYST_OUTPUT JSON: {e}; attempting per-object rescue")
+    # Rescue pass: walk top-level brace-balanced {...} objects inside the array
+    # and parse each individually. A single malformed item won't nuke the rest.
+    items: List[Dict] = []
+    depth = 0
+    obj_start = -1
+    in_str = False
+    escape = False
+    for i in range(arr_start + 1, arr_end - 1):
+        c = raw[i - arr_start] if (i - arr_start) < len(raw) else ""
+        # Use text[i] not raw[offset] to keep the loop simple.
+        c = text[i]
+        if escape:
+            escape = False
+            continue
+        if c == '\\' and in_str:
+            escape = True
+            continue
+        if c == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if c == '{':
+            if depth == 0:
+                obj_start = i
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0 and obj_start >= 0:
+                chunk = text[obj_start:i + 1]
+                chunk = re.sub(r',\s*}', '}', chunk)
+                chunk = re.sub(r'\bTrue\b', 'true', chunk)
+                chunk = re.sub(r'\bFalse\b', 'false', chunk)
+                chunk = re.sub(r'\bNone\b', 'null', chunk)
+                try:
+                    parsed = json.loads(chunk)
+                    if isinstance(parsed, dict):
+                        items.append(parsed)
+                except (json.JSONDecodeError, ValueError):
+                    pass  # skip malformed item, keep others
+                obj_start = -1
+    if items:
+        logger.warning(f"CATALYST_OUTPUT per-object rescue: recovered {len(items)} items")
+    return items
 
 
 def _parse_kv_block(block: str, parse_arrays: bool = False) -> Dict[str, Any]:
@@ -267,7 +330,7 @@ def _try_json_parse(block: str) -> Optional[Dict[str, Any]]:
 
 def parse_scenario_output(text: str) -> Dict[str, Any]:
     """Extract SCENARIO_OUTPUT: key=value or JSON block."""
-    block = _extract_tagged_block("SCENARIO_OUTPUT", text)
+    block = _extract_tagged_block(TAG_SCENARIO_OUTPUT, text)
     if not block:
         return {}
     j = _try_json_parse(block)
@@ -367,13 +430,16 @@ def _iter_json_code_blocks(text: str):
         # group(1)+group(2) for labeled match, group(3) for bare match
         label = (m.group(1) or "").strip()
         body = (m.group(2) or m.group(3) or "").strip()
-        # Handle label inside code block (Format D)
-        if not label:
-            for tag in _JSON_TAGS:
-                if body.startswith(tag):
+        # Some LLMs emit the tag label both *before* the fence AND on the first
+        # line *inside* the fence (belt-and-suspenders). Strip a leading
+        # `TAG_NAME:` / `TAG_NAME` line from the body unconditionally — covers
+        # Format D (bare fence w/ label inside) and the duplicate-label case.
+        for tag in _JSON_TAGS:
+            if body.startswith(tag):
+                if not label:
                     label = tag
-                    body = body[len(tag):].lstrip(":").strip()
-                    break
+                body = body[len(tag):].lstrip(":").strip()
+                break
         yield label, body
 
 
@@ -499,7 +565,9 @@ def parse_claims(text: str, direction: str = "bullish") -> List[Dict]:
                 claim["confidence"] = claim["confidence"] / 10.0
             claim["confidence"] = max(0.0, min(1.0, claim["confidence"]))
         else:
-            claim["confidence"] = 0.5
+            # Sentinel: agent did not provide confidence. Matches _confidence_to_float.
+            # Downstream aggregators must filter `>= 0` to avoid polluting averages.
+            claim["confidence"] = -1.0
 
         # Extract invalidation
         inv_m = re.search(r'INVALIDATION:\s*(.+)', part)
@@ -772,7 +840,9 @@ def format_market_context_block(ctx: Dict[str, Any]) -> str:
     return block
 
 
-def _extract_evidence_items(text: str, max_items: int = 8) -> List[str]:
+def _extract_evidence_items(
+    text: str, max_items: int = 8, report_name: str = "report",
+) -> List[str]:
     """Extract up to max_items factual evidence items from an analyst report.
 
     Extraction priority (highest first):
@@ -839,6 +909,11 @@ def _extract_evidence_items(text: str, max_items: int = 8) -> List[str]:
         if key not in seen:
             seen.add(key)
             unique.append(item)
+    if len(unique) > max_items:
+        logger.warning(
+            "evidence extraction: dropped %d items from %s (cap=%d) — raise max_items if dense analyst output is expected",
+            len(unique) - max_items, report_name, max_items,
+        )
     return unique[:max_items]
 
 
@@ -864,7 +939,7 @@ def build_evidence_block(
     for source_label, text in sources:
         if not text:
             continue
-        for item_text in _extract_evidence_items(text):
+        for item_text in _extract_evidence_items(text, report_name=source_label):
             items.append(f"[E{counter}] ({source_label}) {item_text}")
             counter += 1
     if not items:
@@ -1193,7 +1268,7 @@ def _parse_scenario(agent_key: str, text: str, nt: NodeTrace) -> None:
     else:
         nt.parse_status = "fallback_used"
         nt.parse_confidence = 0.5
-        nt.parse_warnings = ["SCENARIO_OUTPUT block not found"]
+        nt.parse_warnings = [f"{TAG_SCENARIO_OUTPUT} block not found"]
         nt.status = NodeStatus.WARN
 
 
@@ -1286,10 +1361,14 @@ def _parse_risk_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
     risk = parse_risk_output(text)
     if risk:
         nt.risk_score = _safe_int(risk.get("risk_score"))
-        nt.risk_cleared = risk.get("risk_cleared", False)
-        if "risk_cleared" not in risk:
+        # CLAUDE.md rule #4: Risk Judge does NOT default to VETO/HOLD when
+        # risk_cleared is omitted — missing flag is neutral and the PM's
+        # direction is preserved. Only an explicit False triggers the gate.
+        risk_cleared_explicit = "risk_cleared" in risk
+        nt.risk_cleared = bool(risk.get("risk_cleared", True))
+        if not risk_cleared_explicit:
             warnings = list(nt.parse_warnings or [])
-            warnings.append("risk_cleared not explicitly provided, defaulted to False")
+            warnings.append("risk_cleared not provided; treating as neutral (PM direction preserved)")
             nt.parse_warnings = warnings
         nt.max_position_pct = _safe_float(risk.get("max_position_pct", -1.0))
 
@@ -1305,10 +1384,11 @@ def _parse_risk_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
         # compare against this value numerically.
         raw_conf = risk.get("confidence")
         nt.confidence = _safe_float(raw_conf) if raw_conf is not None else -1.0
-        nt.vetoed = action == "VETO" or not nt.risk_cleared
+        # Veto only on an explicit agent VETO or an explicit risk_cleared=False.
+        nt.vetoed = action == "VETO" or (risk_cleared_explicit and not nt.risk_cleared)
         if action == "VETO":
             nt.veto_source = "agent_veto"
-        elif not nt.risk_cleared:
+        elif risk_cleared_explicit and not nt.risk_cleared:
             nt.veto_source = "risk_gate"
 
         # Risk flags

@@ -727,7 +727,9 @@ class TestConvenience:
         ]
         storage = _store_with_traces(traces)
 
-        snaps, drifts = track_ticker("601985.SS", storage_dir=storage)
+        # Explicit date_from avoids the default 30-day lookback, which drifts
+        # past the fixture dates as wall-clock time advances.
+        snaps, drifts = track_ticker("601985.SS", storage_dir=storage, date_from="2026-03-01")
         assert len(snaps) == 6
         assert len(drifts) == 5
 
@@ -738,7 +740,9 @@ class TestConvenience:
         ]
         storage = _store_with_traces(traces)
 
-        snaps, drifts = track_ticker("601985.SS", storage_dir=storage, limit=3)
+        snaps, drifts = track_ticker(
+            "601985.SS", storage_dir=storage, limit=3, date_from="2026-03-01"
+        )
         assert len(snaps) == 3
         assert len(drifts) == 2
 
@@ -753,7 +757,7 @@ class TestConvenience:
         )
         storage = _store_with_traces([t1, t2])
 
-        d = latest_drift("601985.SS", storage_dir=storage)
+        d = latest_drift("601985.SS", storage_dir=storage, date_from="2026-03-01")
         assert d is not None
         assert d.action_curr == "BUY"
         assert d.action_prev == "HOLD"
@@ -953,3 +957,37 @@ class TestStaleDetection:
         from subagent_pipeline.opinion_tracker import WatchlistReport
         r = WatchlistReport()
         assert r.stale_signals == []
+
+    # CLAUDE.md rule #6: stale threshold is 0.02 on 0.0-1.0 confidence scale
+    # (NOT 2.0 — confidence is not percent here). Tested via build_watchlist_report.
+    def test_rule6_threshold_boundary_just_below(self):
+        """confidence_delta = 0.019 should still count toward the stale streak."""
+        from subagent_pipeline.opinion_tracker import DailySnapshot, compute_drift
+        s1 = DailySnapshot(
+            ticker="601985.SS", trade_date="2026-03-10",
+            action="BUY", confidence=0.700,
+            market_score=2, fundamental_score=1, news_score=1, sentiment_score=1,
+        )
+        s2 = DailySnapshot(
+            ticker="601985.SS", trade_date="2026-03-11",
+            action="BUY", confidence=0.719,  # delta = 0.019 < 0.02
+            market_score=2, fundamental_score=1, news_score=1, sentiment_score=1,
+        )
+        d = compute_drift(s1, s2)
+        assert abs(d.confidence_delta) < 0.02  # qualifies as stale
+
+    def test_rule6_threshold_boundary_just_above(self):
+        """confidence_delta = 0.021 should NOT count toward the stale streak."""
+        from subagent_pipeline.opinion_tracker import DailySnapshot, compute_drift
+        s1 = DailySnapshot(
+            ticker="601985.SS", trade_date="2026-03-10",
+            action="BUY", confidence=0.700,
+            market_score=2, fundamental_score=1, news_score=1, sentiment_score=1,
+        )
+        s2 = DailySnapshot(
+            ticker="601985.SS", trade_date="2026-03-11",
+            action="BUY", confidence=0.721,  # delta = 0.021 > 0.02
+            market_score=2, fundamental_score=1, news_score=1, sentiment_score=1,
+        )
+        d = compute_drift(s1, s2)
+        assert abs(d.confidence_delta) >= 0.02  # does NOT qualify as stale

@@ -490,6 +490,14 @@ class TestRecapRenderer:
         html = _render_index_chart_panel(data)
         assert "暂无指数数据" in html
 
+    def test_index_chart_panel_omits_section_when_points_missing(self):
+        from dashboard.recap_renderer import _render_index_chart_panel
+        data = _make_recap_data()
+        for idx in data["index_summary"]["indices"]:
+            idx["points"] = []
+        html = _render_index_chart_panel(data)
+        assert html == ""
+
     def test_index_svg_rendering(self):
         from dashboard.recap_renderer import _render_index_svg
         points = _make_index_points(10)
@@ -552,6 +560,21 @@ class TestRecapRenderer:
                                 "limit_up_count": 0, "limit_down_count": 0}}
         html = _render_limit_board(data)
         assert "暂无涨停" in html
+
+    def test_limit_board_uses_uncollected_copy_when_counts_exist(self):
+        from dashboard.recap_renderer import _render_limit_board
+        data = {
+            "limit_board": {
+                "limit_up_stocks": [],
+                "limit_down_stocks": [],
+                "limit_up_count": 73,
+                "limit_down_count": 20,
+            }
+        }
+        html = _render_limit_board(data)
+        assert "明细未采集" in html
+        assert "暂无涨停" not in html
+        assert "暂无跌停" not in html
 
     def test_consecutive_board_flow(self):
         from dashboard.recap_renderer import _render_consecutive_board_flow
@@ -618,6 +641,15 @@ class TestRecapRenderer:
         assert "板块热力图" in html
         assert "涨跌停板" in html
         assert "连板晋级" in html
+
+    def test_full_page_omits_empty_index_chart_section(self):
+        from dashboard.recap_renderer import render_daily_recap
+        data = _make_recap_data()
+        for idx in data["index_summary"]["indices"]:
+            idx["points"] = []
+        html = render_daily_recap(data)
+        assert "指数走势" not in html
+        assert "KLINE_DATA" not in html
         assert "强势延续观察" in html
         assert "recap-footer" in html
 
@@ -725,6 +757,27 @@ class TestStaticExport:
             sub = os.path.join(td, "nested", "output")
             path = generate_daily_recap_report(data, output_dir=sub)
             assert Path(path).exists()
+
+    def test_generate_report_hides_missing_market_link_and_zero_elapsed(self):
+        from dashboard.recap_renderer import generate_daily_recap_report
+        data = _make_recap_data()
+        data["collection_seconds"] = 0
+        with tempfile.TemporaryDirectory() as td:
+            path = generate_daily_recap_report(data, output_dir=td)
+            content = Path(path).read_text(encoding="utf-8")
+            assert "市场指挥台" not in content
+            assert "采集耗时 —" in content
+            assert "0.0s" not in content
+
+    def test_generate_report_links_existing_market_report(self):
+        from dashboard.recap_renderer import generate_daily_recap_report
+        data = _make_recap_data()
+        with tempfile.TemporaryDirectory() as td:
+            market_path = Path(td) / "market-20260313.html"
+            market_path.write_text("<!DOCTYPE html><title>market</title>", encoding="utf-8")
+            path = generate_daily_recap_report(data, output_dir=td)
+            content = Path(path).read_text(encoding="utf-8")
+            assert 'href="market-20260313.html"' in content
 
 
 # ────────────────────────────────────────────────────────────────────

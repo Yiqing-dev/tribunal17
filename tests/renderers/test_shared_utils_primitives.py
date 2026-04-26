@@ -244,3 +244,150 @@ class TestConfTier:
     def test_na(self):
         assert _conf_tier(None) == "na"
         assert _conf_tier(float('nan')) == "na"
+
+
+# ── V5: new visualization primitives ─────────────────────────────────────
+
+
+class TestPriceLadder:
+    def test_normal(self):
+        from subagent_pipeline.renderers.shared_utils import _price_ladder_svg
+        out = _price_ladder_svg(
+            stop_loss=8.10,
+            entries=[[9.00, 9.30], [8.60, 8.80]],
+            targets=[[10.00, 10.50], [11.20, 11.80]],
+            current=9.16,
+        )
+        assert out
+        assert '<svg' in out
+        assert 'role="img"' in out
+        assert 'aria-label' in out
+        assert '止损' in out and '现价' in out and '目标' in out
+
+    def test_missing_data_returns_empty(self):
+        from subagent_pipeline.renderers.shared_utils import _price_ladder_svg
+        assert _price_ladder_svg() == ""
+        # Single price point can't form a range
+        assert _price_ladder_svg(current=9.16) == ""
+
+    def test_scalar_entry(self):
+        from subagent_pipeline.renderers.shared_utils import _price_ladder_svg
+        out = _price_ladder_svg(
+            stop_loss=8.0, entries=[9.0], targets=[10.0], current=9.2,
+        )
+        assert out and '<svg' in out
+
+    def test_none_and_negative_inputs(self):
+        from subagent_pipeline.renderers.shared_utils import _price_ladder_svg
+        out = _price_ladder_svg(
+            stop_loss=0, entries=[None, []], targets=["garbage"], current=None,
+        )
+        # All inputs invalid → empty string (not a crash)
+        assert out == ""
+
+
+class TestStackedProbBar:
+    def test_normal_fractions(self):
+        from subagent_pipeline.renderers.shared_utils import _stacked_prob_bar
+        out = _stacked_prob_bar([
+            {"label": "乐观", "value": 0.35, "color": "var(--green)"},
+            {"label": "基准", "value": 0.45, "color": "var(--blue)"},
+            {"label": "悲观", "value": 0.20, "color": "var(--red)"},
+        ])
+        assert out
+        assert 'stacked-prob' in out
+        assert 'aria-label' in out
+        assert '乐观' in out and '基准' in out and '悲观' in out
+
+    def test_percent_inputs(self):
+        from subagent_pipeline.renderers.shared_utils import _stacked_prob_bar
+        out = _stacked_prob_bar([
+            {"label": "Up", "value": 55, "color": "var(--green)"},
+            {"label": "Dn", "value": 45, "color": "var(--red)"},
+        ])
+        assert out and 'Up' in out and 'Dn' in out
+
+    def test_empty_input(self):
+        from subagent_pipeline.renderers.shared_utils import _stacked_prob_bar
+        assert _stacked_prob_bar([]) == ""
+
+    def test_zero_values_filtered(self):
+        from subagent_pipeline.renderers.shared_utils import _stacked_prob_bar
+        out = _stacked_prob_bar([
+            {"label": "A", "value": 0},
+            {"label": "B", "value": 0.0},
+        ])
+        assert out == ""
+
+    def test_unparseable_value(self):
+        from subagent_pipeline.renderers.shared_utils import _stacked_prob_bar
+        out = _stacked_prob_bar([
+            {"label": "A", "value": "garbage", "color": "var(--green)"},
+            {"label": "B", "value": 0.5, "color": "var(--red)"},
+        ])
+        # Garbage row dropped; B alone still renders
+        assert out and 'B' in out
+        assert 'A' not in out.split('stacked-prob')[1]
+
+
+class TestPillarBar:
+    def test_normal(self):
+        from subagent_pipeline.renderers.shared_utils import _pillar_bar
+        out = _pillar_bar(3, 4, "技术面")
+        assert out
+        assert 'pillar-bar' in out
+        assert 'data-tier="hi"' in out
+        # 3 filled, 1 empty
+        assert out.count('pb-seg on') == 3
+
+    def test_low(self):
+        from subagent_pipeline.renderers.shared_utils import _pillar_bar
+        out = _pillar_bar(1, 4)
+        assert 'data-tier="lo"' in out
+
+    def test_clamp(self):
+        from subagent_pipeline.renderers.shared_utils import _pillar_bar
+        out = _pillar_bar(99, 4)
+        # clamped to max
+        assert out.count('pb-seg on') == 4
+
+    def test_none_and_garbage(self):
+        from subagent_pipeline.renderers.shared_utils import _pillar_bar
+        for bad in (None, "x", float('nan')):
+            out = _pillar_bar(bad, 4)
+            assert out
+            assert 'aria-label' in out
+
+
+class TestHistorySparkline:
+    def test_normal(self):
+        from subagent_pipeline.renderers.shared_utils import _history_sparkline
+        pts = [
+            {"date": "2026-03-10", "action": "HOLD", "value": 0.6},
+            {"date": "2026-03-11", "action": "BUY",  "value": 0.75},
+            {"date": "2026-03-12", "action": "BUY",  "value": 0.80},
+        ]
+        out = _history_sparkline(pts)
+        assert out
+        assert '<svg' in out
+        assert 'hist-spark' in out
+        # Color-coded dots per action
+        assert 'var(--green)' in out  # BUY
+        assert 'var(--yellow)' in out  # HOLD
+
+    def test_single_point_returns_empty(self):
+        from subagent_pipeline.renderers.shared_utils import _history_sparkline
+        assert _history_sparkline([{"value": 0.5, "action": "BUY"}]) == ""
+
+    def test_empty(self):
+        from subagent_pipeline.renderers.shared_utils import _history_sparkline
+        assert _history_sparkline([]) == ""
+
+    def test_clamps_values_out_of_range(self):
+        from subagent_pipeline.renderers.shared_utils import _history_sparkline
+        pts = [
+            {"value": -0.5, "action": "HOLD"},
+            {"value": 1.5, "action": "BUY"},
+        ]
+        out = _history_sparkline(pts)
+        assert out and '<svg' in out

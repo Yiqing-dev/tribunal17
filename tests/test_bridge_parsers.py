@@ -906,3 +906,152 @@ class TestNegationWindow:
         from subagent_pipeline.bridge import _has_positive
         # "谨慎买入" = buy cautiously, NOT negation
         assert _has_positive("谨慎买入", "买入") is True
+
+    # CLAUDE.md rule #8: double negation (并非/绝非/并不是) flips the sign
+    # back to affirmative.
+    def test_double_negation_bingfei(self):
+        from subagent_pipeline.bridge import _has_positive
+        assert _has_positive("并非不建议买入", "买入") is True
+
+    def test_double_negation_juefei(self):
+        from subagent_pipeline.bridge import _has_positive
+        assert _has_positive("我们绝非不看好买入", "买入") is True
+
+    def test_double_negation_mixed_context(self):
+        from subagent_pipeline.bridge import _has_positive
+        assert _has_positive("谨慎但并非不建议买入", "买入") is True
+
+    def test_double_negation_bingwei(self):
+        from subagent_pipeline.bridge import _has_positive
+        # "并未禁止买入" — 并未 + 禁止 → affirmative
+        assert _has_positive("并未禁止买入", "买入") is True
+
+
+class TestConfidenceNormalization:
+    """CLAUDE.md rule #7: confidence normalization boundaries.
+
+    Values ≥ 10 → 0-100 scale (/100); values > 1.0 but < 10 → 1-10 scale (/10);
+    negatives and unparseable → -1.0 sentinel; clamped to [0, 1].
+    """
+
+    def test_zero_to_one_preserved(self):
+        from subagent_pipeline.renderers.shared_utils import normalize_confidence_value
+        assert normalize_confidence_value(0.0) == 0.0
+        assert normalize_confidence_value(0.5) == 0.5
+        assert normalize_confidence_value(0.99) == 0.99
+        assert normalize_confidence_value(1.0) == 1.0
+
+    def test_one_to_ten_scale(self):
+        from subagent_pipeline.renderers.shared_utils import normalize_confidence_value
+        # 9.9 is on the 1-10 scale per CLAUDE.md rule #7 boundary (9.9 < 10)
+        assert abs(normalize_confidence_value(9.9) - 0.99) < 1e-9
+
+    def test_ten_is_on_hundred_scale(self):
+        from subagent_pipeline.renderers.shared_utils import normalize_confidence_value
+        # Documented edge case: 10.0 is treated as 0-100 scale → 0.1
+        assert abs(normalize_confidence_value(10.0) - 0.1) < 1e-9
+
+    def test_hundred_scale_upper(self):
+        from subagent_pipeline.renderers.shared_utils import normalize_confidence_value
+        assert abs(normalize_confidence_value(50.0) - 0.5) < 1e-9
+        assert abs(normalize_confidence_value(99.0) - 0.99) < 1e-9
+        assert normalize_confidence_value(100.0) == 1.0
+
+    def test_clamps_out_of_range(self):
+        from subagent_pipeline.renderers.shared_utils import normalize_confidence_value
+        assert normalize_confidence_value(9999) == 1.0
+
+    def test_negative_is_sentinel(self):
+        from subagent_pipeline.renderers.shared_utils import normalize_confidence_value
+        assert normalize_confidence_value(-0.1) == -1.0
+        assert normalize_confidence_value(-1.0) == -1.0
+
+    def test_none_and_unparseable_is_sentinel(self):
+        from subagent_pipeline.renderers.shared_utils import normalize_confidence_value
+        assert normalize_confidence_value(None) == -1.0
+        assert normalize_confidence_value("garbage") == -1.0
+
+    def test_percent_string(self):
+        from subagent_pipeline.renderers.shared_utils import normalize_confidence_value
+        assert abs(normalize_confidence_value("72%") - 0.72) < 1e-9
+
+    def test_labels(self):
+        from subagent_pipeline.renderers.shared_utils import normalize_confidence_value
+        assert normalize_confidence_value("high") == 0.8
+        assert normalize_confidence_value("低") == 0.2
+        assert normalize_confidence_value("medium") == 0.5
+
+
+class TestRiskClearedSemantics:
+    """CLAUDE.md rule #4: Risk Judge does not auto-VETO when flags are omitted."""
+
+    def _parse_risk_output_to_nt(self, text: str):
+        from subagent_pipeline.bridge import _parse_risk_manager
+        from subagent_pipeline.trace_models import NodeTrace
+        nt = NodeTrace(run_id="test", node_name="Risk Manager", seq=0)
+        _parse_risk_manager("risk_manager", text, nt)
+        return nt
+
+    def test_missing_risk_cleared_not_veto(self):
+        # RISK_OUTPUT omits risk_cleared → should NOT auto-VETO
+        text = (
+            "RISK_OUTPUT:\n"
+            "risk_score = 25\n"
+            "research_action = BUY\n"
+        )
+        nt = self._parse_risk_output_to_nt(text)
+        assert nt.vetoed is False
+        assert nt.research_action == "BUY"
+
+    def test_explicit_risk_cleared_false_vetoes(self):
+        text = (
+            "RISK_OUTPUT:\n"
+            "risk_score = 75\n"
+            "risk_cleared = FALSE\n"
+            "research_action = BUY\n"
+        )
+        nt = self._parse_risk_output_to_nt(text)
+        assert nt.vetoed is True
+        assert nt.veto_source == "risk_gate"
+
+    def test_explicit_agent_veto(self):
+        text = (
+            "RISK_OUTPUT:\n"
+            "risk_score = 90\n"
+            "risk_cleared = TRUE\n"
+            "research_action = VETO\n"
+        )
+        nt = self._parse_risk_output_to_nt(text)
+        assert nt.vetoed is True
+        assert nt.veto_source == "agent_veto"
+
+
+class TestAvoidMapsToHold:
+    """CLAUDE.md rule #5: TRADE_PLAN bias=AVOID maps to HOLD (not SELL)."""
+
+    def test_parse_trade_plan_preserves_avoid(self):
+        from subagent_pipeline.bridge import parse_trade_plan_json
+        text = (
+            "TRADE_PLAN_JSON:\n"
+            "```json\n"
+            '{"bias": "AVOID", "entry_setups": [], "stop_loss": null, '
+            '"take_profit": [], "invalidators": ["VETO"], '
+            '"holding_horizon": "", "confidence": 0.1}\n'
+            "```\n"
+        )
+        parsed = parse_trade_plan_json(text)
+        assert parsed is not None
+        assert parsed.get("bias") == "AVOID"
+
+    def test_bias_avoid_maps_to_hold_not_sell(self):
+        # Locked via source inspection: AVOID must map to HOLD, never SELL.
+        import subagent_pipeline.bridge as br
+        import inspect
+        src = inspect.getsource(br)
+        assert '"AVOID": "HOLD"' in src, (
+            "AVOID must map to HOLD — SELL implies directional sell which is "
+            "semantically wrong for 'don't participate' (CLAUDE.md rule #5)."
+        )
+        # Defensive: ensure no stray AVOID→SELL mapping exists
+        assert '"AVOID": "SELL"' not in src
+        assert "'AVOID': 'SELL'" not in src

@@ -234,7 +234,7 @@ class WatchlistReport:
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
         path = out / f"watchlist-{self.date_from}-{self.date_to}.json"
-        content = json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+        content = json.dumps(self.to_dict(), ensure_ascii=False, indent=2, allow_nan=False)
         fd, tmp_path = tempfile.mkstemp(
             dir=str(out), suffix=".tmp", prefix=".watchlist-"
         )
@@ -442,8 +442,12 @@ def extract_snapshot(trace: RunTrace) -> DailySnapshot:
                 snap.bull_overall_confidence = 0.0
             for c in sd.get("supporting_claims", []):
                 try:
-                    _conf = float(c.get("confidence", 0.5))
+                    _conf = float(c.get("confidence", -1.0))
                 except (ValueError, TypeError):
+                    _conf = -1.0
+                # Normalize -1.0 sentinel (missing) to 0.5 for per-claim storage,
+                # so display code doesn't render negative percentages.
+                if _conf < 0:
                     _conf = 0.5
                 snap.bull_claims.append({
                     "text": str(c.get("text", ""))[:200],
@@ -462,8 +466,12 @@ def extract_snapshot(trace: RunTrace) -> DailySnapshot:
                 snap.bear_overall_confidence = 0.0
             for c in sd.get("supporting_claims", []):
                 try:
-                    _conf = float(c.get("confidence", 0.5))
+                    _conf = float(c.get("confidence", -1.0))
                 except (ValueError, TypeError):
+                    _conf = -1.0
+                # Normalize -1.0 sentinel (missing) to 0.5 for per-claim storage,
+                # so display code doesn't render negative percentages.
+                if _conf < 0:
                     _conf = 0.5
                 snap.bear_claims.append({
                     "text": str(c.get("text", ""))[:200],
@@ -795,9 +803,12 @@ def track_ticker(
 def latest_drift(
     ticker: str,
     storage_dir: str = "data/replays",
+    date_from: str = "",
 ) -> Optional[OpinionDrift]:
     """Get the most recent day-over-day drift for a ticker."""
-    _, drifts = track_ticker(ticker, storage_dir=storage_dir, limit=2)
+    _, drifts = track_ticker(
+        ticker, storage_dir=storage_dir, limit=2, date_from=date_from
+    )
     return drifts[-1] if drifts else None
 
 

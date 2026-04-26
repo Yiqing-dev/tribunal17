@@ -11,6 +11,8 @@ Extracted from report_renderer.py to reduce file size.
 from .views import (
     SnapshotView,
     _strip_internal_tokens,
+    _summarize_display_text,
+    _truncate_display_text,
 )
 from .decision_labels import (
     get_action_label, get_action_class,
@@ -27,6 +29,7 @@ from .shared_utils import (
     _empty_state, _format_price_zone, _evidence_strength_label,
     _degraded_banner, _bull_bear_bar, _direction_badge, _radar_svg,
     _trend_arrow, _sparkline_svg, _nav_bar,
+    _price_ladder_svg, _pillar_bar, _history_sparkline,
     _confidence_ring_svg, _priority_chip, _score_pill,
     _delta_arrow, _section_divider,
 )
@@ -45,12 +48,13 @@ def _render_checklist(view: SnapshotView) -> str:
         pillar = _esc(p.get("pillar", ""))
         score = p.get("score", 0)
         label = _esc(p.get("label", ""))
+        bar = _pillar_bar(score, max_score=4, label=pillar)
         items += (
             f'<div class="ck-item">'
             f'<span class="ck-emoji">{emoji}</span>'
             f'<span class="ck-pillar">{pillar}</span>'
             f'<span class="ck-label">{label}</span>'
-            f'<span class="ck-score num">{score}/4</span>'
+            f'<span class="ck-score">{bar}</span>'
             f'</div>'
         )
     radar = _radar_svg(view.pillar_checklist, view.action_class)
@@ -148,7 +152,8 @@ def _render_battle_plan(view: SnapshotView) -> str:
         f'</div>'
     )
 
-    rationale_html = f'<div class="bp-rationale">{_esc(_strip_internal_tokens(rationale[:150]))}</div>' if rationale else ""
+    rationale_clean = _summarize_display_text(rationale, max_chars=180)
+    rationale_html = f'<div class="bp-rationale">{_esc(rationale_clean)}</div>' if rationale_clean else ""
 
     # Entry setups table
     setups = tp.get("entry_setups", [])
@@ -232,36 +237,93 @@ def _render_battle_plan(view: SnapshotView) -> str:
           <div class="bp-gauge"><div class="bp-gauge-fill" style="width:{gauge_pct}%;background:{gauge_color}"></div></div>
         </div>"""
 
+    # Price ladder visualization: stop / current / entries / targets
+    ladder_svg = ""
+    try:
+        current_price = float(getattr(view, "current_price", 0) or tc.get("current_price", 0) or 0)
+    except (TypeError, ValueError):
+        current_price = 0.0
+    ladder_entries = [s.get("price_zone") for s in setups if isinstance(s, dict)]
+    ladder_targets = [t.get("price_zone") for t in targets_raw if isinstance(t, dict)]
+    ladder_svg_raw = _price_ladder_svg(
+        stop_loss=sl_price,
+        entries=ladder_entries,
+        targets=ladder_targets,
+        current=current_price,
+    )
+    if ladder_svg_raw:
+        ladder_svg = (
+            f'<div class="bp-ladder" style="margin-top:.6rem;display:flex;justify-content:center">'
+            f'{ladder_svg_raw}'
+            f'</div>'
+        )
+
     return f"""
     <div class="card battle-plan {plan_class}">
       <h3>AI \u4f5c\u6218\u8ba1\u5212</h3>
       {header}
       {rationale_html}
-      {setup_html}
-      {sl_html}
-      {tp_html}
-      {inval_html}
-      {gauge_html}
+      <div class="bp-body" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1.2rem;align-items:start">
+        <div class="bp-body-left" style="min-width:0">
+          {setup_html}
+          {sl_html}
+          {tp_html}
+          {inval_html}
+          {gauge_html}
+        </div>
+        <div class="bp-body-right">{ladder_svg}</div>
+      </div>
     </div>"""
 
 
 # ── Feature 5: Signal History ────────────────────────────────────────────
 
 def _render_signal_history(view: SnapshotView) -> str:
-    """Render compact historical signal table."""
+    """Render historical signal sparkline + date/action rows."""
     if not view.signal_history:
         return ""
+
+    # Oldest-first for sparkline chronology; prepend so left\u2192right is time-forward.
+    history_chrono = list(reversed(view.signal_history[:5]))
+    # Append the current run as the right-most point so users see where they are now.
+    history_chrono.append({
+        "trade_date": view.trade_date,
+        "action": view.research_action,
+        "confidence": view.confidence if view.confidence >= 0 else 0.0,
+    })
+    spark_points = [
+        {
+            "date": p.get("trade_date", ""),
+            "action": p.get("action", ""),
+            "value": float(p.get("confidence", 0) or 0),
+        }
+        for p in history_chrono
+    ]
+    spark_svg = _history_sparkline(spark_points, width=280, height=54)
+    spark_html = (
+        f'<div class="sh-spark" style="margin-bottom:.6rem">{spark_svg}</div>'
+        if spark_svg else ""
+    )
+
     rows = ""
     for sh in view.signal_history[:5]:
         date = _esc(sh.get("trade_date", ""))
         act = sh.get("action", "")
         emoji = get_signal_emoji(act)
         act_label = _esc(get_action_label(act))
-        rows += f"<tr><td>{date}</td><td>{emoji} {act_label}</td></tr>"
+        conf = float(sh.get("confidence", 0) or 0)
+        conf_txt = f"{conf:.0%}" if conf > 0 else "\u2014"
+        rows += (
+            f'<tr><td>{date}</td>'
+            f'<td>{emoji} {act_label}</td>'
+            f'<td class="mono num" style="color:var(--muted)">{conf_txt}</td>'
+            f'</tr>'
+        )
 
     return f"""
     <div class="card">
       <h3>\u5386\u53f2\u4fe1\u53f7</h3>
+      {spark_html}
       <table class="sig-hist-table">
         <tbody>{rows}</tbody>
       </table>
@@ -273,14 +335,21 @@ def _render_signal_history(view: SnapshotView) -> str:
 def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     """Render Tier 1 Snapshot — single screen, conclusion-first, zero LLM leakage.
 
-    When is_degraded=True, shows a minimal degraded layout with a warning
-    banner and only the essential conclusion + risks, directing the user
-    to the audit page.
+    When is_degraded=True, prepends a warning banner but continues with the
+    normal layout — each section renderer already guards against missing
+    data, so healthy sections (bull/bear debate, risk debate, catalysts,
+    etc.) still appear when their underlying nodes parsed cleanly.
     """
     color_var = 'green' if view.action_class == 'buy' else ('red' if view.action_class in ('sell', 'veto') else 'yellow')
 
-    # ── Degraded Mode: minimal content + audit redirect ──
+    # Degradation banner — prepended to normal content when parse issues exist.
+    degradation_banner_html = ""
     if view.is_degraded:
+        degradation_banner_html = _degraded_banner(view.degradation_reasons)
+
+    # ── (legacy minimal-mode path kept for dict-to-dict compat; no longer
+    #     early-returns so healthy sections render) ──
+    if False and view.is_degraded:  # disabled: preserved as dead code for now
         _sig_emoji_d = get_signal_emoji(view.research_action)
         conclusion = f"""
     <div class="hero">
@@ -462,7 +531,7 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
                 sev_badge = f'<span class="badge badge-{sev_cls}">{_esc(sev)}</span> ' if sev else ""
                 text = f"{sev_badge}{_esc(cat)}"
                 if desc:
-                    text += f" \u2014 {_esc(_strip_internal_tokens(desc[:80]))}"
+                    text += f" \u2014 {_esc(_truncate_display_text(desc, max_chars=120))}"
                 items += f"<li>{text}</li>"
             else:
                 items += f"<li>{_esc(str(r))}</li>"
@@ -510,6 +579,7 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     <h1>{_esc(_ticker_display(view))}</h1>
     <p class="subtitle">{_esc(view.trade_date)} &middot; \u7814\u7a76\u5feb\u7167</p>
     <div class="banner">{AI_DISCLAIMER_BANNER}</div>
+    {degradation_banner_html}
     {conclusion}
     {lights_html}
     {battle_plan_html}

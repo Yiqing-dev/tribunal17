@@ -1096,6 +1096,19 @@ class TestTokenStripping:
         assert "28.2%" in result
         assert "基本完整" in result
 
+    def test_preserve_six_digit_ticker_codes(self):
+        """Normal A-share tickers must survive token stripping."""
+        text = "代码 000710，601985 估值偏低"
+        result = _strip_internal_tokens(text)
+        assert "000710" in result
+        assert "601985" in result
+
+    def test_preserve_numeric_facts_not_internal_ids(self):
+        """Plain numeric facts must not be mistaken for internal IDs."""
+        text = "价格 123456 元不是内部ID"
+        result = _strip_internal_tokens(text)
+        assert "123456" in result
+
 
 # ── Degradation Tests ────────────────────────────────────────────────
 

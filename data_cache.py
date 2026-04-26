@@ -25,6 +25,7 @@ import hashlib
 import json
 import logging
 import os
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any, Optional
@@ -84,7 +85,13 @@ class DataCache:
     # ── Write ────────────────────────────────────────────────────────
 
     def put(self, api_name: str, ticker: str, trade_date: str, payload: Any) -> None:
-        """Store data in cache."""
+        """Store data in cache.
+
+        Atomic: write to a temp file in the same directory, then rename onto
+        the target. Two concurrent writers to the same key end up with one
+        intact file, never a half-truncated one. ``allow_nan=False`` makes
+        invalid floats fail loudly here instead of poisoning future reads.
+        """
         key = self._cache_key(api_name, ticker, trade_date)
         path = self._path(key)
         envelope = {
@@ -94,12 +101,25 @@ class DataCache:
             "payload": payload,
         }
         with self._lock:
+            tmp = None
             try:
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(envelope, f, ensure_ascii=False, default=str)
+                fd, tmp = tempfile.mkstemp(
+                    dir=str(path.parent), prefix=f".{key[:12]}-", suffix=".tmp",
+                )
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(envelope, f, ensure_ascii=False, default=str,
+                              allow_nan=False)
+                os.replace(tmp, str(path))
+                tmp = None
                 self._stats["writes"] += 1
-            except OSError as e:
+            except (OSError, ValueError) as e:
                 logger.debug("Cache write error for %s: %s", key[:12], e)
+            finally:
+                if tmp is not None:
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
 
     # ── Utilities ────────────────────────────────────────────────────
 

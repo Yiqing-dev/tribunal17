@@ -18,8 +18,12 @@ from .decision_labels import (
 from .shared_utils import (
     _esc, _html_wrap, _ticker_display, _status_light, _nav_bar,
     _score_pill, _priority_chip, _heat_cell, _section_divider,
-    _confidence_ring_svg,
+    _confidence_ring_svg, format_confidence_pct,
 )
+
+
+# Back-compat alias — shared helper is the single source of truth.
+_format_decision_confidence = format_confidence_pct
 
 
 def render_audit(view: AuditView) -> str:
@@ -189,7 +193,7 @@ def render_audit(view: AuditView) -> str:
                 else:
                     cl_str = f'{total}\u6761 <span style="color:var(--green)">\u5168\u90e8\u6709\u636e</span>'
             elif cl_in:
-                cl_str = f'\u6d88\u8d39{len(cl_in)}\u6761'
+                cl_str = f'\u5f15\u7528{len(cl_in)}\u6761'
             else:
                 cl_str = '<span style="color:var(--muted)">\u2014</span>'
 
@@ -197,8 +201,8 @@ def render_audit(view: AuditView) -> str:
             action_raw = decision.get('action', '') if isinstance(decision, dict) else ''
             if action_raw:
                 action_cn = get_action_label(action_raw)
-                conf = decision.get('confidence', 0)
-                decision_str = f'{_esc(action_cn)} ({conf:.0%})'
+                conf_label = _format_decision_confidence(decision.get('confidence'))
+                decision_str = f'{_esc(action_cn)} ({conf_label})' if conf_label else _esc(action_cn)
             else:
                 decision_str = '<span style="color:var(--muted)">\u2014</span>'
 

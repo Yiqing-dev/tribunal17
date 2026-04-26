@@ -23,6 +23,23 @@ from .proxy_pool import em_proxy_session
 
 logger = logging.getLogger(__name__)
 
+
+def _exchange_prefix(code: str, upper: bool = True) -> str:
+    """Return the exchange prefix for a bare ticker code.
+
+    6xx → Shanghai (SH), 0xx/3xx → Shenzhen (SZ), 4xx/8xx/9xx → Beijing (BJ).
+    Matches the canonical mapping in signal_ledger.normalize_ticker.
+    """
+    bare = code.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
+    if bare.startswith("6"):
+        p = "SH"
+    elif bare.startswith(("8", "4", "9")):
+        p = "BJ"
+    else:
+        p = "SZ"
+    return p if upper else p.lower()
+
+
 # Lazy import akshare (thread-safe)
 import threading as _threading
 _ak = None
@@ -519,7 +536,7 @@ def _collect_basic_info(b: AkshareBundle):
 
     # Fallback: XQ individual spot — at least get name and price
     try:
-        prefix = "SH" if b.ticker.startswith("6") else "SZ"
+        prefix = _exchange_prefix(b.ticker)
         spot = ak.stock_individual_spot_xq(symbol=f"{prefix}{b.ticker}")
         if spot is not None and not spot.empty:
             vals = dict(zip(spot["item"], spot["value"]))
@@ -596,7 +613,7 @@ def _collect_spot(b: AkshareBundle):
         logger.warning(f"  [spot_quote] EM failed ({e}), trying XQ fallback")
 
     # Fallback: XQ individual spot
-    prefix = "SH" if b.ticker.startswith("6") else ("BJ" if b.ticker.startswith(("8", "4")) else "SZ")
+    prefix = _exchange_prefix(b.ticker)
     spot = ak.stock_individual_spot_xq(symbol=f"{prefix}{b.ticker}")
     if spot is None or spot.empty:
         raise ValueError("spot_quote: both EM and XQ failed")
@@ -642,7 +659,7 @@ def _collect_price_history(b: AkshareBundle):
 
     # Fallback: Sina backend (stock_zh_a_daily)
     if df is None or df.empty:
-        prefix = "sh" if b.ticker.startswith("6") else "sz"
+        prefix = _exchange_prefix(b.ticker, upper=False)
         sina_symbol = f"{prefix}{b.ticker}"
         try:
             df = _retry_call(ak.stock_zh_a_daily, symbol=sina_symbol, adjust="qfq")
@@ -764,7 +781,7 @@ def _collect_financial_summary(b: AkshareBundle):
 def _collect_financial_ratios(b: AkshareBundle):
     """stock_financial_report_sina — income statement for revenue/profit growth."""
     ak = _get_ak()
-    prefix = "sh" if b.ticker.startswith("6") else ("bj" if b.ticker.startswith(("8", "4")) else "sz")
+    prefix = _exchange_prefix(b.ticker, upper=False)
     stock_code = f"{prefix}{b.ticker}"
     # akshare >=1.10 uses Chinese names; map to internal keys
     _REPORT_MAP = {"利润表": "lrb", "资产负债表": "zcfzb", "现金流量表": "xjllb"}
@@ -785,7 +802,7 @@ def _collect_financial_ratios(b: AkshareBundle):
 def _collect_fund_flow(b: AkshareBundle):
     """stock_individual_fund_flow — 5-day fund flow detail."""
     ak = _get_ak()
-    market = "sh" if b.ticker.startswith("6") else "sz"
+    market = _exchange_prefix(b.ticker, upper=False)
     with em_proxy_session():
         df = ak.stock_individual_fund_flow(stock=b.ticker, market=market)
     if df is None or df.empty:
@@ -962,6 +979,9 @@ def _collect_margin(b: AkshareBundle) -> None:
 
     ticker = b.ticker
     ref = b.trade_date.replace("-", "") if b.trade_date else ""
+    # 600/601/603/605/688 → SSE; 900 → SSE B-share; 920/830/… → Beijing (no margin API).
+    if ticker.startswith(("4", "8")) or ticker.startswith("92"):
+        return  # Beijing stocks — margin data not published on SSE/SZSE APIs
     is_sse = ticker.startswith(("6", "9"))
     rows: list = []
 
@@ -1697,7 +1717,7 @@ def _collect_breadth(ms: MarketSnapshot, watchlist: list = None):
             code = str(r.get(code_col, ""))
             name = str(r.get(name_col, ""))
             is_st = "ST" in name
-            is_bje = code.startswith(("8", "4"))
+            is_bje = code.startswith(("8", "4", "9"))
             is_chinext_star = code.startswith("3") or code.startswith("68")
             threshold = 4.9 if is_st else (29.9 if is_bje else (19.9 if is_chinext_star else 9.9))
             if pct >= threshold:
@@ -1735,7 +1755,7 @@ def _collect_watchlist_spots_xq(ms: MarketSnapshot, watchlist: list):
     ak = _get_ak()
     for ticker in watchlist:
         bare = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
-        prefix = "SH" if bare.startswith("6") else "SZ"
+        prefix = _exchange_prefix(bare)
         try:
             spot = ak.stock_individual_spot_xq(symbol=f"{prefix}{bare}")
             if spot is None or spot.empty:
@@ -2172,7 +2192,7 @@ def _collect_sector_stocks_sw(
                 sname = str(row.get("证券名称", ""))
                 pct_change = 0.0
                 try:
-                    prefix = "SH" if ticker.startswith("6") else "SZ"
+                    prefix = _exchange_prefix(ticker)
                     spot = ak.stock_individual_spot_xq(symbol=f"{prefix}{ticker}")
                     pct_row = spot[spot["item"] == "涨幅"]
                     if not pct_row.empty:

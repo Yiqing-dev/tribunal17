@@ -304,7 +304,7 @@ def _write_report(report: RollingMonitorReport, output_dir: str) -> Path:
     date_slug = report.trade_date.replace("-", "") or "unknown"
     path = out / f"rolling-{date_slug}.json"
 
-    content = json.dumps(report.to_dict(), ensure_ascii=False, indent=2)
+    content = json.dumps(report.to_dict(), ensure_ascii=False, indent=2, allow_nan=False)
     fd, tmp = tempfile.mkstemp(dir=str(out), suffix=".tmp", prefix=".roll-")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:

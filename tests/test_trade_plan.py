@@ -12,7 +12,7 @@ import json
 import pytest
 
 try:
-    import tradingagents  # noqa: F401
+    from tradingagents.agents.protocol import TradePlan  # noqa: F401
     _HAS_TA = True
 except ImportError:
     _HAS_TA = False
@@ -394,6 +394,24 @@ class TestRenderTradePlanCard:
         assert "<script>" not in html
         assert "&lt;script&gt;" in html
 
+    def test_string_confidence_numeric(self):
+        from dashboard.report_renderer import _render_trade_plan_card
+        html = _render_trade_plan_card({
+            "bias": "LONG",
+            "entry_setups": [],
+            "confidence": "0.8",
+        })
+        assert "80%" in html
+
+    def test_string_confidence_label(self):
+        from dashboard.report_renderer import _render_trade_plan_card
+        html = _render_trade_plan_card({
+            "bias": "LONG",
+            "entry_setups": [],
+            "confidence": "High",
+        })
+        assert "80%" in html
+
 
 # ────────────────────────────────────────────────────────────────────
 # 5. View integration
@@ -488,3 +506,43 @@ class TestPromptIntegration:
         assert "bias comes from PM direction" in prompt
         assert "RISK_OFF" in prompt
         assert "risk_cleared=FALSE" in prompt
+
+
+class TestBriefReport:
+    def test_trade_plan_only_take_profit_is_included(self, tmp_path):
+        from subagent_pipeline.trace_models import RunTrace, NodeTrace
+        from subagent_pipeline.replay_store import ReplayStore
+        from subagent_pipeline.renderers.report_renderer import generate_brief_report
+
+        storage_dir = tmp_path / "replays"
+        store = ReplayStore(storage_dir=str(storage_dir))
+
+        trace = RunTrace(
+            run_id="run-brief-001",
+            ticker="601985",
+            ticker_name="中国核电",
+            trade_date="2026-04-22",
+            research_action="BUY",
+            final_confidence=0.8,
+        )
+        node = NodeTrace(run_id="run-brief-001", node_name="ResearchOutput", seq=17)
+        node.structured_data = {
+            "trade_plan": {
+                "bias": "LONG",
+                "entry_setups": [],
+                "stop_loss": {"price": 11.35, "rule": "跌破均线"},
+                "take_profit": [
+                    {"label": "第一目标", "price_zone": [13.60, 13.90]},
+                ],
+                "invalidators": ["条件A"],
+                "holding_horizon": "short_swing",
+                "confidence": 0.72,
+            }
+        }
+        trace.node_traces = [node]
+        trace.finalize()
+        store.save(trace)
+
+        md = generate_brief_report(["run-brief-001"], storage_dir=str(storage_dir))
+        assert "止损 `11.35`" in md
+        assert "目标 `13.75`" in md

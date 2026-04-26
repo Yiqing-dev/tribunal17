@@ -656,6 +656,8 @@ def _render_timeline(v: DebateView) -> str:
                 html += f' <span class="stance-tag {sc}">{_esc(entry.stance_label)}</span>'
             html += '</div>\n'
             html += f'          <div class="tl-summary">{_esc(entry.summary)}</div>\n'
+            if entry.chart_html:
+                html += f'          <div class="tl-chart">{entry.chart_html}</div>\n'
             if entry.evidence_refs:
                 html += '          <div class="tl-evidence">'
                 for ev in entry.evidence_refs:
@@ -950,7 +952,10 @@ def _render_market_wind(v: DebateView) -> str:
     html = f'<div class="market-wind-card {wind_css}">\n'
     html += f'  <div class="wind-icon">{icon}</div>\n'
     html += f'  <div class="wind-body">\n'
-    html += f'    <div class="wind-title">市场感知: {_esc(v.market_regime_label)} ({_esc(v.market_regime)}) — {_esc(v.market_wind)}</div>\n'
+    html += (
+        f'    <div class="wind-title">市场环境: {_esc(v.market_regime_label)} '
+        f'({_esc(v.market_regime)}) · 对本票影响：{_esc(v.market_wind)}</div>\n'
+    )
     if v.market_weather:
         html += f'    <div class="wind-detail">{_esc(v.market_weather)}</div>\n'
     if v.market_wind_reason:

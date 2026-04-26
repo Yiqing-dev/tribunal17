@@ -4,6 +4,8 @@ import pytest
 
 pytest.importorskip("dashboard", reason="dashboard package not installed")
 
+from subagent_pipeline.trace_models import NodeTrace, RunTrace
+
 from dashboard.debate_view import (
     DebateView,
     ParticipantView,
@@ -106,6 +108,13 @@ class TestHelpers:
 
     def test_one_line_summary_empty(self):
         assert _one_line_summary("news_analyst", {}, "") == ""
+
+    def test_one_line_summary_skips_markdown_heading_noise(self):
+        excerpt = "# 601985 中国核电\n执行摘要\n- 资金承接改善，等待突破确认。"
+        summary = _one_line_summary("news_analyst", {}, excerpt)
+        assert "#" not in summary
+        assert "执行摘要" not in summary
+        assert "资金承接改善" in summary
 
     def test_position_label_xiqing(self):
         assert _position_label(0.01) == "极轻仓"
@@ -335,6 +344,64 @@ class TestBuildFromDict:
         assert not v.verdict.risk_cleared
         assert v.verdict.was_vetoed
 
+    def test_scenario_probabilities_render_as_percentages(self):
+        nodes = [
+            {"node_name": "Scenario Agent", "seq": 11,
+             "structured_data": {
+                 "base_prob": 0.5,
+                 "bull_prob": 0.25,
+                 "bear_prob": 0.25,
+                 "base_trigger": "放量突破前高",
+             },
+             "output_excerpt": "", "parse_status": "strict_ok",
+             "evidence_ids_referenced": [], "claim_ids_produced": []},
+        ]
+        v = build_debate_view(self._make_trace(nodes))
+        summary = v.rounds[0].entries[0].summary
+        assert "50%" in summary
+        assert "25%" in summary
+        assert "0.5%" not in summary
+
+    def test_runtrace_top_level_risk_fields_flow_to_verdict(self):
+        trace = RunTrace(
+            run_id="run-risk-fallback",
+            ticker="601985",
+            ticker_name="中国核电",
+            trade_date="2026-04-22",
+        )
+        pm = NodeTrace(
+            run_id=trace.run_id,
+            node_name="Research Manager",
+            seq=12,
+            research_action="HOLD",
+            confidence=0.58,
+            structured_data={
+                "research_action": "HOLD",
+                "conclusion": "维持观察，等待触发条件。",
+                "target_position_pct": 0.05,
+            },
+        )
+        risk = NodeTrace(
+            run_id=trace.run_id,
+            node_name="Risk Judge",
+            seq=16,
+            research_action="HOLD",
+            confidence=-1.0,
+            risk_score=6,
+            risk_cleared=True,
+            risk_flag_categories=["event_risk", "fund_flow"],
+            structured_data={"research_action": "HOLD"},
+        )
+        trace.node_traces = [pm, risk]
+        trace.finalize()
+
+        v = build_debate_view(trace)
+        assert v.verdict.risk_score == 6
+        assert v.verdict.risk_cleared is True
+        assert v.verdict.position_label == "观察仓"
+        assert v.verdict.confidence_pct == 58
+        assert [f["category"] for f in v.verdict.risk_flags] == ["event_risk", "fund_flow"]
+
     def test_market_context_from_trace(self):
         """Market context in trace → populates wind fields."""
         trace = {
@@ -493,7 +560,8 @@ class TestRenderSections:
     def test_market_wind_section(self, demo):
         html = _render_market_wind(demo)
         assert "market-wind-card" in html
-        assert "市场感知" in html
+        assert "市场环境" in html
+        assert "对本票影响" in html
         assert "进攻" in html
         assert "RISK_ON" in html
         assert "顺风" in html

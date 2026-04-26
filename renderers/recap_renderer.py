@@ -649,11 +649,14 @@ def _render_index_chart_panel(data: dict) -> str:
     indices = idx_summary.get("indices", [])
     if not indices:
         return '<div class="glass" style="color:var(--muted)">暂无指数数据</div>'
+    chartable_indices = [ix for ix in indices[:5] if ix.get("points")]
+    if not chartable_indices:
+        return ""
 
     # Tab bar
     tabs = ""
     panels = ""
-    for i, ix in enumerate(indices[:5]):
+    for i, ix in enumerate(chartable_indices):
         name = _esc(ix.get("name", ix.get("code", "")))
         active = " active" if i == 0 else ""
         aria_sel = "true" if i == 0 else "false"
@@ -674,7 +677,7 @@ def _render_index_chart_panel(data: dict) -> str:
 
     # Embed K-line point data as JSON for crosshair JS
     kline_json = {}
-    for i, ix in enumerate(indices[:5]):
+    for i, ix in enumerate(chartable_indices):
         pts = ix.get("points", [])
         kline_json[str(i)] = [
             {"date": p.get("date", ""), "open": p.get("open", 0), "high": p.get("high", 0),
@@ -939,9 +942,11 @@ def _render_limit_board(data: dict) -> str:
     dn_rows = "".join(_stock_row(s, False) for s in down_stocks[:20])
 
     if not up_rows:
-        up_rows = '<div style="color:var(--muted);font-size:.85rem">暂无涨停</div>'
+        up_msg = "明细未采集" if up_count else "暂无涨停"
+        up_rows = f'<div style="color:var(--muted);font-size:.85rem">{up_msg}</div>'
     if not dn_rows:
-        dn_rows = '<div style="color:var(--muted);font-size:.85rem">暂无跌停</div>'
+        dn_msg = "明细未采集" if dn_count else "暂无跌停"
+        dn_rows = f'<div style="color:var(--muted);font-size:.85rem">{dn_msg}</div>'
 
     return f"""
     <section class="animate-in delay-4">
@@ -1496,7 +1501,18 @@ def render_daily_recap(data) -> str:
     js = _render_recap_js(data)
 
     date_str = _esc(data.get("date", ""))
-    elapsed = data.get("collection_seconds", 0)
+    market_href = _esc(str(data.get("_market_report_href", "") or ""))
+    try:
+        elapsed = float(data.get("collection_seconds", 0) or 0)
+    except (TypeError, ValueError):
+        elapsed = 0.0
+    elapsed_label = f"{elapsed:.1f}s" if elapsed > 0 else "—"
+    market_link = ""
+    if market_href:
+        market_link = (
+            f' · <a href="{market_href}" '
+            f'style="color:var(--accent);text-decoration:none;">→ 市场指挥台</a>'
+        )
 
     body = f"""
     <div class="recap-shell">
@@ -1510,8 +1526,8 @@ def render_daily_recap(data) -> str:
       {red_close}
       <footer class="recap-footer">
         <span>TradingAgents \u00b7 \u6bcf\u65e5\u590d\u76d8 \u00b7 {date_str}
-        {' \u00b7 <a href="market-' + date_str.replace('-','') + '.html" style="color:var(--accent);text-decoration:none;">\u2192 \u5e02\u573a\u6307\u6325\u53f0</a>' if date_str else ''}</span>
-        <span>\u91c7\u96c6\u8017\u65f6 {elapsed:.1f}s \u00b7 v0.2.0</span>
+        {market_link}</span>
+        <span>\u91c7\u96c6\u8017\u65f6 {elapsed_label} \u00b7 v0.2.0</span>
       </footer>
     </div>
     {sector_drawer}
@@ -1542,8 +1558,9 @@ def generate_daily_recap_report(
     # Accept both DailyRecapData and dict
     if hasattr(data, "to_dict"):
         data = data.to_dict()
+    else:
+        data = dict(data)
 
-    html = render_daily_recap(data)
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -1552,6 +1569,10 @@ def generate_daily_recap_report(
         from datetime import date as _d
         date_slug = _d.today().isoformat().replace("-", "")
 
+    market_path = out / f"market-{date_slug}.html"
+    data["_market_report_href"] = market_path.name if market_path.exists() else ""
+
+    html = render_daily_recap(data)
     path = out / f"recap-{date_slug}.html"
     path.write_text(html, encoding="utf-8")
     return str(path)

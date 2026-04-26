@@ -124,7 +124,7 @@ class ReflectionReport:
         out.mkdir(parents=True, exist_ok=True)
         date_slug = self.trade_date.replace("-", "") or "unknown"
         path = out / f"reflection-{date_slug}.json"
-        content = json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+        content = json.dumps(self.to_dict(), ensure_ascii=False, indent=2, allow_nan=False)
         fd, tmp = tempfile.mkstemp(dir=str(out), suffix=".tmp", prefix=".refl-")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:

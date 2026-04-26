@@ -9,6 +9,9 @@ without touching raw protocol internals.
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional
 
+from .shared_utils import _stacked_prob_bar
+from .views import _summarize_display_text, _truncate_display_text
+
 
 # ── Participant ──────────────────────────────────────────────────────────
 
@@ -87,6 +90,7 @@ class TimelineEntry:
     evidence_refs: List[str] = field(default_factory=list)
     impact: str = ""             # positive / negative / neutral
     detail_text: str = ""        # expandable detail (optional)
+    chart_html: str = ""         # pre-rendered HTML (not escaped) for embedded visualizations
 
 
 @dataclass
@@ -204,18 +208,39 @@ def _one_line_summary(agent_key: str, sd: dict, excerpt: str) -> str:
     """Extract a one-line summary from structured data or excerpt."""
     # PM / Risk have conclusion
     conclusion = sd.get("conclusion", "")
-    if conclusion and len(conclusion) < 200:
-        return conclusion[:120]
+    if conclusion:
+        summary = _summarize_display_text(conclusion, max_chars=140)
+        if summary:
+            return summary
 
     # Claims-based agents: use first claim text
     claims = sd.get("supporting_claims", [])
     if claims and claims[0].get("text"):
-        return claims[0]["text"][:120]
+        summary = _summarize_display_text(claims[0]["text"], max_chars=140)
+        if summary:
+            return summary
+
+    key_risk = sd.get("key_risk", "")
+    if key_risk:
+        summary = _summarize_display_text(key_risk, max_chars=140)
+        if summary:
+            return summary
+
+    pillar_score = sd.get("pillar_score")
+    if pillar_score is not None:
+        try:
+            score = int(pillar_score)
+        except (ValueError, TypeError):
+            score = None
+        if score is not None:
+            bias = "偏多" if score >= 3 else ("中性" if score == 2 else "偏空")
+            return f"维度评分 {score}/4，综合判断{bias}"
 
     # Fall back to excerpt first sentence
     if excerpt:
-        first = excerpt.split("。")[0].split("\n")[0]
-        return first[:120]
+        summary = _summarize_display_text(excerpt, max_chars=140)
+        if summary:
+            return summary
     return ""
 
 
@@ -260,6 +285,15 @@ def build_debate_view(run_trace) -> DebateView:
                 "parse_status": getattr(nt, "parse_status", ""),
                 "evidence_ids_referenced": getattr(nt, "evidence_ids_referenced", []),
                 "claim_ids_produced": getattr(nt, "claim_ids_produced", []),
+                "research_action": getattr(nt, "research_action", ""),
+                "confidence": getattr(nt, "confidence", -1.0),
+                "thesis_effect": getattr(nt, "thesis_effect", ""),
+                "risk_score": getattr(nt, "risk_score", None),
+                "risk_cleared": getattr(nt, "risk_cleared", None),
+                "risk_flag_count": getattr(nt, "risk_flag_count", 0),
+                "risk_flag_categories": getattr(nt, "risk_flag_categories", []),
+                "vetoed": getattr(nt, "vetoed", False),
+                "veto_reasons": getattr(nt, "veto_reasons", []),
             }
             nodes.append(n)
         ticker = getattr(run_trace, "ticker", "")
@@ -343,7 +377,7 @@ def build_debate_view(run_trace) -> DebateView:
         sl, sc = STANCE_LABELS.get(stance, ("", ""))
         claims = sd.get("supporting_claims", [])
         first_text = (claims[0].get("text") or "") if claims else ""
-        summary = first_text[:120] if first_text else _one_line_summary(ak, sd, excerpt)
+        summary = _summarize_display_text(first_text, max_chars=140) if first_text else _one_line_summary(ak, sd, excerpt)
         ev_refs = []
         for c in claims[:3]:
             ev_refs.extend(c.get("supports", []))
@@ -363,12 +397,31 @@ def build_debate_view(run_trace) -> DebateView:
     scenario_node = node_by_key.get("scenario_agent")
     if scenario_node:
         sd = scenario_node.get("structured_data", {})
-        base_p = sd.get("base_prob", 0)
-        bull_p = sd.get("bull_prob", 0)
-        bear_p = sd.get("bear_prob", 0)
-        summary = f"基准 {base_p}% / 乐观 {bull_p}% / 悲观 {bear_p}%"
+
+        def _fmt_pct(value) -> int:
+            try:
+                num = float(value or 0)
+            except (ValueError, TypeError):
+                return 0
+            if 0 <= num <= 1:
+                num *= 100
+            return min(100, max(0, int(round(num))))
+
+        base_p = _fmt_pct(sd.get("base_prob", 0))
+        bull_p = _fmt_pct(sd.get("bull_prob", 0))
+        bear_p = _fmt_pct(sd.get("bear_prob", 0))
+        # Short text summary retained for accessibility / plain-text fallback.
         if sd.get("base_trigger"):
-            summary += f"，关键触发: {sd['base_trigger'][:60]}"
+            trigger_txt = _truncate_display_text(sd["base_trigger"], max_chars=80)
+            summary = f"关键触发: {trigger_txt}"
+        else:
+            summary = f"基准 {base_p}% / 乐观 {bull_p}% / 悲观 {bear_p}%"
+        # Rich visualization: stacked probability bar with legend.
+        prob_bar = _stacked_prob_bar([
+            {"label": "乐观", "value": bull_p, "color": "var(--green)", "icon": "▲"},
+            {"label": "基准", "value": base_p, "color": "var(--blue)",  "icon": "●"},
+            {"label": "悲观", "value": bear_p, "color": "var(--red)",   "icon": "▼"},
+        ])
         rounds.append(DebateRound(
             round_number=3, phase_label="场景推演", phase_en="Scenario Analysis",
             entries=[TimelineEntry(
@@ -376,6 +429,7 @@ def build_debate_view(run_trace) -> DebateView:
                 avatar_class="avatar-scenario", stance="neutral",
                 stance_label="中性", stance_class="stance-neutral",
                 summary=summary,
+                chart_html=prob_bar,
             )],
         ))
 
@@ -440,6 +494,9 @@ def build_debate_view(run_trace) -> DebateView:
         sd = bull_node.get("structured_data", {})
         for c in sd.get("supporting_claims", []):
             conf = c.get("confidence", 0.5)
+            # -1.0 sentinel means "not provided" — fall back to neutral 0.5 for display.
+            if isinstance(conf, (int, float)) and conf < 0:
+                conf = 0.5
             dim_score = c.get("dimension_score") or 5
             strength = min(100, int(conf * dim_score * 10))
             bull_claims.append(ClaimView(
@@ -461,6 +518,9 @@ def build_debate_view(run_trace) -> DebateView:
         sd = bear_node.get("structured_data", {})
         for c in sd.get("supporting_claims", []):
             conf = c.get("confidence", 0.5)
+            # -1.0 sentinel means "not provided" — fall back to neutral 0.5 for display.
+            if isinstance(conf, (int, float)) and conf < 0:
+                conf = 0.5
             dim_score = c.get("dimension_score") or 5
             strength = min(100, int(conf * dim_score * 10))
             bear_claims.append(ClaimView(
@@ -508,12 +568,28 @@ def build_debate_view(run_trace) -> DebateView:
     # ── 5. Verdict ───────────────────────────────────────────────────
     verdict = VerdictView()
     risk_node = node_by_key.get("risk_manager")
+    ro_node = node_by_key.get("research_output")
+    ro_sd = (ro_node or {}).get("structured_data", {}) if ro_node else {}
 
     if pm_node:
         sd = pm_node.get("structured_data", {})
-        action = sd.get("research_action", "HOLD").upper()
+        action = (sd.get("research_action") or pm_node.get("research_action") or "HOLD").upper()
         al, ac = ACTION_LABELS.get(action, ("持有观望", "action-hold"))
-        conf = sd.get("confidence", 0.5)
+
+        def _is_valid_conf(v) -> bool:
+            return isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0
+
+        conf = sd.get("confidence")
+        if not _is_valid_conf(conf):
+            conf = pm_node.get("confidence", -1.0)
+        if not _is_valid_conf(conf):
+            # Fallback chain: confidence_raw → tradecard.confidence → 0.5
+            conf = (ro_sd.get("confidence_raw")
+                    or (ro_sd.get("tradecard") or {}).get("confidence")
+                    or 0.5)
+            if not _is_valid_conf(conf):
+                conf = 0.5
+        conf = max(0.0, min(1.0, float(conf)))
         pos_pct = sd.get("target_position_pct") or sd.get("max_position_pct") or 0.05
         invalidation = sd.get("invalidation", "")
         if isinstance(invalidation, list):
@@ -525,18 +601,34 @@ def build_debate_view(run_trace) -> DebateView:
             action_class=ac,
             confidence=conf,
             confidence_pct=int(conf * 100),
-            position_label=_position_label(pos_pct),
-            trigger=sd.get("bull_case", "")[:80] if sd.get("bull_case") else "",
-            invalidator=invalidation[:120],
-            core_reason=sd.get("conclusion", "")[:120],
+            position_label="观察仓" if action == "HOLD" and pos_pct <= 0.05 else _position_label(pos_pct),
+            trigger=_summarize_display_text(sd.get("bull_case", ""), max_chars=140),
+            invalidator=_truncate_display_text(invalidation, max_chars=160),
+            core_reason=_one_line_summary("research_manager", sd, pm_node.get("output_excerpt", "")),
         )
+        if not verdict.trigger and (ro_sd.get("trade_plan") or {}).get("entry_setups"):
+            setup = (ro_sd.get("trade_plan") or {}).get("entry_setups", [])[0]
+            if isinstance(setup, dict):
+                verdict.trigger = _truncate_display_text(setup.get("condition", ""), max_chars=140)
+        if not verdict.invalidator and (ro_sd.get("trade_plan") or {}).get("invalidators"):
+            invalidators = (ro_sd.get("trade_plan") or {}).get("invalidators", [])
+            verdict.invalidator = _truncate_display_text("；".join(str(x) for x in invalidators[:2]), max_chars=160)
 
     if risk_node:
         rsd = risk_node.get("structured_data", {})
-        verdict.risk_score = rsd.get("risk_score", 0) or 0
-        verdict.risk_cleared = rsd.get("risk_cleared", True)
-        verdict.risk_flags = rsd.get("risk_flags", [])[:5]
-        verdict.was_vetoed = rsd.get("research_action", "").upper() == "VETO"
+        verdict.risk_score = rsd.get("risk_score")
+        if verdict.risk_score is None:
+            verdict.risk_score = risk_node.get("risk_score", 0) or 0
+        verdict.risk_cleared = rsd.get("risk_cleared")
+        if verdict.risk_cleared is None:
+            verdict.risk_cleared = risk_node.get("risk_cleared", True)
+        verdict.risk_flags = (rsd.get("risk_flags") or [])[:5]
+        if not verdict.risk_flags and risk_node.get("risk_flag_categories"):
+            verdict.risk_flags = [
+                {"category": c, "severity": "medium", "description": ""}
+                for c in risk_node.get("risk_flag_categories", [])[:5]
+            ]
+        verdict.was_vetoed = (rsd.get("research_action") or risk_node.get("research_action", "")).upper() == "VETO"
         if verdict.was_vetoed:
             verdict.action = "VETO"
             al, ac = ACTION_LABELS["VETO"]

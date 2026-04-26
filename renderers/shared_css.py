@@ -462,6 +462,8 @@ details:not([open])>summary h2::after{content:" \u25b8"}
   .rd-col { border-radius: 14px; }
   .status-bar { gap: .8rem; }
   .reveal { animation: none !important; }
+  .bp-body { grid-template-columns: 1fr !important; }
+  .bp-body-right { order: -1; display: flex; justify-content: center; }
 }
 @supports (padding: env(safe-area-inset-left)) {
   @media (max-width: 760px) {
@@ -710,6 +712,53 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); }
 .conf-dots .cd-dot.on { background: var(--conf-hi); box-shadow: 0 0 4px var(--conf-hi); }
 .conf-dots[data-tier="md"] .cd-dot.on { background: var(--conf-md); box-shadow: 0 0 4px var(--conf-md); }
 .conf-dots[data-tier="lo"] .cd-dot.on { background: var(--conf-lo); box-shadow: 0 0 4px var(--conf-lo); }
+
+/* ── V5: Price ladder ── */
+.price-ladder { display: block; overflow: visible; max-width: 100%; }
+.price-ladder text { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+/* ── V5: Stacked probability bar ── */
+.stacked-prob { margin: .4rem 0; }
+.stacked-prob .spb-track {
+  display: flex; border-radius: 8px; overflow: hidden;
+  background: rgba(255,255,255,0.04);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+}
+.stacked-prob .spb-seg {
+  display: flex; align-items: center; justify-content: center;
+  min-width: 28px; color: rgba(9,20,32,0.88);
+  font-size: var(--t-xs); font-weight: 700; letter-spacing: .02em;
+  transition: filter 180ms var(--ease-out);
+}
+.stacked-prob .spb-seg:hover { filter: brightness(1.15); }
+.stacked-prob .spb-seg-label { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.stacked-prob .spb-legend {
+  display: flex; gap: 1rem; margin-top: .35rem; flex-wrap: wrap;
+  font-size: var(--t-xs);
+}
+.stacked-prob .spb-legend-item { display: inline-flex; align-items: center; gap: .3rem; }
+.stacked-prob .spb-legend-swatch {
+  width: 10px; height: 10px; border-radius: 2px; display: inline-block;
+}
+.stacked-prob .spb-legend-label { color: var(--muted); }
+.stacked-prob .spb-legend-value { color: var(--white); font-weight: 600; }
+
+/* ── V5: Pillar score mini-bar (horizontal segmented) ── */
+.pillar-bar { display: inline-flex; align-items: center; gap: .35rem; }
+.pillar-bar .pb-seg {
+  width: 14px; height: 6px; border-radius: 2px;
+  background: rgba(255,255,255,0.10);
+  transition: background 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
+}
+.pillar-bar .pb-seg.on { background: var(--conf-hi); box-shadow: 0 0 4px rgba(52,211,153,0.35); }
+.pillar-bar[data-tier="md"] .pb-seg.on { background: var(--conf-md); box-shadow: 0 0 4px rgba(251,191,36,0.35); }
+.pillar-bar[data-tier="lo"] .pb-seg.on { background: var(--conf-lo); box-shadow: 0 0 4px rgba(248,113,113,0.35); }
+.pillar-bar .pb-text { font-size: var(--t-xs); color: var(--muted); margin-left: .15rem; }
+
+/* ── V5: History sparkline ── */
+.hist-spark { display: block; width: 100%; height: auto; }
+.hist-spark circle { transition: r 160ms var(--ease-out); }
+.hist-spark circle:hover { r: 4.5; }
 
 .sec-div {
   display: flex; align-items: center; gap: .6rem;

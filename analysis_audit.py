@@ -203,7 +203,7 @@ class AuditReport:
         )
         try:
             with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+                json.dump(data, f, ensure_ascii=False, indent=2, default=str, allow_nan=False)
             os.replace(tmp_path, path)
         except Exception:
             try:

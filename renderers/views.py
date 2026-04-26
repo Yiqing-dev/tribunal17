@@ -55,10 +55,30 @@ def _strip_internal_tokens(text: str) -> str:
     # ── Internal ID patterns ──
     # clm-xxxx hex IDs (any length after prefix)
     text = re.sub(r'clm-[0-9a-f]+', '', text)
-    # Standalone hex IDs like 79107dc0-2, ab5df0c6
-    text = re.sub(r'\b[0-9a-f]{6,}-?\d*\b', '', text)
-    # Bracket-enclosed ID lists: [-1, 79107dc0-2, 79107dc0-5]
-    text = re.sub(r'\[[\s,\-\d0-9a-f]*\]', '', text)
+    # General claim IDs such as clm-u001, clm-r011.
+    text = re.sub(r'clm-[A-Za-z0-9_-]+', '', text, flags=re.IGNORECASE)
+    # Standalone hex IDs like 79107dc0-2, ab5df0c6.
+    # Require at least one a-f letter so legitimate six-digit tickers
+    # such as 601985 are preserved in user-facing copy.
+    text = re.sub(
+        r'\b(?=[0-9A-Fa-f-]{6,}\b)(?=[0-9A-Fa-f-]*[A-Fa-f])[0-9A-Fa-f]{6,}(?:-\d+)?\b',
+        '',
+        text,
+    )
+    # Bracket-enclosed ID lists such as [-1, 79107dc0-2, 79107dc0-5].
+    # Require a comma, negative sentinel, or hex letters so plain numeric
+    # brackets like [123456] are not stripped.
+    text = re.sub(r'\[(?=[^\]]*(?:,|-\d|[A-Fa-f]))[\s,\-\d0-9A-Fa-f]*\]', '', text)
+    # Bracketed claim adjudication bundles like [clm-u001 ACCEPT, clm-r011 DEFER].
+    text = re.sub(r'\[[^\]]*clm-[^\]]*\]', '', text, flags=re.IGNORECASE)
+    # If claim IDs were stripped earlier, bracket bundles can degrade into
+    # [ACCEPT, DEFER] style residues; strip those too.
+    text = re.sub(
+        r'\[\s*(?:(?:ACCEPT|REJECT|DEFER|SUPPORTED|UNSUPPORTED)(?:\s+at\s+\d+(?:\.\d+)?)?\s*,?\s*)+\]',
+        '',
+        text,
+        flags=re.IGNORECASE,
+    )
     # Bull/Bear Claim references (with comma-separated numbers or bracket list)
     text = re.sub(r'Bull\s+Claim(?:\s+\d+(?:\s*,\s*\d+)*|\s*\[[^\]]*\])?', '', text)
     text = re.sub(r'Bear\s+Claim(?:\s+\d+(?:\s*,\s*\d+)*|\s*\[[^\]]*\])?', '', text)
@@ -100,9 +120,114 @@ def _strip_internal_tokens(text: str) -> str:
     return text.strip()
 
 
+_DISPLAY_META_PREFIXES = (
+    "分析日期", "目标", "标的", "当前价", "现价", "窗口", "视野", "展望",
+    "市场", "模式", "资本", "角色定位", "决策框架", "基准先验", "历史校准",
+    "PM 裁决", "Regime", "分析师", "Horizon", "Target", "Date",
+)
+
+_DISPLAY_META_HEADINGS = {
+    "执行摘要", "开场陈述", "证据清单", "Evidence Anchors", "Evidence Bundle",
+    "Evidence Registry", "证据编号系统", "核心立场", "TL;DR",
+}
+
+
+def _clean_display_text(text: str) -> str:
+    """Normalize markdown-heavy agent text for user-facing UI snippets."""
+    if not text:
+        return ""
+    text = _strip_internal_tokens(text)
+    text = text.replace("**", "").replace("__", "")
+    text = re.sub(r'\bclaims?\b', '论据', text, flags=re.IGNORECASE)
+    text = re.sub(r'^\s{0,3}#{1,6}\s*', '', text)
+    text = re.sub(r'^\s*(?:[-*•]+|\d+[.)、])\s*', '', text)
+    text = re.sub(r'^\s*\|\s*', '', text)
+    # Strip common structured prefixes while preserving the actual content.
+    text = re.sub(
+        r'^\s*(?:CLAIM(?:-[A-Z0-9]+)?|EVIDENCE(?:-[A-Z0-9]+)?|CONFIDENCE|INVALIDATION|FACT|INTERP|DISPROVE|结论|摘要|TL;DR)\s*[:：]\s*',
+        '',
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip(" |-:：")
+
+
+def _is_display_noise_line(text: str) -> bool:
+    """Return True when a line is metadata/markup rather than human-readable content."""
+    raw = (text or "").strip()
+    if not raw:
+        return True
+    if raw.startswith("```"):
+        return True
+    if raw.startswith("|") and raw.count("|") >= 2:
+        return True
+    if raw.startswith("#"):
+        return True
+    if all(ch in "-=_*| " for ch in raw):
+        return True
+
+    cleaned = _clean_display_text(raw)
+    if not cleaned:
+        return True
+    if cleaned in _DISPLAY_META_HEADINGS:
+        return True
+
+    for prefix in _DISPLAY_META_PREFIXES:
+        if re.match(rf'^{re.escape(prefix)}\s*[:：]', cleaned, flags=re.IGNORECASE):
+            return True
+
+    return False
+
+
+def _truncate_display_text(text: str, max_chars: int = 120) -> str:
+    """Safely truncate display text without cutting obvious tokens mid-phrase."""
+    cleaned = _clean_display_text(text)
+    if not cleaned:
+        return ""
+
+    for sep in ("。", "！", "？", "；"):
+        idx = cleaned.find(sep)
+        if 8 <= idx <= max_chars:
+            return cleaned[:idx + 1]
+
+    if len(cleaned) <= max_chars:
+        return cleaned
+
+    boundary_chars = "。；，、 ,）)]"
+    cut = max(cleaned.rfind(ch, 0, max_chars + 1) for ch in boundary_chars)
+    if cut >= max_chars // 2:
+        clipped = cleaned[:cut]
+    else:
+        clipped = cleaned[:max_chars]
+    clipped = clipped.rstrip(" ，、；")
+    # No ellipsis when the cut landed on natural sentence punctuation — the
+    # reader already knows the sentence ended cleanly.
+    if clipped and clipped[-1] in "。！？；":
+        return clipped
+    return clipped + "…"
+
+
+def _summarize_display_text(text: str, max_chars: int = 120) -> str:
+    """Extract a human-readable one-liner from raw agent output."""
+    if not text:
+        return ""
+
+    for raw_line in str(text).splitlines():
+        if _is_display_noise_line(raw_line):
+            continue
+        cleaned = _clean_display_text(raw_line)
+        if cleaned:
+            return _truncate_display_text(cleaned, max_chars=max_chars)
+
+    # Fallback: flatten everything and try one last cleanup pass.
+    flattened = _clean_display_text(" ".join(str(text).splitlines()))
+    return _truncate_display_text(flattened, max_chars=max_chars)
+
+
 def _enforce_thesis_limit(text: str, max_chars: int = 50) -> str:
     """Enforce single-sentence, max_chars limit on thesis text."""
-    text = _strip_internal_tokens(text)
+    text = _clean_display_text(text)
     if not text:
         return text
     # Try to cut at first sentence boundary within limit
@@ -486,6 +611,9 @@ from .market_view import MarketView, _normalize_consecutive_boards, _extract_bre
 __all__ = [
     # Shared utilities
     "_strip_internal_tokens",
+    "_clean_display_text",
+    "_truncate_display_text",
+    "_summarize_display_text",
     "_enforce_thesis_limit",
     "_check_degradation",
     # Shared small views (defined here)
