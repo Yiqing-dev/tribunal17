@@ -982,67 +982,157 @@ def _extract_overall_confidence(text: str, direction: str) -> float:
     return 0.6  # default
 
 
+# Words signalling the value is a forecast/threshold/estimate, not an actual.
+# A match preceded by any of these within 25 chars is rejected.
+_FORECAST_PREFIXES = (
+    "若", "假设", "预计", "预测", "估算", "约", "推测", "可能", "如", "倘",
+    "超过", "低于", "高于", "不低于", "不超过", "至少", "至多",
+    "DISPROVE", "INVALIDATION", "INVALIDATE", "threshold", "expected",
+    "forecast", "fail if", "trigger", "目标", "区间下沿", "区间上沿",
+)
+
+
+def _is_forecast_context(text: str, pos: int) -> bool:
+    """True if the match position is preceded by forecast/threshold language.
+
+    Looks back to the start of the current sentence (last 。！？\n) within 60 chars.
+    """
+    sentence_start = pos
+    for i in range(pos, max(0, pos - 60), -1):
+        if text[i - 1] in "。！？\n":
+            sentence_start = i
+            break
+    sentence = text[sentence_start:pos]
+    return any(token.lower() in sentence.lower() for token in _FORECAST_PREFIXES)
+
+
+def _value_in_range(val_str: str, lo: float, hi: float) -> bool:
+    """Validate a captured numeric string against a sane range."""
+    try:
+        v = float(val_str)
+    except (TypeError, ValueError):
+        return False
+    return lo <= v <= hi
+
+
+def _looks_like_year(val_str: str) -> bool:
+    """Reject 4-digit values in [2000, 2099] which are almost certainly years."""
+    try:
+        v = float(val_str)
+    except (TypeError, ValueError):
+        return False
+    return v.is_integer() and 2000 <= v <= 2099 and "." not in val_str
+
+
+def _normalize_signed_zero(val_str: str) -> str:
+    """Convert signed-zero strings like ``-0.00`` / ``-0.0`` to their unsigned
+    equivalent so they render cleanly in the UI. Non-zero values pass through.
+    """
+    try:
+        v = float(val_str)
+    except (TypeError, ValueError):
+        return val_str
+    if v == 0.0 and val_str.lstrip().startswith("-"):
+        return val_str.lstrip().lstrip("-")
+    return val_str
+
+
 def _extract_financial_metrics(text: str) -> Dict[str, str]:
     """Scrape basic financial metrics from free-text analyst output.
 
-    When vendor APIs are unavailable, these can serve as fallback data
-    for the Snapshot metrics card.  Handles both ``key: value`` prose and
-    markdown-table ``| key | value |`` formats.
+    When vendor APIs are unavailable, these serve as fallback data for the
+    Snapshot metrics card. Handles ``key: value`` / ``key= value`` prose and
+    markdown-table ``| key | value |`` forms.
+
+    **Hard rules** (avoid past bugs where year/threshold values leaked in):
+    - Each spec must declare a ``range`` (lo, hi). Captured values outside the
+      range are rejected.
+    - The "亏损" sign-flip prefix only applies to ``net_profit`` and ``eps`` —
+      never to ``pb`` or ``market_cap`` (those are always non-negative in
+      conventional finance and the prefix triggered false negatives like
+      "净亏损状态，总市值34.86亿" → -34.86).
+    - Forecast/threshold context (e.g. "若净利润超过5000万", "DISPROVE: 若…",
+      "区间下沿3000万") is rejected — only actuals enter the fallback.
+    - 4-digit integers in [2000, 2099] are rejected as years.
+    - ``market_cap`` and ``net_profit`` require an explicit 亿/万亿/万 unit —
+      a bare number is too ambiguous.
     """
     metrics: Dict[str, str] = {}
 
-    # Each entry: (output_key, list of (pattern, group_index) to try in order)
-    # A = "key: value" prose;  B = "| key | value |" table;  C = inline "key为/仅N" prose
-    specs: List[Tuple[str, List[Tuple[str, int]]]] = [
+    # Each spec: (output_key, ordered_patterns, range, allow_loss_prefix, require_unit)
+    # Both table and prose patterns allow optional markdown bold (** or `*`)
+    # around the value. Across all matches the one with the most decimal
+    # places wins so that prose roundings ("PE=94倍") never trump precise
+    # table values ("| PE | 94.14 |" or "PE(TTM)：**94.14**").
+    specs: List[Tuple[str, List[str], Tuple[float, float], bool, bool]] = [
         ("pe", [
-            (r'(?:PE|市盈率)(?:\([^)]*\))?\s*[:：]\s*([-\d.]+)', 1),
-            (r'\|\s*(?:PE|市盈率)(?:\([^)]*\))?\s*\|\s*([-\d.]+)', 1),
-            (r'(?:PE|市盈率)(?:\([^)]*\))?\s*[^\d]*?([-\d.]+)\s*(?:倍|%|元)?', 1),
-        ]),
+            r'\|\s*(?:PE|市盈率)(?:\([^)]*\))?\s*\|\s*\**(-?\d+(?:\.\d+)?)\**',
+            r'(?:PE|市盈率)(?:\([^)]*\))?\s*[:：=]\s*\**(-?\d+(?:\.\d+)?)\**\s*(?:倍)?',
+        ], (-1e6, 1e6), False, False),
         ("pb", [
-            (r'(?:PB|市净率)\s*[:：]\s*([\d.]+)', 1),
-            (r'\|\s*(?:PB|市净率)\s*\|\s*([\d.]+)', 1),
-            (r'(?:PB|市净率)\s*[^\d]*?([\d.]+)\s*(?:倍|%)?', 1),
-        ]),
+            r'\|\s*(?:PB|市净率)\s*\|\s*\**(-?\d+(?:\.\d+)?)\**',
+            r'(?:PB|市净率)\s*[:：=]\s*\**(-?\d+(?:\.\d+)?)\**\s*(?:倍)?',
+        ], (0.0, 100.0), False, False),
         ("market_cap", [
-            (r'(?:总市值|市值)\s*[:：]\s*([\d.]+)\s*(?:亿|万亿)?', 1),
-            (r'\|\s*(?:总市值|市值)\s*\|\s*([\d.]+)\s*(?:亿|万亿)?', 1),
-            (r'(?:总市值)\s*[^\d]*?([\d.]+)\s*(?:亿|万亿)', 1),
-        ]),
+            r'\|\s*(?:总市值|市值)\s*\|\s*\**(\d+(?:\.\d+)?)\**\s*(亿|万亿)',
+            r'(?:总市值)\s*[:：=]?\s*\**(\d+(?:\.\d+)?)\**\s*(亿|万亿)',
+        ], (0.001, 1e6), False, True),
         ("gross_margin", [
-            (r'(?:毛利率)\s*[:：]\s*([\d.]+)%?', 1),
-            (r'\|\s*(?:毛利率)\s*\|\s*([\d.]+)%?', 1),
-            (r'(?:毛利率)\s*[^\d]*?([\d.]+)%', 1),
-        ]),
+            r'\|\s*(?:毛利率)\s*\|\s*\**(-?\d+(?:\.\d+)?)\**\s*%?',
+            r'(?:毛利率)\s*[:：=]\s*\**(-?\d+(?:\.\d+)?)\**\s*%?',
+            # Bare "毛利率47.75%" — only valid when followed by '%' to anchor.
+            r'(?:毛利率)\s*\**(-?\d+(?:\.\d+)?)\**\s*%',
+        ], (-100.0, 100.0), False, False),
         ("roe", [
-            (r'(?:ROE|净资产收益率)\s*[:：]\s*([-\d.]+)%?', 1),
-            (r'\|\s*(?:ROE|净资产收益率)\s*\|\s*([-\d.]+)%?', 1),
-            (r'(?:ROE|净资产收益率)\s*[^\d-]*?([-\d.]+)%', 1),
-        ]),
+            r'\|\s*(?:ROE|净资产收益率)\s*\|\s*\**(-?\d+(?:\.\d+)?)\**\s*%?',
+            r'(?:ROE|净资产收益率)\s*[:：=]\s*\**(-?\d+(?:\.\d+)?)\**\s*%?',
+        ], (-1000.0, 1000.0), False, False),
         ("net_profit", [
-            (r'(?:净利润|归母净利润)\s*[:：]\s*([-\d.]+)\s*(?:亿|万)?', 1),
-            (r'\|\s*(?:净利润|归母净利润)\s*\|\s*([-\d.]+)\s*(?:亿|万)?', 1),
-            (r'(?:归母净利润|净利润)\s*[^\d-]*?([-\d.]+)\s*(?:亿|万)', 1),
-        ]),
+            r'\|\s*(?:归母净利润|净利润)\s*\|\s*\**(-?\d+(?:\.\d+)?)\**\s*(亿|万)',
+            r'(?:归母净利润|净利润)\s*[:：=]\s*\**(-?\d+(?:\.\d+)?)\**\s*(亿|万)',
+        ], (-1e9, 1e9), True, True),
         ("eps", [
-            (r'(?:EPS|每股收益)\s*[:：]\s*([-\d.]+)', 1),
-            (r'\|\s*(?:EPS|每股收益)\s*\|\s*([-\d.]+)', 1),
-            (r'(?:EPS|每股收益)\s*[^\d-]*?([-\d.]+)\s*(?:元)?', 1),
-        ]),
+            r'\|\s*(?:EPS|每股收益)\s*\|\s*\**(-?\d+(?:\.\d+)?)\**\s*(?:元)?',
+            r'(?:EPS|每股收益)\s*[:：=]\s*\**(-?\d+(?:\.\d+)?)\**\s*(?:元)?',
+        ], (-1000.0, 1000.0), True, False),
     ]
 
-    for key, pats in specs:
-        for pat, grp in pats:
-            m = re.search(pat, text, re.IGNORECASE)
-            if m:
-                val = m.group(grp)
-                # Negate if "亏损" appears between the keyword and the number
-                if not val.startswith('-'):
-                    prefix = text[max(0, m.start() - 5):m.start(grp)]
-                    if '亏损' in prefix:
-                        val = '-' + val
-                metrics[key] = val
-                break
+    def _decimals(s: str) -> int:
+        return len(s.split(".", 1)[1]) if "." in s else 0
+
+    for key, patterns, value_range, allow_loss_prefix, require_unit in specs:
+        best: Optional[Tuple[int, str]] = None  # (decimal_count, value)
+        for pat in patterns:
+            for m in re.finditer(pat, text, re.IGNORECASE):
+                val = m.group(1)
+                if _looks_like_year(val):
+                    continue
+                if not _value_in_range(val, value_range[0], value_range[1]):
+                    continue
+                if _is_forecast_context(text, m.start()):
+                    continue
+                if require_unit:
+                    try:
+                        unit = m.group(2)
+                    except IndexError:
+                        unit = ""
+                    if not unit:
+                        continue
+                if allow_loss_prefix and not val.startswith("-"):
+                    sentence_start = max(0, m.start() - 30)
+                    for i in range(m.start(), sentence_start, -1):
+                        if text[i - 1] in "。！？\n":
+                            sentence_start = i
+                            break
+                    prefix = text[sentence_start:m.start()]
+                    if "亏损" in prefix or "亏-" in prefix:
+                        val = "-" + val
+                val = _normalize_signed_zero(val)
+                cand = (_decimals(val), val)
+                if best is None or cand[0] > best[0]:
+                    best = cand
+        if best is not None:
+            metrics[key] = best[1]
     return metrics
 
 

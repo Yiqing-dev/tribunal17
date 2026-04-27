@@ -527,7 +527,13 @@ def collect_sector_heatmap(trade_date: str = "", spot_df=None) -> SectorHeatmapD
 
 
 def collect_limit_board(trade_date: str = "", spot_df=None) -> LimitBoardSummary:
-    """Collect limit up/down stocks."""
+    """Collect limit up/down stocks.
+
+    Primary path: derive from ``spot_df`` (full A-share spot quote).
+    Fallback path: when ``spot_df`` is missing (EM spot API down), call the
+    dedicated zt_pool / dtgc_pool endpoints which often stay alive when
+    the bulk spot endpoint fails.
+    """
     ak = _get_ak()
 
     if spot_df is None:
@@ -536,10 +542,70 @@ def collect_limit_board(trade_date: str = "", spot_df=None) -> LimitBoardSummary
                 spot_df = ak.stock_zh_a_spot_em()
         except Exception as _e:
             logger.debug("limit board spot_em failed: %s", _e)
-            return LimitBoardSummary()
 
     up_stocks = []
     down_stocks = []
+
+    # Fallback: pull directly from zt_pool_em / zt_pool_dtgc_em when the
+    # bulk spot endpoint is down. These return the limit-up / limit-down
+    # rosters even on days where stock_zh_a_spot_em fails.
+    if spot_df is None or "涨跌幅" not in (spot_df.columns if spot_df is not None else []):
+        date_str = (trade_date or datetime.now().strftime("%Y-%m-%d")).replace("-", "")
+        try:
+            with em_proxy_session():
+                up_df = ak.stock_zt_pool_em(date=date_str)
+            if up_df is not None and not up_df.empty:
+                code_col = "代码" if "代码" in up_df.columns else "股票代码"
+                name_col = "名称" if "名称" in up_df.columns else "股票简称"
+                pct_col = "涨跌幅" if "涨跌幅" in up_df.columns else None
+                amt_col = "成交额" if "成交额" in up_df.columns else None
+                for _, r in up_df.iterrows():
+                    pct = _safe_float(r.get(pct_col)) if pct_col else None
+                    amt = (_safe_float(r.get(amt_col)) or 0) / 1e8 if amt_col else 0
+                    up_stocks.append(asdict(LimitStock(
+                        ticker=str(r.get(code_col, "")),
+                        name=str(r.get(name_col, "")),
+                        pct_change=round(pct, 2) if pct is not None else 0.0,
+                        amount_yi=round(amt, 2),
+                        is_limit_up=True,
+                    )))
+                logger.info(
+                    f"  [OK] limit_board fallback (zt_pool_em): {len(up_stocks)} limit-ups"
+                )
+        except Exception as _e:
+            logger.debug("limit board zt_pool_em fallback failed: %s", _e)
+        try:
+            with em_proxy_session():
+                down_df = ak.stock_zt_pool_dtgc_em(date=date_str)
+            if down_df is not None and not down_df.empty:
+                code_col = "代码" if "代码" in down_df.columns else "股票代码"
+                name_col = "名称" if "名称" in down_df.columns else "股票简称"
+                pct_col = "涨跌幅" if "涨跌幅" in down_df.columns else None
+                amt_col = "成交额" if "成交额" in down_df.columns else None
+                for _, r in down_df.iterrows():
+                    pct = _safe_float(r.get(pct_col)) if pct_col else None
+                    amt = (_safe_float(r.get(amt_col)) or 0) / 1e8 if amt_col else 0
+                    down_stocks.append(asdict(LimitStock(
+                        ticker=str(r.get(code_col, "")),
+                        name=str(r.get(name_col, "")),
+                        pct_change=round(pct, 2) if pct is not None else 0.0,
+                        amount_yi=round(amt, 2),
+                        is_limit_up=False,
+                    )))
+                logger.info(
+                    f"  [OK] limit_board fallback (dtgc_pool_em): {len(down_stocks)} limit-downs"
+                )
+        except Exception as _e:
+            logger.debug("limit board dtgc_pool_em fallback failed: %s", _e)
+        if up_stocks or down_stocks:
+            return LimitBoardSummary(
+                limit_up_count=len(up_stocks),
+                limit_down_count=len(down_stocks),
+                limit_up_stocks=up_stocks,
+                limit_down_stocks=down_stocks,
+            )
+        # Both fallbacks failed → empty summary
+        return LimitBoardSummary()
 
     if spot_df is not None and "涨跌幅" in spot_df.columns:
         # Detect limit up: >=9.9% for main board, >=19.9% for ChiNext/STAR

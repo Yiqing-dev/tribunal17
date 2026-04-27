@@ -1146,7 +1146,20 @@ def _fmt_num(v, decimals=2) -> str:
         return f"{v / 1e8:.{decimals}f}亿"
     if abs(v) >= 1e4:
         return f"{v / 1e4:.{decimals}f}万"
-    return f"{v:.{decimals}f}"
+    out = f"{v:.{decimals}f}"
+    # Avoid the "-0.00" / "0.00" with sign that occurs when a non-zero value
+    # rounds to zero at the selected precision. Bump precision until the
+    # rounded value is truly zero (then drop the sign) or shows a non-zero
+    # digit. Caps at 6 decimals so display stays sane.
+    if v != 0 and float(out) == 0.0:
+        for d in range(decimals + 1, 7):
+            cand = f"{v:.{d}f}"
+            if float(cand) != 0.0:
+                return cand
+        return f"{abs(v):.{decimals}f}"
+    if v == 0 and out.startswith("-"):
+        return out[1:]
+    return out
 
 
 def _build_markdown(b: AkshareBundle) -> str:

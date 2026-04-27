@@ -53,10 +53,45 @@ def _strip_internal_tokens(text: str) -> str:
     text = "\n".join(cleaned_lines).strip()
 
     # ── Internal ID patterns ──
+    # FIRST: drop entire bracket bundles whose contents are made up of
+    # internal-ID tokens (clm-xxx, E#, hex IDs, or already-stripped residues
+    # like /r002 from slash-joined lists). This must run BEFORE per-token
+    # stripping so slash-joined lists ([clm-r001/r002/r004/r005],
+    # [E8/E9/E11/E29]) don't degrade into [/r002/r004/r005] or [///].
+    #
+    # A bracket is treated as an ID bundle iff every non-separator atom
+    # inside is a recognised internal token. Separators allowed: , / ; and
+    # whitespace. An adjudication suffix ("ACCEPT"/"REJECT"/"DEFER"/...) is
+    # tolerated to handle bundles like [clm-u001 ACCEPT, clm-r011 DEFER].
+    _ID_ATOM = (
+        r'(?:clm-[A-Za-z0-9_-]+'           # clm-u001, clm-r011, clm-79107dc0
+        r'|E\d+'                            # E1, E29
+        r'|[urn]\d+'                        # r002, u011 — slash-joined fragments
+        r'|\d+'                             # bare numbers in claim bundles
+        r'|[0-9A-Fa-f]{6,}(?:-\d+)?'        # hex IDs
+        r'|ACCEPT|REJECT|DEFER|SUPPORTED|UNSUPPORTED'
+        r'(?:\s+at\s+\d+(?:\.\d+)?)?'
+        r')'
+    )
+    # \[ ( atom (sep atom)* )? \]   with optional "支持/反对" prefix.
+    # Leading and trailing separators (/ , ;) are tolerated to catch
+    # residues like [/r002], [E8/], [/E1, E2/].
+    _SEP = r'[\s,/;]*'
+    _ID_BUNDLE = (
+        r'\[' + _SEP +
+        r'(?:支持|反对|对|于|按|的|支持\s*论点|反对\s*论点)?' + _SEP +
+        _ID_ATOM +
+        r'(?:' + _SEP + _ID_ATOM + r')*' + _SEP + r'\]'
+    )
+    text = re.sub(_ID_BUNDLE, '', text, flags=re.IGNORECASE)
+
     # clm-xxxx hex IDs (any length after prefix)
     text = re.sub(r'clm-[0-9a-f]+', '', text)
-    # General claim IDs such as clm-u001, clm-r011.
-    text = re.sub(r'clm-[A-Za-z0-9_-]+', '', text, flags=re.IGNORECASE)
+    # General claim IDs such as clm-u001, clm-r011 — and slash-joined
+    # continuations like /r002/r004/r005.
+    text = re.sub(
+        r'clm-[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*', '', text, flags=re.IGNORECASE
+    )
     # Standalone hex IDs like 79107dc0-2, ab5df0c6.
     # Require at least one a-f letter so legitimate six-digit tickers
     # such as 601985 are preserved in user-facing copy.
@@ -69,7 +104,7 @@ def _strip_internal_tokens(text: str) -> str:
     # Require a comma, negative sentinel, or hex letters so plain numeric
     # brackets like [123456] are not stripped.
     text = re.sub(r'\[(?=[^\]]*(?:,|-\d|[A-Fa-f]))[\s,\-\d0-9A-Fa-f]*\]', '', text)
-    # Bracketed claim adjudication bundles like [clm-u001 ACCEPT, clm-r011 DEFER].
+    # Defensive: if any [clm-...] survived (e.g., contained Chinese), strip.
     text = re.sub(r'\[[^\]]*clm-[^\]]*\]', '', text, flags=re.IGNORECASE)
     # If claim IDs were stripped earlier, bracket bundles can degrade into
     # [ACCEPT, DEFER] style residues; strip those too.
@@ -85,9 +120,14 @@ def _strip_internal_tokens(text: str) -> str:
     # Bull/Bear with bracket list (no "Claim"): Bull [clm-1]
     text = re.sub(r'Bull\s*\[[^\]]*\]', '', text)
     text = re.sub(r'Bear\s*\[[^\]]*\]', '', text)
-    # Evidence IDs like E1, E2 (standalone or bracketed [E1], [E8])
-    text = re.sub(r'\[E\d+\]', '', text)
+    # Evidence IDs like E1, E2 (standalone or bracketed [E1], [E8]) — also
+    # slash-joined [E8/E9/E11] and bare slash-joined E8/E9 inside text.
+    text = re.sub(r'\[E\d+(?:\s*[,/;]\s*E\d+)*\]', '', text)
+    text = re.sub(r'\bE\d+(?:\s*[/]\s*E\d+)+\b', '', text)
     text = re.sub(r'\bE\d+\b', '', text)
+    # Residual bracket shells left after token stripping: [], [/], [//], [///]
+    # plus comma/slash mix shells like [,/] [, ,].
+    text = re.sub(r'\[\s*[/,;\s]*\s*\]', '', text)
     # CITED_EVIDENCE blocks (with optional ** markdown)
     text = re.sub(r'\*{0,2}CITED_EVIDENCE\*{0,2}:?\s*\[[^\]]*\]', '', text)
 
