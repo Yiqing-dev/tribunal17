@@ -450,6 +450,10 @@ risk_flags = [
   {"category": "流动性风险", "severity": "medium", "description": "日均成交量偏低", "evidence": "E3"},
   {"category": "估值风险", "severity": "low", "description": "PE略高于均值", "evidence": "E2"}
 ]
+invalidation_conditions = [
+  "收盘价连续2日跌破10.50元",
+  "2026-05-31前行业中位PE回落至15倍以下"
+]
 """
 
 RISK_OUTPUT_MISSING_BLOCK = """\
@@ -506,6 +510,23 @@ class TestParseRiskOutput:
         result = parse_risk_output(VALID_RISK_OUTPUT)
         categories = [f.get("category") for f in result.get("risk_flags", [])]
         assert "流动性风险" in categories
+
+    def test_valid_block_parses_invalidation_conditions_array(self):
+        from subagent_pipeline.bridge import parse_risk_output
+        result = parse_risk_output(VALID_RISK_OUTPUT)
+        conditions = result.get("invalidation_conditions", [])
+        assert conditions == [
+            "收盘价连续2日跌破10.50元",
+            "2026-05-31前行业中位PE回落至15倍以下",
+        ]
+
+    def test_risk_manager_structured_data_keeps_invalidation_conditions(self):
+        from subagent_pipeline.bridge import build_node_trace
+        nt = build_node_trace("risk_manager", VALID_RISK_OUTPUT, run_id="test-risk-array")
+        assert nt.structured_data["invalidation_conditions"] == [
+            "收盘价连续2日跌破10.50元",
+            "2026-05-31前行业中位PE回落至15倍以下",
+        ]
 
     def test_missing_block_returns_empty_dict(self):
         from subagent_pipeline.bridge import parse_risk_output

@@ -624,6 +624,7 @@ def generate_brief_report_file(
     market_context: dict = None,
     watchlist_report: object = None,
     monitoring_report: object = None,
+    research_quality_summary: object = None,
 ) -> Optional[str]:
     """Generate brief report and write to data/reports/brief-{date}.md.
 
@@ -631,6 +632,9 @@ def generate_brief_report_file(
         monitoring_report: Optional RollingMonitorReport from monitoring module.
             When provided, its markdown section is appended to the brief so that
             drift alerts are visible alongside the daily decisions.
+        research_quality_summary: Optional ResearchQualitySummary. When
+            provided, replaces win-rate framing with a research-quality
+            section (price-free internal yardstick).
 
     Returns path to generated file, or None if no runs.
     """
@@ -640,6 +644,10 @@ def generate_brief_report_file(
     )
     if not content or not run_ids:
         return None
+
+    # Append research-quality section (price-free internal yardstick)
+    if research_quality_summary is not None and hasattr(research_quality_summary, "to_markdown"):
+        content = content.rstrip() + "\n\n---\n\n" + research_quality_summary.to_markdown() + "\n"
 
     # Append monitoring section (if any alerts OR report object supplied)
     if monitoring_report is not None and hasattr(monitoring_report, "to_markdown_section"):

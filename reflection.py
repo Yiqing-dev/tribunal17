@@ -442,6 +442,47 @@ def _generate_lesson(rec: ReflectionRecord) -> None:
             rec.lesson = ""
 
 
+def generate_quality_audit_prompt(quality_summary, recent_records: list = None) -> str:
+    """Generate a research-quality audit prompt for an LLM agent.
+
+    This is the *non-price* counterpart to generate_reflection_prompt.
+    Instead of asking "why was the direction wrong?", this asks
+    "what's missing or weak in the research process itself?".
+
+    Args:
+        quality_summary: ResearchQualitySummary instance.
+        recent_records: optional list of ReflectionRecord for context.
+    """
+    md = quality_summary.to_markdown() if hasattr(quality_summary, "to_markdown") else str(quality_summary)
+    return f"""你是投研系统的研究质量审计师（不是价格预测复盘师）。
+
+定位转变（请深刻理解）：
+- LLM 多智能体系统的强项是"信息综合 + 多视角论证 + 风险列举"
+- 弱项是"短期价格方向预测 + 概率校准"
+- 因此本审计**不评估"方向准确率"**，只评估"研究过程质量"
+
+质量评分卡（已自动算出）：
+
+{md}
+
+请基于以上数据完成 5 项审计：
+
+1. **薄弱维度归因**：哪个维度最薄弱？背后是数据采集问题、prompt 设计问题、还是 LLM 本身能力问题？
+   - 例：如果 industry_context_present 低，是 akshare 失败还是 _collect_industry_compare 逻辑缺陷？
+
+2. **报告内部一致性**：在低 grade 报告中，是否存在"分析师 pillar_score 高但 PM 给出 SELL" 这类内部矛盾？
+
+3. **可证伪条件具体度评估**：falsifiability_score 如果 < 0.6，举出 1-2 个含糊条件示例（如"市场转弱时"），并给出改写建议（如"上证 5 日跌幅 > 3% 且 RSI < 30 时"）。
+
+4. **辩论实质性 vs 形式化**：debate_engagement 的 0.85 分有多少是"形式上的多空辩论"vs"实质性证据交锋"？是否多空都引用了同一组证据但得出反向结论？
+
+5. **下一周期可执行改进 3 条**："当出现 X 时，prompt/collector 应该 Y" 格式。
+
+不要谈论价格预测准确率、win rate 或方向错判。只谈论**研究报告作为分析产物本身的质量**。
+
+用中文回复，结构清晰。"""
+
+
 def generate_reflection_prompt(report: ReflectionReport) -> str:
     """Generate a prompt for LLM-based deep reflection via Agent tool.
 

@@ -56,6 +56,15 @@ SAMPLE_TRADE_PLAN = {
         "市场环境转为RISK_OFF",
         "核心利好证伪",
     ],
+    "confirmations": ["放量突破压力位", "板块强度维持前20%"],
+    "avoid_conditions": ["成交额萎缩", "监管事件锁定"],
+    "review_triggers": ["跌破止损位", "业绩预告发布"],
+    "time_stop": "5个交易日内未突破则放弃",
+    "scenario_actions": {
+        "base": "轻仓观察",
+        "bull": "突破后参与",
+        "bear": "跌破止损回避",
+    },
     "holding_horizon": "short_swing",
     "confidence": 0.72,
 }
@@ -163,6 +172,8 @@ class TestParseTradePlan:
         assert result["bias"] == "LONG"
         assert len(result["entry_setups"]) == 2
         assert result["stop_loss"]["price"] == 11.35
+        assert result["confirmations"][0] == "放量突破压力位"
+        assert result["scenario_actions"]["bear"] == "跌破止损回避"
 
     def test_direct_format(self):
         """JSON block with bias/entry_setups directly (no trade_plan wrapper)."""
@@ -413,6 +424,23 @@ class TestRenderTradePlanCard:
         assert "80%" in html
 
 
+class TestSubagentResearchTradePlanCard:
+    """Unskipped renderer coverage for the subagent_pipeline renderer."""
+
+    def test_expanded_trade_plan_fields_render(self):
+        from subagent_pipeline.renderers.research_renderer import _render_trade_plan_card
+
+        html = _render_trade_plan_card(SAMPLE_TRADE_PLAN)
+
+        assert "参与前确认" in html
+        assert "放量突破压力位" in html
+        assert "不参与条件" in html
+        assert "成交额萎缩" in html
+        assert "重新评估触发" in html
+        assert "时间止损" in html
+        assert "情景动作" in html
+
+
 # ────────────────────────────────────────────────────────────────────
 # 5. View integration
 # ────────────────────────────────────────────────────────────────────
@@ -494,6 +522,11 @@ class TestPromptIntegration:
         assert "stop_loss" in prompt
         assert "take_profit" in prompt
         assert "invalidators" in prompt
+        assert "confirmations" in prompt
+        assert "avoid_conditions" in prompt
+        assert "review_triggers" in prompt
+        assert "time_stop" in prompt
+        assert "scenario_actions" in prompt
         assert "holding_horizon" in prompt
 
     def test_prompt_has_generation_rules(self):

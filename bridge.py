@@ -12,6 +12,7 @@ import math
 import re
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .trace_models import (
@@ -365,23 +366,70 @@ def parse_risk_output(text: str) -> Dict[str, Any]:
             j["risk_cleared"] = j["risk_cleared"].upper() in ("TRUE", "YES", "1")
         return j
 
-    # Fallback: key=value format with separate risk_flags array
-    flags_m = re.search(r'risk_flags\s*=\s*(\[[\s\S]*?\])\s*$', block, re.MULTILINE)
-    if not flags_m:
-        flags_m = re.search(r'risk_flags\s*=\s*(\[[\s\S]*?\n\s*\])', block)
+    def _array_assignment(src: str, key: str) -> Tuple[Optional[str], str]:
+        """Extract ``key = [...]`` from a key/value block.
 
-    if flags_m:
+        Regex is brittle for arrays of objects because it stops at the first
+        ``]`` inside a value. Walk brackets instead so risk_flags and
+        invalidation_conditions can both be parsed from one RISK_OUTPUT block.
+        """
+        m = re.search(rf'(^|\n)\s*{re.escape(key)}\s*=\s*\[', src)
+        if not m:
+            return None, src
+        arr_start = src.find("[", m.start())
+        depth = 0
+        in_str = False
+        escape = False
+        for i in range(arr_start, len(src)):
+            ch = src[i]
+            if escape:
+                escape = False
+                continue
+            if ch == "\\" and in_str:
+                escape = True
+                continue
+            if ch == '"':
+                in_str = not in_str
+                continue
+            if in_str:
+                continue
+            if ch == "[":
+                depth += 1
+            elif ch == "]":
+                depth -= 1
+                if depth == 0:
+                    return src[arr_start:i + 1], src[:m.start()] + "\n" + src[i + 1:]
+        return None, src
+
+    def _parse_array_value(raw: str, *, key: str) -> list:
+        cleaned = re.sub(r',\s*]', ']', raw)
+        cleaned = re.sub(r',\s*}', '}', cleaned)
+        cleaned = re.sub(r'\bTrue\b', 'true', cleaned)
+        cleaned = re.sub(r'\bFalse\b', 'false', cleaned)
+        cleaned = re.sub(r'\bNone\b', 'null', cleaned)
+        cleaned = re.sub(r'(?<=[{,])\s*(\w+)\s*:', r' "\1":', cleaned)
         try:
-            raw = flags_m.group(1)
-            raw = re.sub(r',\s*]', ']', raw)
-            raw = re.sub(r',\s*}', '}', raw)
-            raw = re.sub(r'(?<=[{,])\s*(\w+)\s*:', r' "\1":', raw)
-            result["risk_flags"] = json.loads(raw)
+            parsed = json.loads(cleaned)
+            return parsed if isinstance(parsed, list) else []
         except (json.JSONDecodeError, ValueError) as e:
-            logger.warning("risk_flags JSON parse failed, defaulting to []: %s", e)
-            result["risk_flags"] = []
-            result["_risk_flags_parse_failed"] = True
-        block = block[:flags_m.start()] + block[flags_m.end():]
+            if key == "risk_flags":
+                logger.warning("risk_flags JSON parse failed, defaulting to []: %s", e)
+                result["_risk_flags_parse_failed"] = True
+                return []
+            # LLMs sometimes emit unquoted string arrays. Preserve useful text
+            # rather than dropping all falsifiability triggers.
+            inner = raw[1:-1] if raw.startswith("[") and raw.endswith("]") else raw
+            items = []
+            for line in inner.splitlines():
+                item = line.strip().strip(",").strip().strip('"').strip("'")
+                if item:
+                    items.append(item)
+            return items
+
+    for array_key in ("risk_flags", "invalidation_conditions"):
+        raw_arr, block = _array_assignment(block, array_key)
+        if raw_arr is not None:
+            result[array_key] = _parse_array_value(raw_arr, key=array_key)
 
     for line in block.strip().split('\n'):
         line = line.strip()
@@ -390,7 +438,7 @@ def parse_risk_output(text: str) -> Dict[str, Any]:
         key, _, val = line.partition('=')
         key = key.strip()
         val = val.strip()
-        if key == "risk_flags":
+        if key in ("risk_flags", "invalidation_conditions"):
             continue
         if val.upper() == 'TRUE':
             result[key] = True
@@ -1240,6 +1288,25 @@ def _parse_analyst(agent_key: str, text: str, nt: NodeTrace) -> None:
                 nt.structured_data = {}
             nt.structured_data["metrics_fallback"] = extracted
 
+    # Sentiment analyst: extract hot-money probability + type (added 2026-04-30
+    # to mitigate the structural SELL-bias on small-cap speculative stocks).
+    if agent_key == "sentiment_analyst":
+        if nt.structured_data is None:
+            nt.structured_data = {}
+        m_prob = re.search(
+            r'hot_money_probability\s*=\s*(LOW|MEDIUM|HIGH)',
+            text, flags=re.IGNORECASE,
+        )
+        if m_prob:
+            nt.structured_data["hot_money_probability"] = m_prob.group(1).upper()
+        m_type = re.search(
+            r'hot_money_type\s*=\s*(题材接力|一日游|中线票|妖股|N/?A)',
+            text,
+        )
+        if m_type:
+            raw = m_type.group(1)
+            nt.structured_data["hot_money_type"] = "N/A" if raw.upper().replace("/", "") == "NA" else raw
+
 
 def _parse_catalyst(agent_key: str, text: str, nt: NodeTrace) -> None:
     """Parse Stage 2 catalyst_agent."""
@@ -1394,6 +1461,23 @@ def _parse_research_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
         ))
         nt.claim_ids_referenced = claim_refs
 
+        # Directional lean (research improvement #2): when action=HOLD, captures
+        # which way PM would lean if forced to pick, with reason. For BUY/SELL,
+        # auto-derives if missing.
+        _lean_raw = synth.get("directional_lean", "")
+        _lean = str(_lean_raw).strip().lower() if _lean_raw else ""
+        if _lean not in ("bullish", "bearish", "neutral"):
+            # Auto-derive when missing/invalid
+            if action == "BUY":
+                _lean = "bullish"
+            elif action == "SELL":
+                _lean = "bearish"
+            else:
+                _lean = ""  # leave blank for HOLD when PM didn't supply
+        _lean_reason = str(synth.get("lean_reason", "") or "").strip()
+        if _lean_reason.lower() in ("n/a", "na", "none", ""):
+            _lean_reason = ""
+
         nt.structured_data = {
             "conclusion": synth.get("conclusion", ""),
             "base_case": synth.get("base_case", ""),
@@ -1407,6 +1491,8 @@ def _parse_research_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
             ),
             "supporting_evidence_ids": supporting if isinstance(supporting, list) else [],
             "opposing_evidence_ids": opposing if isinstance(opposing, list) else [],
+            "directional_lean": _lean,
+            "lean_reason": _lean_reason,
         }
     else:
         nt.parse_status = "fallback_used"
@@ -1494,11 +1580,14 @@ def _parse_risk_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
         flags = dedupe_and_cap_flags(raw_flags, cap=6)
         nt.risk_flag_count = len(flags)
         nt.risk_flag_categories = [f["category"] for f in flags]
+        invalidation_conditions = _split_if_string(
+            risk.get("invalidation_conditions", [])
+        )
 
         nt.structured_data = {
             "conclusion": f"风险评分 {nt.risk_score}/10，"
                           + ("审查通过" if nt.risk_cleared else "审查未通过"),
-            "invalidation_conditions": [],
+            "invalidation_conditions": invalidation_conditions,
             "risk_flags": [
                 {
                     "flag_id": f"rf-{i+1:03d}",
@@ -1822,6 +1911,334 @@ def _try_fetch_prices(ticker: str, days: int = 30) -> List[float]:
         return []
 
 
+def _extract_industry_compare_from_text(text: str, ticker: str = "") -> Dict[str, Any]:
+    """Parse the collector-rendered industry comparison block from markdown.
+
+    This is a no-network fallback for report generation paths that only pass
+    agent text outputs. It mirrors ``AkshareBundle.render_fundamentals_analyst_md``
+    and ``_build_markdown`` enough to preserve the structured card data.
+    """
+    if not text:
+        return {}
+    m = re.search(r"^##\s*行业对比[（(]([^）)]+)[）)]", text, flags=re.MULTILINE)
+    if not m:
+        return {}
+
+    industry_name = m.group(1).strip()
+    if not industry_name or industry_name in {"—", "-", "N/A", "NA"}:
+        return {}
+
+    start = m.end()
+    next_heading = re.search(r"\n##\s+", text[start:])
+    section = text[start:start + next_heading.start()] if next_heading else text[start:]
+
+    def _num_after(pattern: str) -> Optional[float]:
+        mm = re.search(pattern, section)
+        if not mm:
+            return None
+        try:
+            return float(mm.group(1))
+        except (TypeError, ValueError):
+            return None
+
+    def _cell_num(value: str) -> Optional[float]:
+        raw = str(value or "").strip().replace(",", "")
+        if raw in ("", "—", "-", "None", "nan"):
+            return None
+        multiplier = 1.0
+        if raw.endswith("万"):
+            multiplier = 1e4
+            raw = raw[:-1]
+        elif raw.endswith("亿"):
+            multiplier = 1.0
+            raw = raw[:-1]
+        try:
+            return float(raw) * multiplier
+        except ValueError:
+            return None
+
+    ic: Dict[str, Any] = {"industry_name": industry_name}
+    for key, pattern in (
+        ("pe_percentile_5y", r"PE\s*历史分位\s*([-+]?\d+(?:\.\d+)?)\s*%"),
+        ("pb_percentile_5y", r"PB\s*历史分位\s*([-+]?\d+(?:\.\d+)?)\s*%"),
+        ("industry_pe_median", r"行业中位\s*PE\s*([-+]?\d+(?:\.\d+)?)"),
+        ("industry_pb_median", r"行业中位\s*PB\s*([-+]?\d+(?:\.\d+)?)"),
+        ("industry_ps_median", r"行业中位\s*PS\s*([-+]?\d+(?:\.\d+)?)"),
+        ("industry_roe_median", r"行业中位\s*ROE\s*([-+]?\d+(?:\.\d+)?)"),
+        ("industry_gross_margin_median", r"行业中位\s*毛利率\s*([-+]?\d+(?:\.\d+)?)"),
+        ("industry_revenue_growth_median", r"行业中位\s*营收增速\s*([-+]?\d+(?:\.\d+)?)"),
+    ):
+        val = _num_after(pattern)
+        if val is not None:
+            ic[key] = val
+
+    size_m = re.search(r"成份股\s*(\d+)\s*只", section)
+    if size_m:
+        ic["industry_size"] = int(size_m.group(1))
+
+    bare = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
+    peers = []
+    header_cells: List[str] = []
+    for line in section.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if len(cells) < 5:
+            continue
+        code_cell = cells[0]
+        if "代码" in code_cell:
+            header_cells = cells
+            continue
+        if set(code_cell.replace(" ", "")) <= {"-"}:
+            continue
+        code_m = re.search(r"(\d{6})", code_cell)
+        if not code_m:
+            continue
+        code = code_m.group(1)
+
+        def _idx(labels: tuple, default: Optional[int] = None) -> Optional[int]:
+            for i, h in enumerate(header_cells):
+                if any(label in h for label in labels):
+                    return i
+            return default
+
+        pe_i = _idx(("PE", "市盈率"), 2)
+        pb_i = _idx(("PB", "市净率"), 3)
+        roe_i = _idx(("ROE", "净资产收益率"), None)
+        gm_i = _idx(("毛利率",), None)
+        rev_i = _idx(("营收增速", "营收同比", "营业收入同比"), None)
+        turnover_default = 7 if len(cells) >= 8 else 4
+        turnover_i = _idx(("成交额", "成交金额"), turnover_default)
+
+        def _cell_at(idx: Optional[int]) -> str:
+            return cells[idx] if idx is not None and idx < len(cells) else ""
+
+        peer = {
+            "ticker": code,
+            "name": cells[1],
+            "pe": _cell_num(_cell_at(pe_i)),
+            "pb": _cell_num(_cell_at(pb_i)),
+            "turnover_yi": _cell_num(_cell_at(turnover_i)),
+            "is_current": ("★" in code_cell) or (bool(bare) and code == bare),
+        }
+        roe_val = _cell_num(_cell_at(roe_i))
+        gm_val = _cell_num(_cell_at(gm_i))
+        rev_val = _cell_num(_cell_at(rev_i))
+        if roe_val is not None:
+            peer["roe"] = roe_val
+        if gm_val is not None:
+            peer["gross_margin"] = gm_val
+        if rev_val is not None:
+            peer["revenue_growth"] = rev_val
+        peers.append(peer)
+    if peers:
+        ic["peers"] = peers
+
+    return ic
+
+
+def _load_cached_industry_data(ticker: str, trade_date: str) -> Dict[str, Any]:
+    """Load industry comparison from local collect_bundle cache, no network."""
+    bare = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
+    dates = [trade_date or datetime.now().strftime("%Y-%m-%d")]
+    try:
+        from .akshare_collector import _is_cn_trading_day, _last_trading_day
+        if not _is_cn_trading_day(dates[0]):
+            rolled = _last_trading_day(dates[0])
+            if rolled not in dates:
+                dates.append(rolled)
+    except Exception:
+        pass
+
+    try:
+        from .data_cache import DataCache
+        cache = DataCache(auto_evict=False)
+        for dt in dates:
+            cached = cache.get("collect_bundle", bare, dt)
+            if isinstance(cached, dict):
+                ic = cached.get("industry_compare") or {}
+                if isinstance(ic, dict) and ic.get("industry_name"):
+                    return ic
+    except Exception as e:
+        logger.debug("cached industry_compare lookup failed for %s: %s", ticker, e)
+    return {}
+
+
+def _metric_float(value: Any) -> Optional[float]:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    raw = str(value).strip().replace(",", "").replace("%", "")
+    if not raw or raw in ("—", "-", "None", "nan"):
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def _augment_metric_metadata(metrics: Dict[str, Any], text: str, trade_date: str) -> Dict[str, Any]:
+    """Attach data-as-of and metric-basis hints to extracted metrics."""
+    if not metrics:
+        return metrics
+    out = dict(metrics)
+    out.setdefault("data_as_of", trade_date or datetime.now().strftime("%Y-%m-%d"))
+    t = text or ""
+    if re.search(r"(一季报|Q1|一季度)", t, re.IGNORECASE):
+        out.setdefault("metric_period", "quarterly")
+    elif re.search(r"(半年报|中报|H1)", t, re.IGNORECASE):
+        out.setdefault("metric_period", "half_year")
+    elif re.search(r"(三季报|Q3|三季度)", t, re.IGNORECASE):
+        out.setdefault("metric_period", "three_quarter")
+    elif re.search(r"(年报|年度报告)", t):
+        out.setdefault("metric_period", "annual")
+    elif re.search(r"\bTTM\b|PE\(TTM\)|市盈率TTM", t, re.IGNORECASE):
+        out.setdefault("metric_period", "ttm")
+    else:
+        out.setdefault("metric_period", "unknown")
+
+    if re.search(r"(预计|预告|指引|forecast|guidance)", t, re.IGNORECASE):
+        out.setdefault("metric_basis", "forecast")
+    elif re.search(r"(估算|约为|测算|estimate)", t, re.IGNORECASE):
+        out.setdefault("metric_basis", "estimate")
+    elif out.get("metric_period") == "ttm":
+        out.setdefault("metric_basis", "ttm")
+    else:
+        out.setdefault("metric_basis", "reported")
+    return out
+
+
+def _build_data_quality_flags(metrics: Dict[str, Any], industry_data: Dict[str, Any], text: str) -> List[Dict[str, str]]:
+    """Detect report-level data/metric caveats for audit rendering."""
+    flags: List[Dict[str, str]] = []
+    pe = _metric_float(metrics.get("pe"))
+    eps = _metric_float(metrics.get("eps"))
+    roe = _metric_float(metrics.get("roe"))
+    net_profit = _metric_float(metrics.get("net_profit"))
+    if any(v is not None and v < 0 for v in (pe, eps, roe, net_profit)):
+        flags.append({
+            "type": "valuation_basis",
+            "severity": "high",
+            "message": "盈利指标为负，PE不得作为主估值锚，应使用PB/PS/现金流和净资产修复逻辑",
+        })
+    if metrics.get("metric_basis") in ("forecast", "estimate"):
+        flags.append({
+            "type": "metric_basis",
+            "severity": "medium",
+            "message": f"部分财务指标口径为{metrics.get('metric_basis')}，需避免当作已披露事实",
+        })
+    if not industry_data or not industry_data.get("industry_name"):
+        flags.append({
+            "type": "industry_context",
+            "severity": "medium",
+            "message": "行业对比数据不足，估值贵/便宜判断置信度下降",
+        })
+
+    pe_values = []
+    for m in re.finditer(r"(?:PE|市盈率)[^\n|：:=]{0,12}[：:=]?\s*(-?\d+(?:\.\d+)?)", text or "", re.IGNORECASE):
+        val = _metric_float(m.group(1))
+        if val is not None and abs(val) < 1000:
+            pe_values.append(val)
+    if len(pe_values) >= 2:
+        lo, hi = min(pe_values), max(pe_values)
+        if hi - lo > max(10.0, abs(hi) * 0.25):
+            flags.append({
+                "type": "metric_conflict",
+                "severity": "medium",
+                "message": "文本中存在多个PE口径且差异较大，需人工确认TTM/扣非/滚动口径",
+            })
+
+    return flags[:6]
+
+
+def _augment_industry_compare(industry_data: Dict[str, Any], metrics: Dict[str, Any]) -> Dict[str, Any]:
+    """Add relative valuation/quality labels to industry comparison data."""
+    if not industry_data:
+        return {}
+    ic = dict(industry_data)
+    pe = _metric_float(metrics.get("pe"))
+    pb = _metric_float(metrics.get("pb"))
+    ps = _metric_float(metrics.get("ps"))
+    roe = _metric_float(metrics.get("roe"))
+    gm = _metric_float(metrics.get("gross_margin"))
+    rev_g = _metric_float(metrics.get("revenue_growth") or metrics.get("revenue_yoy"))
+
+    basis = ""
+    current = median = None
+    if pe is not None and pe > 0 and ic.get("industry_pe_median"):
+        current, median, basis = pe, _metric_float(ic.get("industry_pe_median")), "PE"
+    elif pb is not None and pb > 0 and ic.get("industry_pb_median"):
+        current, median, basis = pb, _metric_float(ic.get("industry_pb_median")), "PB"
+    elif ps is not None and ps > 0 and ic.get("industry_ps_median"):
+        current, median, basis = ps, _metric_float(ic.get("industry_ps_median")), "PS"
+    if current is not None and median:
+        ratio = current / median
+        ic["relative_valuation_ratio"] = round(ratio, 3)
+        ic["relative_valuation_basis"] = basis
+        if ratio >= 1.3:
+            ic["relative_valuation_label"] = "premium"
+        elif ratio <= 0.7:
+            ic["relative_valuation_label"] = "discount"
+        else:
+            ic["relative_valuation_label"] = "fair"
+    else:
+        ic.setdefault("relative_valuation_label", "unavailable")
+
+    quality_pairs = [
+        (roe, _metric_float(ic.get("industry_roe_median"))),
+        (gm, _metric_float(ic.get("industry_gross_margin_median"))),
+        (rev_g, _metric_float(ic.get("industry_revenue_growth_median"))),
+    ]
+    scored = [(a, b) for a, b in quality_pairs if a is not None and b is not None]
+    if scored:
+        better = sum(1 for a, b in scored if a >= b)
+        worse = sum(1 for a, b in scored if a < b)
+        if better >= 2:
+            ic["relative_quality_label"] = "quality_premium"
+        elif worse >= 2:
+            ic["relative_quality_label"] = "weak_quality"
+        else:
+            ic["relative_quality_label"] = "mixed"
+    else:
+        ic.setdefault("relative_quality_label", "unavailable")
+    return ic
+
+
+def _load_calibration_summary(
+    ticker: str,
+    *,
+    action: str = "",
+    confidence: float = -1.0,
+    storage_dir: str = "data/replays",
+) -> Dict[str, Any]:
+    """Load latest calibration report next to replay data, if present."""
+    try:
+        from .calibration import load_latest_calibration_report, calibration_summary_for_ticker
+        candidates = []
+        replay_parent = Path(storage_dir).parent
+        candidates.append(replay_parent / "monitoring")
+        candidates.append(Path("data/monitoring"))
+        seen = set()
+        for path in candidates:
+            key = str(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            report = load_latest_calibration_report(str(path))
+            if report is not None:
+                return calibration_summary_for_ticker(
+                    report,
+                    ticker,
+                    action=action,
+                    confidence=confidence,
+                )
+    except Exception as e:
+        logger.debug("calibration summary load failed for %s: %s", ticker, e)
+    return {}
+
+
 def generate_report(
     outputs: Dict[str, str],
     ticker: str,
@@ -1835,6 +2252,9 @@ def generate_report(
     market_context: Optional[Dict] = None,
     run_config=None,
     prompts: Optional[Dict[str, str]] = None,
+    industry_data: Optional[Dict] = None,
+    stock_profile_data: Optional[Dict] = None,
+    calibration_data: Optional[Dict] = None,
 ) -> Dict[str, str]:
     """Convert subagent outputs to 3-tier HTML reports.
 
@@ -1853,6 +2273,13 @@ def generate_report(
         prompts: Optional dict mapping agent_key → rendered prompt text. When
                  provided, RunTrace.prompt_hashes is populated for stratified
                  backtest analysis across prompt versions.
+        industry_data: Optional structured industry comparison dict. If omitted,
+                       report generation tries the fundamentals markdown and
+                       local collect_bundle cache, without network calls.
+        stock_profile_data: Optional stock-type classification dict. If omitted,
+                            derived from available metrics and text.
+        calibration_data: Optional historical calibration summary dict. If
+                          omitted, the newest local calibration report is used.
 
     Returns:
         Dict of {"snapshot": path, "research": path, "audit": path, "run_id": id}
@@ -1874,7 +2301,82 @@ def generate_report(
                     nt.structured_data = {}
                 nt.structured_data["price_history"] = price_history
                 break
-    # 1c. Trend override — downgrade pillar scores when recent trend is strongly negative
+
+    # 1c. Inject industry comparison data into Fundamentals Analyst node so
+    # the snapshot/research views can render a peer-comparison card without
+    # round-tripping through the LLM.
+    if not industry_data:
+        industry_data = _extract_industry_compare_from_text(
+            outputs.get("fundamentals_analyst", ""),
+            ticker,
+        )
+    if not industry_data:
+        industry_data = _load_cached_industry_data(ticker, trace.trade_date)
+
+    fund_node = next(
+        (nt for nt in trace.node_traces if nt.node_name == "Fundamentals Analyst"),
+        None,
+    )
+    fund_text = outputs.get("fundamentals_analyst", "")
+    fund_metrics: Dict[str, Any] = {}
+    if fund_node is not None:
+        if fund_node.structured_data is None:
+            fund_node.structured_data = {}
+        fund_metrics = dict(fund_node.structured_data.get("metrics_fallback", {}) or {})
+        if fund_metrics:
+            fund_metrics = _augment_metric_metadata(fund_metrics, fund_text, trace.trade_date)
+            fund_node.structured_data["metrics_fallback"] = fund_metrics
+
+    industry_data = _augment_industry_compare(industry_data or {}, fund_metrics)
+    data_quality_flags = _build_data_quality_flags(fund_metrics, industry_data, fund_text)
+
+    if not stock_profile_data:
+        try:
+            from .stock_profile import infer_stock_profile
+            stock_profile_data = infer_stock_profile(
+                ticker=ticker,
+                ticker_name=ticker_name,
+                sector=str((industry_data or {}).get("industry_name", "")),
+                metrics=fund_metrics,
+                industry_compare=industry_data,
+                text=fund_text,
+            ).to_dict()
+        except Exception as e:
+            logger.debug("stock_profile inference failed for %s: %s", ticker, e)
+            stock_profile_data = {}
+
+    if not calibration_data:
+        calibration_data = _load_calibration_summary(
+            ticker,
+            action=trace.research_action,
+            confidence=trace.final_confidence,
+            storage_dir=storage_dir,
+        )
+
+    if fund_node is not None:
+        if industry_data:
+            fund_node.structured_data["industry_compare"] = industry_data
+        if stock_profile_data:
+            fund_node.structured_data["stock_profile"] = stock_profile_data
+        if calibration_data:
+            fund_node.structured_data["calibration_summary"] = calibration_data
+        if data_quality_flags:
+            fund_node.structured_data["data_quality_flags"] = data_quality_flags
+
+    # Share report-level context with PM / Risk / final output nodes so all
+    # renderers can find it even when a view does not inspect Fundamentals.
+    for nt in trace.node_traces:
+        if nt.node_name in ("Research Manager", "Risk Judge", "ResearchOutput"):
+            if nt.structured_data is None:
+                nt.structured_data = {}
+            if stock_profile_data:
+                nt.structured_data.setdefault("stock_profile", stock_profile_data)
+            if calibration_data:
+                nt.structured_data.setdefault("calibration_summary", calibration_data)
+            if data_quality_flags:
+                nt.structured_data.setdefault("data_quality_flags", data_quality_flags)
+
+    # 1d. Trend override — downgrade pillar scores when recent trend is strongly negative
     from .config import PipelineRunConfig
     _rc = run_config if isinstance(run_config, PipelineRunConfig) else PipelineRunConfig.from_defaults()
     _tw = _rc.trend_override_window

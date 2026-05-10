@@ -7,6 +7,7 @@ without circular imports.
 """
 
 import math
+import re
 from typing import Optional
 
 from .decision_labels import EVIDENCE_STRENGTH_LABELS
@@ -18,6 +19,495 @@ def _esc(text: str) -> str:
     return (text.replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;")
             .replace("'", "&#39;"))
+
+
+def _render_industry_compare_card(industry_compare: dict) -> str:
+    """Peer-comparison card. Used by snapshot + research renderers.
+
+    Inputs (dict shape from akshare_collector.AkshareBundle.industry_compare):
+      industry_name, pe_percentile_5y, pb_percentile_5y, history_days,
+      industry_pe_median, industry_pb_median, industry_size, peers (list).
+
+    Visual logic:
+      - Header strip: 行业名 / PE 分位 / PB 分位 / 行业中位
+      - peers >= 3 → render comparison table; current ticker row highlighted
+        with ★ marker and background tint. Peer PE / PB cells colored:
+          * green badge "低" when value <= 0.7 × industry_median
+          * red badge "高" when value >= 1.3 × industry_median
+          * neutral otherwise
+      - peers < 3 → header only + "对比样本不足" message
+
+    Returns "" when industry_compare is empty / lacks an industry name.
+    """
+    if not industry_compare or not industry_compare.get("industry_name"):
+        return ""
+
+    ic = industry_compare
+    name = ic.get("industry_name", "—")
+    pe_pct = ic.get("pe_percentile_5y")
+    pb_pct = ic.get("pb_percentile_5y")
+    pe_med = ic.get("industry_pe_median")
+    pb_med = ic.get("industry_pb_median")
+    ps_med = ic.get("industry_ps_median")
+    roe_med = ic.get("industry_roe_median")
+    gm_med = ic.get("industry_gross_margin_median")
+    rev_med = ic.get("industry_revenue_growth_median")
+    history_days = ic.get("history_days") or 0
+    ind_size = ic.get("industry_size") or 0
+    rel_val = ic.get("relative_valuation_label", "")
+    rel_quality = ic.get("relative_quality_label", "")
+
+    # Header strip cells
+    header_cells: list = []
+
+    def _pct_color(v):
+        if v is None:
+            return "var(--muted)"
+        if v <= 30:
+            return "var(--green)"   # 低估
+        if v >= 70:
+            return "var(--red)"     # 高估
+        return "var(--yellow)"
+
+    def _hcell(label: str, value: str, color: str = "") -> str:
+        clr = f' style="color:{color}"' if color else ""
+        return (
+            f'<div style="display:flex;flex-direction:column;gap:.1rem">'
+            f'<span style="font-size:.7rem;color:var(--muted);letter-spacing:.05em;'
+            f'text-transform:uppercase">{_esc(label)}</span>'
+            f'<span class="mono" style="font-size:.95rem;font-weight:600;color:var(--white)"{clr}>{value}</span>'
+            f'</div>'
+        )
+
+    if pe_pct is not None:
+        clr = _pct_color(pe_pct)
+        suffix = f"<span style='font-size:.65em;margin-left:.2rem;color:var(--muted)'>近{history_days}日</span>" if history_days else ""
+        header_cells.append(_hcell(
+            "PE 历史分位",
+            f'{pe_pct:.1f}% {suffix}',
+            color=clr,
+        ))
+    if pb_pct is not None:
+        header_cells.append(_hcell(
+            "PB 历史分位",
+            f"{pb_pct:.1f}%",
+            color=_pct_color(pb_pct),
+        ))
+    if pe_med is not None:
+        header_cells.append(_hcell(
+            "行业中位 PE",
+            f"{pe_med:.2f}",
+        ))
+    if pb_med is not None:
+        header_cells.append(_hcell(
+            "行业中位 PB",
+            f"{pb_med:.2f}",
+        ))
+    if ps_med is not None:
+        header_cells.append(_hcell("行业中位 PS", f"{ps_med:.2f}"))
+    if roe_med is not None:
+        header_cells.append(_hcell("行业中位 ROE", f"{roe_med:.2f}%"))
+
+    _VAL_LABELS = {
+        "premium": ("估值溢价", "var(--red)"),
+        "discount": ("估值折价", "var(--green)"),
+        "fair": ("估值接近行业", "var(--yellow)"),
+        "unavailable": ("估值相对位置不足", "var(--muted)"),
+    }
+    _QLT_LABELS = {
+        "quality_premium": ("质量支撑", "var(--green)"),
+        "weak_quality": ("质量偏弱", "var(--red)"),
+        "mixed": ("质量分化", "var(--yellow)"),
+        "unavailable": ("质量对比不足", "var(--muted)"),
+    }
+    rel_bits = []
+    if rel_val:
+        txt, clr = _VAL_LABELS.get(rel_val, (rel_val, "var(--muted)"))
+        basis = ic.get("relative_valuation_basis", "")
+        rel_bits.append(f'<span class="badge" style="border-color:{clr};color:{clr}">{_esc(txt)}{f"({_esc(basis)})" if basis else ""}</span>')
+    if rel_quality:
+        txt, clr = _QLT_LABELS.get(rel_quality, (rel_quality, "var(--muted)"))
+        rel_bits.append(f'<span class="badge" style="border-color:{clr};color:{clr}">{_esc(txt)}</span>')
+    relative_html = (
+        f'<div style="display:flex;gap:.45rem;flex-wrap:wrap;margin:-.2rem 0 .65rem">'
+        f'{"".join(rel_bits)}</div>'
+    ) if rel_bits else ""
+
+    header_html = (
+        f'<div style="display:flex;flex-wrap:wrap;gap:1.4rem;'
+        f'padding:.6rem .9rem;background:rgba(255,255,255,0.025);'
+        f'border:1px solid rgba(255,255,255,0.06);border-radius:10px;'
+        f'margin-bottom:.7rem">{"".join(header_cells)}</div>'
+    ) if header_cells else ""
+
+    # Peer table
+    peers = ic.get("peers") or []
+    table_html = ""
+    show_quality_cols = any(
+        p.get("roe") is not None or p.get("gross_margin") is not None or p.get("revenue_growth") is not None
+        for p in peers
+    )
+    if len(peers) >= 3:
+        rows: list = []
+        for p in peers:
+            code = p.get("ticker", "")
+            n = p.get("name", "")
+            pe = p.get("pe")
+            pb = p.get("pb")
+            roe = p.get("roe")
+            gross_margin = p.get("gross_margin")
+            revenue_growth = p.get("revenue_growth")
+            turnover = p.get("turnover_yi")
+            is_cur = bool(p.get("is_current"))
+
+            def _val_with_tag(v, median):
+                if v is None:
+                    return '<span class="mono" style="color:var(--muted)">—</span>'
+                tag = ""
+                if median:
+                    if v <= median * 0.7:
+                        tag = '<span class="badge badge-buy" style="margin-left:.3rem;font-size:.65em">低</span>'
+                    elif v >= median * 1.3:
+                        tag = '<span class="badge badge-sell" style="margin-left:.3rem;font-size:.65em">高</span>'
+                return f'<span class="mono">{v:.2f}</span>{tag}'
+
+            star = '<span style="color:var(--yellow);margin-right:.2rem">★</span>' if is_cur else ""
+            row_bg = ' style="background:rgba(251,191,36,0.05);font-weight:600"' if is_cur else ""
+            turnover_str = f'{turnover:.2f} 亿' if isinstance(turnover, (int, float)) else "—"
+            quality_cells = ""
+            if show_quality_cols:
+                roe_str = f"{roe:.1f}%" if isinstance(roe, (int, float)) else "—"
+                gm_str = f"{gross_margin:.1f}%" if isinstance(gross_margin, (int, float)) else "—"
+                rg_str = f"{revenue_growth:.1f}%" if isinstance(revenue_growth, (int, float)) else "—"
+                quality_cells = (
+                    f'<td class="mono" style="padding:.4rem .5rem;color:var(--muted)">{roe_str}</td>'
+                    f'<td class="mono" style="padding:.4rem .5rem;color:var(--muted)">{gm_str}</td>'
+                    f'<td class="mono" style="padding:.4rem .5rem;color:var(--muted)">{rg_str}</td>'
+                )
+            rows.append(
+                f'<tr{row_bg}><td style="padding:.4rem .5rem">{star}{_esc(code)}</td>'
+                f'<td style="padding:.4rem .5rem">{_esc(n)}</td>'
+                f'<td style="padding:.4rem .5rem">{_val_with_tag(pe, pe_med)}</td>'
+                f'<td style="padding:.4rem .5rem">{_val_with_tag(pb, pb_med)}</td>'
+                f'{quality_cells}'
+                f'<td class="mono" style="padding:.4rem .5rem;color:var(--muted)">{turnover_str}</td>'
+                f'</tr>'
+            )
+        quality_head = ""
+        if show_quality_cols:
+            quality_head = (
+                f'<th style="text-align:left;padding:.4rem .5rem">ROE</th>'
+                f'<th style="text-align:left;padding:.4rem .5rem">毛利率</th>'
+                f'<th style="text-align:left;padding:.4rem .5rem">营收增速</th>'
+            )
+        table_html = (
+            f'<table style="width:100%;border-collapse:collapse;font-size:.86rem">'
+            f'<thead><tr style="border-bottom:1px solid rgba(255,255,255,0.08);'
+            f'color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">'
+            f'<th style="text-align:left;padding:.4rem .5rem">代码</th>'
+            f'<th style="text-align:left;padding:.4rem .5rem">名称</th>'
+            f'<th style="text-align:left;padding:.4rem .5rem">{_pe_label_html()}</th>'
+            f'<th style="text-align:left;padding:.4rem .5rem">PB</th>'
+            f'{quality_head}'
+            f'<th style="text-align:left;padding:.4rem .5rem">成交额</th>'
+            f'</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+        )
+    elif peers:
+        table_html = (
+            f'<div style="font-size:.85rem;color:var(--muted);padding:.4rem 0">'
+            f'对比样本不足（仅 {len(peers)} 只可对比）</div>'
+        )
+
+    sample_size_note = (
+        f'<div style="font-size:.7rem;color:var(--muted);margin-top:.4rem">'
+        f'行业成份股 {ind_size} 只 · 选取 {len(peers)} 只活跃同业 · ★ 当前标的</div>'
+    ) if ind_size and peers else ""
+
+    return (
+        f'<div class="card industry-compare reveal" style="padding:1rem 1.15rem">'
+        f'<h3 style="display:flex;align-items:center;gap:.4rem;margin-bottom:.6rem">'
+        f'<span>行业对比</span>'
+        f'<span style="color:var(--muted);font-size:.85rem;font-weight:500">· {_esc(name)}</span>'
+        f'</h3>'
+        f'{relative_html}'
+        f'{header_html}'
+        f'{table_html}'
+        f'{sample_size_note}'
+        f'</div>'
+    )
+
+
+def _render_hero_industry_kpis(industry_compare: dict) -> str:
+    """Three mini KPIs for snapshot hero right-side fill.
+
+    Shows industry-context numbers (median PE / median PB / 5Y PE percentile)
+    when industry data is available. Returns "" when not — graceful degradation.
+    """
+    if not industry_compare:
+        return ""
+    ic = industry_compare
+    pe_pct = ic.get("pe_percentile_5y")
+    pe_med = ic.get("industry_pe_median")
+    pb_med = ic.get("industry_pb_median")
+    if pe_pct is None and pe_med is None and pb_med is None:
+        return ""
+
+    parts: list = []
+    if pe_med is not None:
+        parts.append(
+            f'<div class="kpi kpi-tertiary" style="padding:.45rem .55rem">'
+            f'<span class="kpi-val mono" style="font-size:.95rem">{pe_med:.1f}</span>'
+            f'<span class="kpi-label" style="font-size:.65rem">行业 PE</span>'
+            f'</div>'
+        )
+    if pb_med is not None:
+        parts.append(
+            f'<div class="kpi kpi-tertiary" style="padding:.45rem .55rem">'
+            f'<span class="kpi-val mono" style="font-size:.95rem">{pb_med:.1f}</span>'
+            f'<span class="kpi-label" style="font-size:.65rem">行业 PB</span>'
+            f'</div>'
+        )
+    if pe_pct is not None:
+        clr = "var(--green)" if pe_pct <= 30 else ("var(--red)" if pe_pct >= 70 else "var(--yellow)")
+        parts.append(
+            f'<div class="kpi kpi-tertiary" style="padding:.45rem .55rem">'
+            f'<span class="kpi-val mono" style="font-size:.95rem;color:{clr}">{pe_pct:.0f}%</span>'
+            f'<span class="kpi-label" style="font-size:.65rem">5Y PE 分位</span>'
+            f'</div>'
+        )
+    if not parts:
+        return ""
+    return (
+        f'<div style="display:grid;grid-template-columns:repeat({len(parts)},1fr);'
+        f'gap:.4rem;margin-top:.5rem;padding-top:.5rem;'
+        f'border-top:1px solid rgba(255,255,255,0.05)">'
+        f'{"".join(parts)}</div>'
+    )
+
+
+def _quality_grade_badge_html(
+    grade: str = "",
+    score: float = 0.0,
+    weak_dims: Optional[list] = None,
+) -> str:
+    """Inline grade badge for the report watermark row.
+
+    grade ∈ {"A", "B", "C", "D"}; empty string returns "" (graceful skip).
+    Color: A=green, B=blue, C=yellow, D=red. C/D shows weak dimensions inline.
+    """
+    if not grade:
+        return ""
+    color = {
+        "A": "var(--green)",
+        "B": "var(--blue)",
+        "C": "var(--yellow)",
+        "D": "var(--red)",
+    }.get(grade, "var(--muted)")
+    warn = ""
+    if grade in ("C", "D") and weak_dims:
+        wk = "、".join(weak_dims[:2])
+        warn = (
+            f' <span style="color:var(--muted);font-size:.7em">'
+            f'(薄弱: {_esc(wk)})</span>'
+        )
+    return (
+        f'<span style="display:inline-flex;align-items:center;gap:.25rem;'
+        f'padding:1px 8px;border-radius:999px;background:rgba(255,255,255,0.04);'
+        f'border:1px solid {color};color:{color};'
+        f'font-weight:700;font-size:.7rem;letter-spacing:.04em" '
+        f'title="研究质量综合评分 {score:.2f} / 1.00 (7 维度加权)">'
+        f'\U0001f4ca {_esc(grade)} 级 · {score:.2f}'
+        f'</span>{warn}'
+    )
+
+
+def _render_stock_profile_card(profile: dict) -> str:
+    """Render stock-type lens and required checks."""
+    if not profile:
+        return ""
+    label = profile.get("label_cn") or profile.get("primary") or "普通个股"
+    reasons = profile.get("reasons") or []
+    checks = profile.get("key_checks") or []
+    warnings = profile.get("warnings") or []
+    reason_html = "".join(f"<li>{_esc(str(x))}</li>" for x in reasons[:4])
+    check_html = "".join(
+        f'<span class="badge badge-hold" style="margin:.12rem .18rem .12rem 0">{_esc(str(x))}</span>'
+        for x in checks[:6]
+    )
+    warn_html = ""
+    if warnings:
+        warn_items = "".join(f"<li>{_esc(str(x))}</li>" for x in warnings[:4])
+        warn_html = f'<div style="margin-top:.55rem;color:var(--yellow)"><ul>{warn_items}</ul></div>'
+    return (
+        f'<div class="card stock-profile-card reveal">'
+        f'<h3>个股类型</h3>'
+        f'<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.55rem">'
+        f'<span class="badge badge-buy" style="font-size:.85rem">{_esc(label)}</span>'
+        f'{check_html}'
+        f'</div>'
+        f'{f"<ul>{reason_html}</ul>" if reason_html else ""}'
+        f'{warn_html}'
+        f'</div>'
+    )
+
+
+def _render_calibration_card(summary: dict) -> str:
+    """Render historical calibration summary."""
+    if not summary:
+        return ""
+
+    def _cell(label: str, cell: dict) -> str:
+        decided = int(cell.get("decided_n", 0) or 0)
+        if decided <= 0:
+            val = "样本不足"
+            sub = "—"
+            cls = "hold"
+        else:
+            acc = float(cell.get("accuracy", 0) or 0)
+            gap = float(cell.get("calibration_gap", 0) or 0)
+            val = f"{acc:.0%}"
+            sub = f"n={decided} · 偏差 {gap:+.0%}"
+            cls = "buy" if acc >= 0.55 else ("hold" if acc >= 0.45 else "sell")
+        return (
+            f'<div class="kpi kpi-secondary">'
+            f'<span class="kpi-val badge badge-{cls}" style="font-size:.85rem">{_esc(val)}</span>'
+            f'<span class="kpi-label">{_esc(label)}</span>'
+            f'<span style="font-size:.68rem;color:var(--muted)">{_esc(sub)}</span>'
+            f'</div>'
+        )
+
+    notes = summary.get("notes") or []
+    notes_html = ""
+    if notes:
+        notes_html = (
+            f'<div style="font-size:.8rem;color:var(--muted);margin-top:.55rem">'
+            f'{_esc("；".join(str(n) for n in notes[:3]))}</div>'
+        )
+    return (
+        f'<div class="card calibration-card reveal">'
+        f'<h3>历史校准</h3>'
+        f'<div class="kpi-row">'
+        f'{_cell("整体", summary.get("overall") or {})}'
+        f'{_cell("本标的", summary.get("ticker") or {})}'
+        f'{_cell("当前置信层", summary.get("confidence_bucket") or {})}'
+        f'{_cell("当前动作", summary.get("action") or {}) if summary.get("action") else ""}'
+        f'</div>'
+        f'{notes_html}'
+        f'</div>'
+    )
+
+
+def _render_data_quality_flags(flags: list) -> str:
+    """Render data/metric caveats."""
+    if not flags:
+        return ""
+    rows = ""
+    for f in flags[:6]:
+        sev = str(f.get("severity", "medium")).lower()
+        cls = "sell" if sev in ("high", "critical") else ("hold" if sev == "medium" else "buy")
+        rows += (
+            f'<li><span class="badge badge-{cls}" style="margin-right:.35rem">'
+            f'{_esc(sev.upper())}</span>{_esc(str(f.get("message", "")))}</li>'
+        )
+    return (
+        f'<div class="card data-quality-card reveal">'
+        f'<h3>数据口径风险</h3>'
+        f'<ul>{rows}</ul>'
+        f'</div>'
+    )
+
+
+def _vague_phrase_warning(text: str) -> str:
+    """Render an inline warning when a falsifiability condition contains
+    vague language. Returns "" when the text is concrete (has number / date).
+
+    Used by renderers when displaying invalidation_conditions / failure
+    triggers — surfaces prompt-level quality issues at render time so
+    quality drift doesn't silently degrade the report.
+    """
+    if not text:
+        return ""
+    t = str(text)
+    # Concrete trigger keywords / patterns — if any present, no warning
+    has_number = bool(re.search(r"\d+\.\d{1,3}|\d+%|\d+亿|\d+万|\d+\.\d+\s*元|\d{4}-\d{2}-\d{2}|\d{1,2}月\d{1,2}日", t))
+    if has_number:
+        return ""
+    # Vague phrase blacklist — soft signals only
+    vague_tokens = (
+        "市场转弱", "情况恶化", "风险上升", "环境变化",
+        "若发生不利", "如果失败", "出现问题", "信号不再有效",
+        "基本面转差", "若市场",
+    )
+    if not any(vt in t for vt in vague_tokens):
+        return ""
+    return (
+        f' <span class="vague-warn" '
+        f'style="display:inline-block;margin-left:.3rem;padding:0 6px;'
+        f'border-radius:999px;background:rgba(248,113,113,0.1);'
+        f'border:1px solid rgba(248,113,113,0.4);color:var(--red);'
+        f'font-size:.62em;font-weight:600;letter-spacing:.04em" '
+        f'title="此条件含糊，缺少具体数字阈值/日期 — 可证伪性不足">'
+        f'⚠ 含糊条件'
+        f'</span>'
+    )
+
+
+def _pe_label_html() -> str:
+    """Canonical PE display: 'PE' + small TTM superscript.
+
+    Used everywhere PE values are rendered so readers know the consistent
+    口径 is trailing-twelve-month (not static / dynamic / forward).
+    """
+    return (
+        'PE<sup class="pe-tag" '
+        'style="font-size:.62em;color:var(--muted);font-weight:500;'
+        'margin-left:1px;letter-spacing:.02em">TTM</sup>'
+    )
+
+
+def _format_finance_num(value, kind: str = "default") -> str:
+    """Canonical finance-number formatter for KPI cards.
+
+    Standardizes precision per metric family so a row of KPIs is visually
+    coherent (e.g. PE/PB/ROE all using 2 decimals instead of mixing 95.32 with
+    0.27 and 0.01). Returns "—" for missing/invalid values.
+
+    kinds:
+      price       → 2 dp                     e.g. 8.27
+      ratio       → 2 dp (PE, PB, PS)        e.g. 95.32
+      pct         → 2 dp + '%' + sign        e.g. +1.23%
+      pct_simple  → 2 dp + '%'  (no sign)    e.g. 13.05%
+      mktcap_yi   → 1 dp + ' 亿'              e.g. 34.7 亿
+      eps         → 2 dp                      e.g. 0.01
+      int         → integer                   e.g. 100
+      default     → up to 2 dp, trailing zero stripped
+    """
+    if value is None or value == "":
+        return "—"
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if math.isnan(v) or math.isinf(v):
+        return "—"
+    if kind == "price":
+        return f"{v:.2f}"
+    if kind == "ratio":
+        return f"{v:.2f}"
+    if kind == "pct":
+        sign = "+" if v > 0 else ""
+        return f"{sign}{v:.2f}%"
+    if kind == "pct_simple":
+        return f"{v:.2f}%"
+    if kind == "mktcap_yi":
+        return f"{v:.1f} 亿"
+    if kind == "eps":
+        return f"{v:.2f}"
+    if kind == "int":
+        return f"{int(round(v))}"
+    # default: 2 dp, trim trailing zeros / trailing dot
+    s = f"{v:.2f}".rstrip("0").rstrip(".")
+    return s if s else "0"
 
 
 _CONFIDENCE_LABELS = {
@@ -209,13 +699,27 @@ def _degraded_banner(reasons: list, audit_link: str = "") -> str:
     </div>"""
 
 
-def _bull_bear_bar(bull: int, bear: int) -> str:
-    total = bull + bear
-    if total == 0:
+def _bull_bear_bar(bull, bear) -> str:
+    """Render bull-vs-bear strength bar.
+
+    Accepts either int (raw claim count) or float (confidence-weighted sum).
+    Float inputs render with one decimal so "看多 12.4 / 看空 14.7" reads
+    naturally; int inputs render plain. Total of zero returns empty string.
+    """
+    try:
+        bull_v = float(bull or 0)
+        bear_v = float(bear or 0)
+    except (TypeError, ValueError):
+        bull_v = bear_v = 0.0
+    total = bull_v + bear_v
+    if total <= 0:
         return ""
-    bp = int(bull / total * 100)
+    bp = int(bull_v / total * 100)
+    is_float = isinstance(bull, float) or isinstance(bear, float)
+    bull_lbl = f"{bull_v:.1f}" if is_float else f"{int(bull_v)}"
+    bear_lbl = f"{bear_v:.1f}" if is_float else f"{int(bear_v)}"
     return f"""
-    <div class="bb-label"><span>看多 ({bull})</span><span>看空 ({bear})</span></div>
+    <div class="bb-label"><span>看多 ({bull_lbl})</span><span>看空 ({bear_lbl})</span></div>
     <div class="bb-bar">
       <div class="bb-bull" style="width:{bp}%"></div>
       <div class="bb-bear" style="width:{100-bp}%"></div>
@@ -566,6 +1070,198 @@ def _trend_arrow(current: float, previous: float = None,
     elif current < -threshold:
         return '<span class="trend-arrow trend-down">↓</span>'
     return '<span class="trend-arrow trend-neutral">→</span>'
+
+
+def _kline_with_signals_svg(
+    prices: list,
+    signals: list = None,
+    width: int = 600,
+    height: int = 240,
+    period_days: int = 0,
+) -> str:
+    """Render a full-width close-price line chart with high/low markers, X-axis
+    date hints, and an optional signal-history strip below the chart.
+
+    Args:
+      prices: list of recent close prices (oldest → newest); typically 20-30 entries.
+      signals: optional list of signal dicts {trade_date, action, confidence};
+               drawn as a chip row below the chart (NOT aligned to price K-line —
+               there's no shared date axis between price_history and signal log).
+      width / height: SVG viewBox dimensions.
+      period_days: total trading-day span of `prices` (for the X-axis caption).
+
+    Returns "" when there's not enough data.
+    """
+    if not prices or len(prices) < 2:
+        return ""
+    n = len(prices)
+    lo, hi = min(prices), max(prices)
+    span = hi - lo if hi != lo else 1.0
+    open_p = prices[0]
+    last_p = prices[-1]
+    trend = last_p - open_p
+
+    # A-share convention: red for up, green for down
+    line_color = "#f87171" if trend > 0 else ("#34d399" if trend < 0 else "#60a5fa")
+    r_, g_, b_ = int(line_color[1:3], 16), int(line_color[3:5], 16), int(line_color[5:7], 16)
+    fill_rgba = f"rgba({r_},{g_},{b_},0.10)"
+
+    pad_l, pad_r = 50, 18           # left for price labels, right for spacing
+    pad_t, pad_b = 28, 38           # top for header strip, bottom for X-axis
+    plot_w = width - pad_l - pad_r
+    plot_h = height - pad_t - pad_b
+
+    def _x(i):
+        return pad_l + i * plot_w / (n - 1)
+
+    def _y(v):
+        return pad_t + (1 - (v - lo) / span) * plot_h
+
+    parts: list = []
+
+    # Y-axis price ticks (5 evenly spaced)
+    for k in range(5):
+        v = lo + span * k / 4
+        y = _y(v)
+        parts.append(
+            f'<line x1="{pad_l - 3}" y1="{y:.1f}" x2="{width - pad_r}" y2="{y:.1f}" '
+            f'stroke="rgba(255,255,255,0.04)" stroke-width="1"/>'
+        )
+        parts.append(
+            f'<text x="{pad_l - 6}" y="{y + 3:.1f}" text-anchor="end" '
+            f'fill="var(--muted)" font-size="9.5" font-family="var(--mono)">{v:.2f}</text>'
+        )
+
+    # Polyline + gradient area
+    pts = " ".join(f"{_x(i):.1f},{_y(v):.1f}" for i, v in enumerate(prices))
+    poly_pts = (
+        f"{_x(0):.1f},{_y(lo):.1f} "
+        + pts
+        + f" {_x(n - 1):.1f},{_y(lo):.1f}"
+    )
+    parts.append(
+        f'<polygon points="{poly_pts}" fill="{fill_rgba}" stroke="none"/>'
+    )
+    parts.append(
+        f'<polyline points="{pts}" fill="none" stroke="{line_color}" stroke-width="1.6" '
+        f'stroke-linejoin="round" stroke-linecap="round"/>'
+    )
+
+    # High / Low markers
+    hi_idx = max(range(n), key=lambda i: prices[i])
+    lo_idx = min(range(n), key=lambda i: prices[i])
+    parts.append(
+        f'<circle cx="{_x(hi_idx):.1f}" cy="{_y(hi):.1f}" r="3.5" fill="#fbbf24" '
+        f'stroke="rgba(9,20,32,0.9)" stroke-width="1"/>'
+    )
+    parts.append(
+        f'<text x="{_x(hi_idx):.1f}" y="{_y(hi) - 7:.1f}" text-anchor="middle" '
+        f'fill="#fbbf24" font-size="9" font-family="var(--mono)" font-weight="600">高 {hi:.2f}</text>'
+    )
+    parts.append(
+        f'<circle cx="{_x(lo_idx):.1f}" cy="{_y(lo):.1f}" r="3.5" fill="#60a5fa" '
+        f'stroke="rgba(9,20,32,0.9)" stroke-width="1"/>'
+    )
+    parts.append(
+        f'<text x="{_x(lo_idx):.1f}" y="{_y(lo) + 12:.1f}" text-anchor="middle" '
+        f'fill="#60a5fa" font-size="9" font-family="var(--mono)" font-weight="600">低 {lo:.2f}</text>'
+    )
+
+    # Current price marker (last)
+    parts.append(
+        f'<circle cx="{_x(n - 1):.1f}" cy="{_y(last_p):.1f}" r="4" fill="{line_color}" '
+        f'stroke="rgba(9,20,32,0.95)" stroke-width="1.5"/>'
+    )
+    parts.append(
+        f'<text x="{_x(n - 1) - 4:.1f}" y="{_y(last_p) - 8:.1f}" text-anchor="end" '
+        f'fill="{line_color}" font-size="10" font-family="var(--mono)" font-weight="700">'
+        f'{last_p:.2f}</text>'
+    )
+
+    # Header strip (top): open / high / low / now + period change
+    pct = (trend / open_p * 100) if open_p > 0 else 0.0
+    pct_sign = "+" if pct > 0 else ""
+    pct_color = "#f87171" if pct > 0 else ("#34d399" if pct < 0 else "var(--muted)")
+    period_lbl = f"近 {period_days} 日" if period_days else f"近 {n} 个交易日"
+    parts.append(
+        f'<text x="{pad_l}" y="16" fill="var(--muted)" font-size="11" font-weight="600" '
+        f'letter-spacing=".05em" text-transform="uppercase">价格走势 · {_esc(period_lbl)}</text>'
+    )
+    parts.append(
+        f'<text x="{width - pad_r}" y="16" text-anchor="end" fill="{pct_color}" '
+        f'font-size="11" font-family="var(--mono)" font-weight="700">'
+        f'{open_p:.2f} → {last_p:.2f}  {pct_sign}{pct:.2f}%</text>'
+    )
+
+    # X-axis (start / end labels using positional hints, no real dates)
+    x_baseline = height - pad_b + 8
+    parts.append(
+        f'<line x1="{pad_l}" y1="{x_baseline:.1f}" x2="{width - pad_r}" y2="{x_baseline:.1f}" '
+        f'stroke="rgba(255,255,255,0.08)" stroke-width="1"/>'
+    )
+    parts.append(
+        f'<text x="{pad_l}" y="{x_baseline + 14:.1f}" fill="var(--muted)" font-size="9.5" '
+        f'font-family="var(--mono)">起点 (T-{n - 1})</text>'
+    )
+    parts.append(
+        f'<text x="{(pad_l + width - pad_r) / 2:.1f}" y="{x_baseline + 14:.1f}" '
+        f'text-anchor="middle" fill="var(--muted)" font-size="9.5" '
+        f'font-family="var(--mono)">中段 (T-{n // 2})</text>'
+    )
+    parts.append(
+        f'<text x="{width - pad_r}" y="{x_baseline + 14:.1f}" text-anchor="end" '
+        f'fill="var(--muted)" font-size="9.5" font-family="var(--mono)">最新 (T)</text>'
+    )
+
+    svg = (
+        f'<svg viewBox="0 0 {width} {height}" width="100%" height="auto" '
+        f'preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" '
+        f'role="img" aria-label="price trend with high/low markers" '
+        f'style="display:block;max-width:100%">{"".join(parts)}</svg>'
+    )
+
+    # Signal-history chip row (separate, BELOW the svg — not aligned to price axis)
+    signal_html = ""
+    if signals:
+        # Reverse so oldest → newest reads left-to-right
+        sigs = list(reversed(signals))
+        chips: list = []
+        for s in sigs[:8]:
+            act = (s.get("action") or "").upper()
+            css = "buy" if act == "BUY" else ("sell" if act in ("SELL", "VETO") else "hold")
+            ico = "▲" if act == "BUY" else ("▼" if act in ("SELL", "VETO") else "■")
+            d = (s.get("trade_date") or "")[-5:]   # MM-DD
+            conf_pct = ""
+            try:
+                cv = float(s.get("confidence", 0))
+                if cv > 0:
+                    conf_pct = f" {cv * 100:.0f}%"
+            except (TypeError, ValueError):
+                pass
+            chips.append(
+                f'<span class="kline-sig kline-sig-{css}" '
+                f'style="display:inline-flex;align-items:center;gap:.25rem;'
+                f'padding:.18rem .55rem;border-radius:999px;font-family:var(--mono);'
+                f'font-size:.72rem;letter-spacing:.02em;margin-right:.35rem;'
+                f'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08)">'
+                f'<span style="color:var(--{ "red" if css=="sell" else ("green" if css=="buy" else "yellow") })">{ico}</span>'
+                f'<span style="color:var(--white)">{_esc(d)}</span>'
+                f'<span style="color:var(--muted)">{_esc(act)}{_esc(conf_pct)}</span>'
+                f'</span>'
+            )
+        if chips:
+            signal_html = (
+                f'<div class="kline-signals" style="margin-top:.6rem;'
+                f'display:flex;align-items:center;flex-wrap:wrap;gap:.15rem;'
+                f'padding:.45rem .55rem;border-top:1px dashed rgba(255,255,255,0.08)">'
+                f'<span style="font-size:.72rem;color:var(--muted);'
+                f'letter-spacing:.05em;text-transform:uppercase;margin-right:.5rem">'
+                f'信号轨迹</span>'
+                f'{"".join(chips)}'
+                f'</div>'
+            )
+
+    return f'<div class="kline-card">{svg}{signal_html}</div>'
 
 
 def _sparkline_svg(prices: list, width: int = 200, height: int = 60) -> str:
@@ -921,15 +1617,23 @@ def _price_ladder_svg(
     current: float = 0.0,
     width: int = 280,
     height: int = 220,
+    side: str = "BUY",
 ) -> str:
-    """Vertical price ladder — stop (red band, bottom) → current → entries → targets (green bands, top).
+    """Vertical price ladder — stop / current / entries / targets bands.
 
-    Inputs are plain floats / price tuples. Each entry/target is either a single
-    float or a [low, high] tuple (price zone). Draws a labelled vertical axis
-    with shaded zones. Gracefully degrades to empty string when there's no data.
+    Direction-aware (added 2026-04-30): for SELL/SHORT/AVOID/VETO trades, stop
+    sits ABOVE current and the red "danger zone" must extend UPWARD from stop;
+    targets sit BELOW current. For BUY/LONG/HOLD, the original orientation is
+    kept (red below stop, targets above).
+
+    Each entry/target is either a single float or a [low, high] tuple (price
+    zone). Draws a labelled vertical axis with shaded zones. Gracefully
+    degrades to empty string when there's no data.
 
     Colour-blind safety: zones are labelled with ✖ / ● / ▲ so redundant with hue.
     """
+    side_upper = (side or "BUY").upper()
+    is_short = side_upper in ("SELL", "SHORT", "AVOID", "VETO")
     entries = [e for e in (entries or []) if e]
     targets = [t for t in (targets or []) if t]
     # Collect all numeric prices to determine range
@@ -1013,9 +1717,14 @@ def _price_ladder_svg(
             f'font-size="11" font-weight="600">{_esc(icon)} {_esc(text)}</text>'
         )
 
-    # Stop loss: red band from plot_bottom to stop price
+    # Stop loss: red band — direction aware
+    # BUY/LONG: red below stop (price drop = loss)
+    # SELL/SHORT/AVOID/VETO: red above stop (price rise = loss)
     if stop_loss and stop_loss > 0:
-        _zone(lo, float(stop_loss), "var(--red)")
+        if is_short:
+            _zone(float(stop_loss), hi, "var(--red)")
+        else:
+            _zone(lo, float(stop_loss), "var(--red)")
         _label(_y(float(stop_loss)), f"止损 {stop_loss:.2f}", "✖", "var(--red)")
 
     # Entry zones: yellow bands

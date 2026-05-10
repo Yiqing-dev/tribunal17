@@ -24,6 +24,116 @@ from .shared import (
 
 
 # ============================================================
+# Hot-Money / 游资逻辑识别 Framework (used by sentiment_analyst)
+# ============================================================
+# Rationale: A-share small-cap / ST / 北交所 / 科创板 stocks frequently exhibit
+# strong short-term price moves driven by 游资 (hot-money speculative traders)
+# that override fundamental & technical signals. Reflection report 2026-04-30
+# showed 83% of severe-direction-wrong cases were SELL signals on small caps
+# that subsequently rose +7% to +16.7% — the system failed to detect 游资 logic.
+# This framework gives sentiment_analyst a structured 7-dimension lens to
+# identify hot-money activity before the pillar_score is finalized.
+_HOT_MONEY_FRAMEWORK = """
+**D2. 游资逻辑识别 (HOT MONEY DETECTION) — A股结构性必检维度**
+
+A 股小盘股 / ST / 北交所 / 科创板小票常出现游资主导的非线性行情，理性指标（技术、估值、资金流）在此类标的上信噪比低。**必须**逐项评估以下 7 个子检查（每项给出 FACT + 判断 + 是否触发）：
+
+**HM1. 市值 × 换手率组合**
+- 流通市值 < 30亿 + 单日换手率 ≥ 15% → **强游资信号**
+- 流通市值 30-50亿 + 单日换手率 ≥ 10% → **中游资信号**
+- 流通市值 50-100亿 + 异常换手率 ≥ 20% → 弱游资信号
+- 流通市值 > 100亿 → 游资难以单独主导
+
+**HM2. K 线异动模式**
+- 涨停板：一字板 / T 字板 / 反包板 / 连板 / 加速板 (各代表不同游资介入阶段)
+- 单日涨幅 ≥ 7% (主板) 或 ≥ 10% (科创/创业) 或 ≥ 20% (北交所)
+- 5 日累计涨幅 ≥ 20% 但基本面无支撑
+- 大阴线后立即反包 (V 形反转) → 游资接力典型
+- 长上影/长下影后封板 → 游资博弈痕迹
+- 跌幅榜中量价背离 → 游资潜伏建仓
+
+**HM3. 龙虎榜席位识别 (优先用 akshare 龙虎榜数据)**
+- 上榜原因：涨幅 ≥7%、换手率 ≥20%、振幅 ≥15%、5 日累计 ≥20% 任一即触发
+- **知名游资席位** (举例，非穷尽)：
+  - 拉萨地区营业部群 (章盟主、孙哥、玉龙系)
+  - 深圳红岭中路 / 红岭路营业部群 (欢乐海岸系)
+  - 华泰证券深圳益田 / 上海武宁路
+  - 东方证券拉萨团结路、国信北京三里河
+  - 国泰君安南京太平南路、中信上海溧阳路
+- **机构专用席位** = 中长线机构资金 (公募 / 社保)
+- 净买额 / 买卖比例：游资追涨型 vs 机构出货型 vs 游资接机构筹码
+
+**HM4. 题材属性 + 概念热度**
+- 是否在当日热门概念中 (前 10 涨幅板块)
+- 多个题材交叉点 (例：AI + 机器人 + 算力 → 强叠加，单一题材偏弱)
+- 题材新发 / 老题材接力 (游资偏好新题材爆点)
+- 政策 / 新闻 / 事件驱动催化 (当日预期发酵)
+- 概念级别：行业概念 vs 主题概念 vs 事件概念 (主题/事件类游资属性更强)
+
+**HM5. 板块联动效应**
+- 同板块涨停潮 (≥3 只涨停 = 板块爆发)
+- 龙头股带动 (龙一带龙二/三补涨)
+- 板块涨幅 vs 标的涨幅一致性 (跟随 vs 独立异动)
+- 缺乏联动的孤立异动 → 单股博弈，游资属性更强
+
+**HM6. 资金博弈微观结构**
+- 主力净流入 vs 龙虎榜游资席位净买额 (一致 → 同向；矛盾 → 出货 / 对倒)
+- 涨停封单金额 / 流通市值 (封单比 ≥ 5% 强势封板)
+- 撤单率 / 大单挂撤频繁 → spoofing 痕迹
+- 委比 / 委差异常 / 分时尾盘异动
+
+**HM7. 基本面 × 价格背离 (KEY SIGNAL)**
+- 基本面差 (亏损 / ST / PE > 100 / 营收下滑 / 质押违约) + 价格强势上涨 → **强游资信号**
+- 主力资金流出 + 价格逆势上涨 → 游资接盘
+- 业绩雷 / 监管处罚 + 涨停 → 几乎必然游资逻辑
+- 这是识别游资行情**最可靠的单一指标**：理性指标越差 + 价格越强 → 游资概率越高
+
+**游资概率综合分级（必输出）：**
+- **HIGH (≥70%)**: HM1 强或中 + HM7 背离触发 + (HM2 异动 / HM3 上榜 / HM4 题材热) 中至少 1 项
+- **MEDIUM (30-70%)**: HM1 中等 + 部分 HM2-HM6 触发，但 HM7 不强烈
+- **LOW (<30%)**: 大盘股 / 机构主导 / 价格基本面同向 / 无小盘游资特征
+
+**游资类型分类（仅在 MEDIUM/HIGH 时输出）：**
+- **题材接力型**: 受热门概念驱动，K 线常呈连板加速；持续 3-10 个交易日
+- **一日游 / 烟花型**: 单日爆量但次日快速回调；游资快进快出
+- **中线游资票**: 多日震荡上涨，月度涨幅 50%+；游资中线建仓
+- **妖股**: 长期反复涨停，市值倍增；多重题材 / 政策 / 事件叠加催化
+
+**对 pillar_score 的强制修正规则 (KEY):**
+> **当 hot_money_probability = HIGH 时**: pillar_score **不允许 < 2** (即使其他维度全部偏弱)
+> **当 hot_money_probability = MEDIUM 时**: pillar_score **不允许 < 1**
+> **理由**: 游资行情下情绪/资金博弈主导短期价格，理性指标失效；研究报告必须明确承认这一非线性，避免对小盘游资股错误地给出极端 pillar_score=0/1 (历史数据：83% 的严重 SELL 错判都是这类标的)。
+"""
+
+
+_STOCK_PROFILE_GUIDANCE = """
+**个股类型适配（若 COMMON INPUT BLOCK 提供【个股类型】则必须执行）**
+- 亏损/困境股：PE 不得作为主估值锚；优先 PB/PS、现金余额、债务压力、退市/持续经营风险。
+- 周期股：重点看产品价格、库存/产能、行业景气拐点；不能把周期高点盈利线性外推。
+- 成长股：重点看收入增速、订单/渗透率、研发投入、估值容忍度；必须说明增长与估值是否匹配。
+- 题材小票：重点看换手率、龙虎榜/游资、题材持续性、流动性和退潮风险。
+- 高股息/蓝筹：重点看现金流覆盖、派息稳定性、ROE 稳定性和估值分位。
+"""
+
+
+_CALIBRATION_GUIDANCE = """
+**历史校准反馈使用规则（若 COMMON INPUT BLOCK 提供【历史校准反馈】则必须执行）**
+- 历史准确率低或样本不足时，不得把 confidence 抬高到 0.70 以上。
+- 若当前动作/置信层历史准确率 < 50%，需要在结论中明确给出置信度折扣或等待触发条件。
+- 校准反馈只能影响置信度与语言强度，不能替代当前证据。
+"""
+
+
+_DATA_BASIS_GUIDANCE = """
+**数据口径标注（必须覆盖）**
+- 明确财务指标的 data_as_of、metric_period（TTM/季度/年度/未知）和 metric_basis（已披露/TTM/预测/估算）。
+- 预测、预告、估算数字不得写成已披露事实；若口径冲突，必须降权并列入 open_questions / risk_flags。
+- 行业相对位置需要同时看估值（PE/PB/PS）与质量（ROE/毛利率/营收增速），不得只用单一 PE 判断贵/便宜。
+"""
+
+
+
+# ============================================================
 # Stage 0.8: Market-Level Agents (parallel, run once per day)
 # ============================================================
 
@@ -250,6 +360,8 @@ def fundamentals_analyst(ticker: str, current_date: str, akshare_md: str = "", f
 {common_input_block(ticker, **kw)}
 {_fb}
 {GLOBAL_CONSTRAINTS_SHORT}
+{_STOCK_PROFILE_GUIDANCE}
+{_DATA_BASIS_GUIDANCE}
 
 **ANALYSIS FRAMEWORK (Must Cover Sequence B1-B6):**
 
@@ -268,9 +380,15 @@ B3. Valuation Anchors (Must use 2 anchors)
 - Anchor 1 (e.g., PS or PE) + Suitability
 - Anchor 2 (e.g., EV/EBITDA or PB) + Suitability
 - Sensitivity Top 3 Variables
+- 若个股类型为亏损/困境股，Anchor 1/2 不得以 PE 为主；若使用 PE，只能作为风险提示。
+- 必须给出相对行业判断：当前估值 vs 行业中位/分位、质量指标 vs 行业中位，并说明是"估值溢价有质量支撑"还是"估值溢价无质量支撑"。
 
 B4. Monitor List (3 Must-Watch Variables)
 Metric | Source | Warning Threshold | Frequency
+
+B4b. Data Basis & Quality Caveats
+- 列出关键数字的口径：TTM/单季/年度/预测/估算。
+- 标记冲突或缺失：若行业对比、ROE/毛利率/营收增速缺失，说明估值结论置信度如何下降。
 
 B5. Novice Mode Scoring (pillar_score)
 - **4**: Fundamentals clearly improving, strong earnings/valuation support, high confidence.
@@ -403,32 +521,42 @@ def sentiment_analyst(ticker: str, current_date: str, akshare_md: str = "", feed
 {_fb}
 {GLOBAL_CONSTRAINTS_SHORT}
 
-**ANALYSIS FRAMEWORK (Must Cover Sequence D1-D4):**
+**ANALYSIS FRAMEWORK (Must Cover Sequence D1-D5):**
 
 D1. Funding & Positioning Signals (Min 3)
 - Margin Debt / Fund Flow / Northbound (S2 preferred)
 - Derivatives / Volatility / Substitutes
 - Social Heat (S3, weight low)
 - 概念股/题材热度轮动：当前所属概念板块资金流向、板块轮动方向
-
-D2. Reflexivity Risk (Stampede Conditions)
+{_HOT_MONEY_FRAMEWORK}
+D3. Reflexivity Risk (Stampede Conditions)
 - Is sentiment extreme?
 - Trigger Condition: Price Break + Fund Outflow
 
-D3. Novice Mode Scoring (pillar_score)
+D4. Novice Mode Scoring (pillar_score) — **MUST integrate D2 hot-money modulation**
 - **4**: Strong inflows, low crowding, positive sentiment alignment.
 - **3**: Net positive flow but crowding or sentiment shows caution.
 - **2**: Neutral / Balanced flow / No clear sentiment signal.
+  - Also: HIGH 游资概率 + 否则极差信号 → floor at 2 (强制不允许 <2)
 - **1**: Outflows emerging, rising crowding, or sentiment deteriorating.
+  - Also: MEDIUM 游资概率 + 否则极差信号 → floor at 1 (强制不允许 <1)
 - **0**: High Crowding / De-leveraging Risk / Extreme Sentiment.
+  - **仅当 hot_money_probability = LOW 时方可使用 0**；游资标的禁止给 0 分。
 
-D4. Output Table (Mandatory)
+D5. Output Table (Mandatory)
 Columns: Signal | FACT(Link+Date) | Interp | Reverse Risk | Trigger | Confidence | Decision Impact
+新增必须列出至少 2 行游资相关 Signal（如：HM3 龙虎榜席位、HM7 基本面价格背离），即使 hot_money_probability=LOW 也需明确说明"无游资特征"的依据。
 (Markdown Table)
 
 **FINAL OUTPUT FORMAT**:
-At the very end of your response, you MUST output the score line exactly as:
-`pillar_score = {{0, 1, 2, 3, or 4}}`
+At the very end of your response, you MUST output these three lines exactly (in order, no extra text between them):
+```
+pillar_score = {{0, 1, 2, 3, or 4}}
+hot_money_probability = {{LOW | MEDIUM | HIGH}}
+hot_money_type = {{题材接力 | 一日游 | 中线票 | 妖股 | N/A}}
+```
+- `hot_money_type` 仅在 probability ∈ {{MEDIUM, HIGH}} 时给出具体类型；LOW 时填 N/A。
+- 这三行将被 bridge 解析为结构化字段，下游 risk_manager / research_manager 会读取。
 
 <<<USER_DATA>>>
 {_data_instruction}
@@ -698,6 +826,8 @@ def research_manager(
 {_fb}
 {ledger_block}
 {scenario_block}
+{_STOCK_PROFILE_GUIDANCE}
+{_CALIBRATION_GUIDANCE}
 【Global Constraints】
 1) S1 (Official) > S2 (Auth) > S3 (Social).
 2) Price vs Narrative Conflict: Price usually leads narrative (unless S1 event).
@@ -710,6 +840,11 @@ def research_manager(
 - Do NOT rely primarily on narrative prose if structured claims are available.
 
 **DECISION FRAMEWORK (Sequence M1-M5):**
+
+M0. Context Lens
+- 若 COMMON INPUT BLOCK 提供【个股类型】，你的 thesis、valuation anchor、risk framing 必须适配该类型；不允许把亏损股写成普通低 PE 修复，或把题材小票写成长期白马逻辑。
+- 若提供【历史校准反馈】，先说明本次动作/置信层是否需要折扣；历史样本不足时使用保守措辞。
+- 将结论拆成三层：投资论题（thesis）、可执行交易条件（trade setup）、风险失效条件（invalidation），不要混写。
 
 M1. Consensus & Divergence
 - List which Bull and Bear claims AGREE on the same evidence
@@ -741,6 +876,16 @@ M4. Preliminary Decision (BUY / HOLD / SELL)
 - Triggers: Price + Fundamental conditions
 - **宏观压力测试**: 若次日大盘出现 ±3% 级别的系统性波动（如停火/战争/关税突变），当前信号是否仍成立？如果 SELL 信号在大盘 +3% 日会被β反噬，须在 open_questions 中注明"宏观催化剂风险"并适当降低 confidence。
 
+**M4b. 置信度校准与语言规范**（基于历史方向准确率约 50% 的现实约束）：
+- confidence 是模型的**主观概率估计**，不是结果保证。**不要因为论据"看起来很多"就抬高 confidence**。
+- **置信度分级（必须严格区分用语）**：
+  * `confidence ≥ 0.70` — 称为"高置信度判断"。需满足：≥3 支柱方向一致 + 至少 1 个 P0 级证据 + 没有近期同等级反向证据。
+  * `0.55 ≤ confidence < 0.70` — 称为"倾向性判断"。论据指向某一方但存在结构性反证或时序未明。
+  * `confidence < 0.55` — 称为"探索性结论"。证据稀薄或多空胶着，决策应偏保守（默认 HOLD）。
+- **conclusion 字段中必须使用对应分级用语**：禁止在 conf=0.62 的判断里使用"高置信度看空/看多"这类表述。
+- **校准自检**：写完 confidence 后，问自己一个问题——"如果我重复 100 次类似分析，有多少次会是这个方向？" 如果你不敢说 ≥70 次，confidence 就不能 ≥0.70。
+- **校准惩罚**：若同一支柱在过去 30 天对此 ticker 的方向准确率 < 50%（见 feedback_block），confidence 必须额外打 0.85x 折扣后再输出。
+
 M5. Novice Mode Output
 - **manager_score** (0-16, sum of 4 analysts if available, else estimate)
 - **target_position_pct** (0.0 to 0.30) - Must be 0 if score < 10 or vetoed.
@@ -752,6 +897,8 @@ SYNTHESIS_OUTPUT:
 conclusion = <one sentence, must cite claim/evidence IDs>
 research_action = <BUY/HOLD/SELL>
 confidence = <0.0 to 1.0>
+directional_lean = <bullish/bearish/neutral>   # 当 research_action=HOLD 时必填：若被迫表态，方向倾向
+lean_reason = <one sentence>                   # 解释 directional_lean 的依据；非 HOLD 时填 "n/a"
 supporting_evidence = [E1, E3, E5]
 opposing_evidence = [E2, E4]
 thesis_effect = <strengthen/weaken/unchanged/invalidate>
@@ -764,12 +911,49 @@ manager_score = <0..16>
 target_position_pct = <0.xx>
 ```
 
+**directional_lean 填写规范**：
+- 当 research_action ∈ {{BUY, SELL}}：directional_lean 应与 research_action 一致（BUY→bullish, SELL→bearish），lean_reason 可填 "n/a"。
+- **当 research_action = HOLD**：必须明确填 bullish / bearish / neutral，**不允许偷懒填 neutral 来回避表态**。判定标准：
+  * `bullish` — 若被迫离开 HOLD，倾向 BUY（如：基本面+催化剂改善但短期存在二元事件锁，等到事件落地再加仓）
+  * `bearish` — 若被迫离开 HOLD，倾向 SELL（如：≥3 支柱看空但 risk_cleared=FALSE 锁住决策；或证据已足以减仓但当前持仓为零）
+  * `neutral` — 真正的多空胶着，无方向倾向
+- lean_reason 必须引用具体证据 [E#] 或决策约束（如 "blocked by Q1 binary event"）。
+{_FALSIFIABILITY_GUIDANCE}
 {evidence_block}
 
 Past mistakes to avoid: "{past_memory}"
 
 {debate_input}
 {LANGUAGE_ZH}"""
+
+
+# Falsifiability constraint — applied to invalidation_conditions in PM and
+# Risk Manager outputs. Reflection data shows ~30% of historical invalidators
+# were vague ("市场转弱" with no threshold) which makes the research
+# untestable. This guidance forces concrete, verifiable triggers.
+_FALSIFIABILITY_GUIDANCE = """
+**可证伪条件具体度强制约束（CRITICAL — Quality Audit checks this）**:
+
+每条 invalidation_conditions 条目**必须包含至少一个**以下具体触发器之一：
+- 价格阈值（如 "跌破 8.40 元" / "突破 9.20 元"）
+- 百分比阈值（如 "5 日累计跌幅 > 5%" / "净流出 > 总市值 1%"）
+- 财务数字（如 "Q2 净利润 < 1000 万元" / "ROE < 3%"）
+- 日期触发（如 "2026-07-31 前未公告" / "5 月 14 日未达成"）
+- 比率触发（如 "PE 突破 60x" / "毛利率跌破 12%"）
+
+**禁用含糊词清单（出现即视为质量缺陷）**：
+- ❌ "市场转弱" / "情况恶化" / "风险上升" / "环境变化"（无阈值）
+- ❌ "若发生不利" / "如果失败" / "出现问题"（无具体事件）
+- ❌ "信号不再有效"（循环定义）/ "基本面转差"（无数字）
+
+**正确示例**：
+- ✓ "上证 5 日跌幅 > 3% 且 RSI < 30 时多头逻辑失效"
+- ✓ "Q2 季报扣非净利润 < 500 万元，价值修复假设破坏"
+- ✓ "2026-07-31 前未发布回购公告，回购催化剂失效"
+- ✓ "跌破 8.02 元（30 日 MA）且日成交额 < 5000 万"
+
+**自检**：写完 invalidation 后，问自己——"假设三个月后回看，**任何人**能用客观数据判断这条件是否触发吗？" 如果不能，重写为含数字的版本。
+"""
 
 
 # ============================================================
@@ -972,6 +1156,8 @@ def risk_manager(
 {_date_line}
 {common_input_block(company_name, **kw)}
 {_mkt_ctx}
+{_STOCK_PROFILE_GUIDANCE}
+{_DATA_BASIS_GUIDANCE}
 【Global Constraints】
 1) Max Single Position: {max_single_pct:.0%} ({max_single_val:,.0f} {base_currency}).
 2) Max Drawdown Lock: If account DD > {max_dd:.0%}, HALT trading.
@@ -981,6 +1167,7 @@ def risk_manager(
 R1. Hard Event Lock Check
 - Is there an Earnings/Major Event in next 3 days? -> VETO BUY.
 - Is there a pending regulatory investigation? -> VETO BUY.
+- 若个股类型为亏损/困境股，必须检查退市、持续经营、现金流/债务到期；若信息缺失，至少列为 high 风险。
 
 R2. Technical Level Check
 - Is price below Key Support (Review Market Analyst)? -> VETO BUY.
@@ -1021,6 +1208,8 @@ d) 如果你不同意研究总监在此置信度下的方向判断，必须明�
 - Every risk flag MUST be bound to specific evidence [E#], claim [clm-*], or a market rule.
 - You must assess source quality: are conclusions based on official (P0) or sentiment-only (P2) sources?
 - Flag any "high-confidence conclusion with no core evidence" as a compliance risk.
+- risk_flags 必须区分三类：数据口径风险（metric_basis / stale data / conflict）、交易执行风险（price/volume/liquidity）、投资论题失效风险（fundamental/catalyst）。
+- invalidation_conditions 必须优先来自 Risk Manager 的具体阈值，不得只写"行业转弱/市场转弱"。
 - At the end, provide a structured risk output:
 
 ```
@@ -1032,9 +1221,12 @@ max_position_pct = <0.xx>
 risk_flags = [
   {{category: "<category>", severity: "<low/medium/high/critical>", description: "<text>", evidence: "[E#]"}},
 ]
+invalidation_conditions = [
+  "<具体可证伪条件，必须含价格/百分比/财务数字/日期/比率之一>",
+]
 unsourced_claims = <count of claims with no evidence binding>
 ```
-
+{_FALSIFIABILITY_GUIDANCE}
 {evidence_block}
 
 {claim_audit}
@@ -1080,6 +1272,8 @@ def research_output(
 **OBJECTIVE**: Generate the Final Trade Card, Trade Plan (public entry/exit framework), and Order Proposal based on Risk Manager's Veto/Approval.
 {_date_line}
 {common_input_block(company_name, **kw)}
+{_STOCK_PROFILE_GUIDANCE}
+{_CALIBRATION_GUIDANCE}
 
 {_price_ref}
 
@@ -1126,9 +1320,15 @@ Rules for generating trade_plan:
 - stop_loss: from Risk Manager's constraints. Price must be specific, rule must be clear. max_loss_pct is a percentage safety cap (e.g. 0.06 = 6%) — if the fixed price implies a larger loss than max_loss_pct, the percentage cap takes priority.
 - take_profit: 1-2 targets from Market/Fundamentals Analyst valuation anchors. Use price_zone intervals.
 - invalidators: 2-4 conditions from Risk Manager's risk_flags + market environment. Must include at least one market-level condition (e.g. "市场环境转为RISK_OFF").
+- confirmations: 2-4 facts that must be confirmed before acting (price, volume, event, fundamental, or sector confirmation).
+- avoid_conditions: 2-4 conditions under which the reader should not participate even if price touches the entry zone.
+- review_triggers: 2-4 objective events that require rerunning the research view.
+- time_stop: a dated or bar-count rule for abandoning the setup if it does not validate.
+- scenario_actions: map base/bull/bear scenarios to concrete posture changes; do not write vague slogans.
 - holding_horizon: "short_swing" (1-10 days) or "medium_term" (2-8 weeks), based on catalyst timing.
 - confidence: from PM's synthesis confidence (0.0-1.0).
 - If risk_cleared=FALSE or VETO: bias=AVOID, entry_setups=[], invalidators explain why.
+- The trade_plan must reflect stock profile: loss-making stocks require PB/PS/cash-flow confirmation; cyclicals require commodity/price-cycle confirmation; theme small caps require liquidity/hot-money fade controls.
 
 ```json
 {{
@@ -1170,6 +1370,27 @@ Rules for generating trade_plan:
       "市场环境转为RISK_OFF",
       "核心利好证伪"
     ],
+    "confirmations": [
+      "收盘价站上关键压力区且成交额高于近5日均值",
+      "行业/概念板块强度维持在前20%",
+      "核心财务或催化剂数据未出现口径冲突"
+    ],
+    "avoid_conditions": [
+      "触发风控否决或重大事件锁定",
+      "价格触及买点但成交额萎缩",
+      "同行估值溢价扩大且质量指标弱于行业"
+    ],
+    "review_triggers": [
+      "跌破止损价或关键均线",
+      "公告财报/业绩预告/监管问询回复",
+      "市场环境切换为RISK_OFF"
+    ],
+    "time_stop": "5个交易日内未放量突破则放弃该入场设置",
+    "scenario_actions": {{
+      "base": "维持观察/轻仓，等待价格和成交确认",
+      "bull": "突破并放量后按计划参与",
+      "bear": "跌破止损或证伪条件触发时回避"
+    }},
     "holding_horizon": "short_swing",
     "confidence": 0.72
   }}

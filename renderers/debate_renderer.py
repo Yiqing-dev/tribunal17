@@ -19,11 +19,12 @@ from .debate_view import (
     DebateView, ParticipantView, ClaimView,
     TimelineEntry, DebateRound, VerdictView,
 )
-from .decision_labels import safe_badge_class, AI_DISCLAIMER_BANNER
+from .decision_labels import safe_badge_class, AI_DISCLAIMER_BANNER, RESEARCH_HEADER_BANNER
 from .shared_css import _BASE_CSS, _COUNTUP_JS, _SHARED_SVG_DEFS
 from .shared_utils import (
     _esc, _nav_bar,
     _priority_chip, _conf_dots, _conf_tier, _confidence_ring_svg,
+    _quality_grade_badge_html,
 )
 
 
@@ -982,8 +983,36 @@ def render_debate_page(view: DebateView) -> str:
 
     Returns a self-contained HTML string (all CSS inline, no external deps).
     """
+    _short_run = (view.run_id[-8:] if view.run_id else "—")
+    _grade_badge = _quality_grade_badge_html(
+        grade=view.quality_grade,
+        score=view.quality_score,
+        weak_dims=list(view.quality_weak_dims),
+    )
+    _watermark_html = (
+        f'<div class="report-watermark" style="display:inline-flex;align-items:center;gap:.4rem;'
+        f'font-family:var(--mono);font-size:.7rem;color:var(--muted);margin-bottom:.4rem;letter-spacing:.04em">'
+        f'{_grade_badge}{"<span>·</span>" if _grade_badge else ""}'
+        f'<span>报告 ID · {_esc(_short_run)}</span><span>·</span>'
+        f'<span>数据截止 · {_esc(view.trade_date)}</span><span>·</span>'
+        f'<span>17 司协作生成</span></div>'
+    )
+    _footer_banner = (
+        f'<div class="banner banner-footer" style="margin:2rem 0 0;'
+        f'background:rgba(255,255,255,0.03);border-color:rgba(255,255,255,0.06);'
+        f'color:var(--muted);font-size:.75rem;padding:.65rem 1rem;border:1px solid rgba(255,255,255,0.06);'
+        f'border-radius:14px">{AI_DISCLAIMER_BANNER}</div>'
+    )
+    _research_banner_committee = (
+        f'<div class="research-banner" style="margin:.6rem 0 .8rem;'
+        f'padding:.6rem .9rem;background:linear-gradient(90deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04));'
+        f'border:1px solid rgba(96,165,250,0.32);border-radius:12px;'
+        f'color:var(--blue);font-size:.78rem;line-height:1.5;letter-spacing:.02em">'
+        f'{RESEARCH_HEADER_BANNER}</div>'
+    )
     sections = [
-        f'<div class="ai-banner">{AI_DISCLAIMER_BANNER}</div>',
+        _watermark_html,
+        _research_banner_committee,
         _render_hero(view),
         _render_market_wind(view),
         _render_timeline(view),
@@ -991,6 +1020,7 @@ def render_debate_page(view: DebateView) -> str:
         _render_controversies(view),
         _render_verdict(view),
         _render_audit(view),
+        _footer_banner,
     ]
 
     body = '\n'.join(sections)

@@ -21,7 +21,7 @@ from .decision_labels import (
     get_signal_emoji, PILLAR_EMOJI,
     get_severity_label,
     safe_badge_class,
-    AI_DISCLAIMER_BANNER,
+    AI_DISCLAIMER_BANNER, RESEARCH_HEADER_BANNER,
 )
 from .shared_css import _COUNTUP_JS, _BRAND_LOGO_SM
 from .shared_utils import (
@@ -31,24 +31,204 @@ from .shared_utils import (
     _trend_arrow, _sparkline_svg, _nav_bar,
     _price_ladder_svg, _pillar_bar, _history_sparkline,
     _confidence_ring_svg, _priority_chip, _score_pill,
-    _delta_arrow, _section_divider,
+    _delta_arrow, _section_divider, _format_finance_num,
+    _kline_with_signals_svg, _pe_label_html,
+    _render_industry_compare_card, _render_hero_industry_kpis,
+    _quality_grade_badge_html, _vague_phrase_warning,
+    _render_stock_profile_card, _render_calibration_card,
+    _render_data_quality_flags,
 )
+
+
+def _render_kline_card(view: SnapshotView) -> str:
+    """Full-width price line chart + signal trail. Replaces the decorative
+    hero sparkline with a labelled chart + signal-history chip row.
+    Returns "" when there's no usable price history.
+    """
+    if not view.price_history or len(view.price_history) < 2:
+        return ""
+    chart = _kline_with_signals_svg(
+        prices=view.price_history,
+        signals=view.signal_history,
+        period_days=view.period_days or len(view.price_history),
+    )
+    if not chart:
+        return ""
+    return (
+        f'<div class="card reveal" style="padding:.95rem 1.1rem;margin-bottom:1rem">'
+        f'{chart}'
+        f'</div>'
+    )
+
+
+# ── Cover card (institutional-style header) ─────────────────────────────
+
+
+def _render_cover_card(view: SnapshotView) -> str:
+    """Bloomberg-style summary strip below the H1 title.
+
+    Single horizontal row: current price · 5d change · period high/low ·
+    PE / PB / ROE / market cap. All values fall back to "—" when missing.
+    Uses cover-derived fields populated in SnapshotView.build (no new data
+    collection needed — derived from price_history + metrics_fallback).
+    """
+    if not (view.current_price or view.metrics_fallback):
+        return ""
+
+    fb = view.metrics_fallback or {}
+    cells: list = []
+
+    def _cell(label: str, value: str, color_var: str = "", label_html: bool = False) -> str:
+        color_style = f' style="color:{color_var}"' if color_var else ""
+        # When label_html=True, caller has pre-built safe HTML (e.g. PE^TTM
+        # superscript markup); otherwise we escape per default.
+        label_render = label if label_html else _esc(label)
+        return (
+            f'<div class="cover-cell">'
+            f'<div class="cc-label">{label_render}</div>'
+            f'<div class="cc-val mono"{color_style}>{_esc(value)}</div>'
+            f'</div>'
+        )
+
+    if view.current_price:
+        cells.append(_cell("最新价", _format_finance_num(view.current_price, "price")))
+    if view.pct_change_5d:
+        clr = "var(--red)" if view.pct_change_5d > 0 else (
+            "var(--green)" if view.pct_change_5d < 0 else "var(--muted)"
+        )
+        cells.append(_cell(f"近 5 日", _format_finance_num(view.pct_change_5d, "pct"), clr))
+    if view.period_high and view.period_low and view.period_high != view.period_low:
+        rng = (
+            f'{_format_finance_num(view.period_low, "price")} – '
+            f'{_format_finance_num(view.period_high, "price")}'
+        )
+        cells.append(_cell(f"近 {view.period_days} 日区间", rng))
+    # Financial ratios
+    pe_v = fb.get("pe")
+    if pe_v is not None:
+        cells.append(_cell(_pe_label_html(), _format_finance_num(pe_v, "ratio"), label_html=True))
+    pb_v = fb.get("pb")
+    if pb_v is not None:
+        cells.append(_cell("PB", _format_finance_num(pb_v, "ratio")))
+    roe_v = fb.get("roe")
+    if roe_v is not None:
+        cells.append(_cell("ROE", _format_finance_num(roe_v, "pct_simple")))
+    mc_v = fb.get("market_cap")
+    if mc_v is not None:
+        cells.append(_cell("总市值", _format_finance_num(mc_v, "mktcap_yi")))
+
+    if not cells:
+        return ""
+
+    # Inline minimal CSS (one-shot for cover card, doesn't pollute global)
+    style = """<style>
+.cover-card{display:flex;flex-wrap:wrap;gap:1.6rem;padding:.75rem 1.05rem;margin:.4rem 0 1rem;
+  background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.06);border-radius:14px;
+  font-size:.86rem}
+.cover-cell{display:flex;flex-direction:column;gap:.15rem;min-width:0}
+.cover-cell .cc-label{font-size:.7rem;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+.cover-cell .cc-val{font-size:1.05rem;font-weight:600;color:var(--white);font-variant-numeric:tabular-nums}
+.report-watermark{display:inline-flex;align-items:center;gap:.4rem;font-family:var(--mono);
+  font-size:.7rem;color:var(--muted);margin-bottom:.2rem;letter-spacing:.04em}
+.banner.banner-footer{margin:2rem 0 0;background:rgba(255,255,255,0.03);
+  border-color:rgba(255,255,255,0.06);color:var(--muted);font-size:.75rem}
+</style>"""
+    return f'{style}<div class="cover-card">{"".join(cells)}</div>'
 
 
 # ── Feature 2: Checklist + Risk Debate Summary ──────────────────────────
 
 
+def _render_pillar_consensus_bar(view: SnapshotView) -> str:
+    """Render compact pillar-consensus summary bar.
+
+    One line: 观星[空] 度支[空] 通政[多] 察言[多]   →   2:2 split
+    Optionally flags tension when ≥3 pillars agree but action is HOLD.
+    """
+    pc = view.pillar_consensus or {}
+    if not pc or pc.get("verdict") == "insufficient":
+        return ""
+
+    # Map pillar checklist (already in proper order) into compact icons
+    _ICONS = {
+        "技术面": "观星",   # 技术面 → 观星
+        "基本面": "度支",   # 基本面 → 度支
+        "消息面": "通政",   # 消息面 → 通政
+        "情绪面": "察言",   # 情绪面 → 察言
+    }
+    chips = []
+    for p in view.pillar_checklist:
+        name = p.get("pillar", "")
+        icon = _ICONS.get(name, name)
+        score = p.get("score", -1)
+        if score >= 3:
+            tag = "多"  # 多 (bullish)
+            cls = "buy"
+        elif 0 <= score <= 1:
+            tag = "空"  # 空 (bearish)
+            cls = "sell"
+        else:
+            tag = "平"  # 平 (neutral)
+            cls = "hold"
+        chips.append(
+            f'<span class="pc-chip"><span class="pc-icon">{_esc(icon)}</span>'
+            f'<span class="badge badge-{cls}">{tag}</span></span>'
+        )
+
+    bull = pc.get("bullish", 0)
+    bear = pc.get("bearish", 0)
+    neut = pc.get("neutral", 0)
+    verdict = pc.get("verdict", "")
+    _VERDICT_LABEL = {
+        "strong_bullish": "强多共识 (4:0)",
+        "lean_bullish":   f"偏多 ({bull}:{bear})",
+        "split":          f"多空胶着 ({bull}:{bear})",
+        "lean_bearish":   f"偏空 ({bear}:{bull})",
+        "strong_bearish": "强空共识 (4:0)",
+        "neutral":        "中性占多",
+    }
+    verdict_text = _VERDICT_LABEL.get(verdict, verdict or "—")
+    if neut:
+        verdict_text += f" · 中性 {neut}"
+
+    tension_html = ""
+    if pc.get("tension"):
+        tension_html = (
+            '<span class="pc-tension" title="≥3个支柱共识但决策为 HOLD，存在张力，请参考设计外部人工复查">'
+            ' ⚠️ 决策张力</span>'
+        )
+
+    return f"""
+    <div class="card pc-card" style="padding:0.7rem 1rem;margin-bottom:0.6rem;">
+      <div class="pc-row" style="display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap;">
+        <span class="pc-title" style="font-weight:600;color:var(--muted);">支柱共识</span>
+        <div class="pc-chips" style="display:flex;gap:0.4rem;">{"".join(chips)}</div>
+        <span class="pc-arrow" style="color:var(--muted);">→</span>
+        <span class="pc-verdict" style="font-weight:600;">{_esc(verdict_text)}</span>
+        {tension_html}
+      </div>
+    </div>"""
+
+
 def _render_checklist(view: SnapshotView) -> str:
-    """Render pillar score checklist card."""
+    """Render pillar score checklist card.
+
+    The radar chart is only meaningful when there's actual pillar dispersion;
+    when all 4 pillars are tightly clustered (max-min < 2) the polygon
+    collapses to a tiny dot near centre that adds nothing. In that case we
+    drop the radar and let the per-pillar bars take the full row width.
+    """
     if not view.pillar_checklist:
         return ""
     items = ""
+    scores = []
     for p in view.pillar_checklist:
         emoji = _esc(p.get("emoji", ""))
         pillar = _esc(p.get("pillar", ""))
         score = p.get("score", 0)
         label = _esc(p.get("label", ""))
         bar = _pillar_bar(score, max_score=4, label=pillar)
+        scores.append(score if isinstance(score, (int, float)) else 0)
         items += (
             f'<div class="ck-item">'
             f'<span class="ck-emoji">{emoji}</span>'
@@ -57,41 +237,53 @@ def _render_checklist(view: SnapshotView) -> str:
             f'<span class="ck-score">{bar}</span>'
             f'</div>'
         )
-    radar = _radar_svg(view.pillar_checklist, view.action_class)
+
+    # Decide whether to render radar based on dispersion
+    radar_html = ""
+    if scores and (max(scores) - min(scores)) >= 2:
+        radar_html = (
+            f'<div style="flex-shrink:0">{_radar_svg(view.pillar_checklist, view.action_class)}</div>'
+        )
+
     return f"""
     <div class="card">
       <h3>\u5206\u6790\u7ef4\u5ea6\u6838\u67e5</h3>
       <div style="display:flex;gap:1.2rem;align-items:flex-start;flex-wrap:wrap">
         <div style="flex:1;min-width:200px"><div class="checklist">{items}</div></div>
-        <div style="flex-shrink:0">{radar}</div>
+        {radar_html}
       </div>
     </div>"""
 
 
 def _render_risk_debate_summary(view: SnapshotView) -> str:
-    """Render 3-column risk debate summary card."""
+    """Render 3-stance risk-debate viewpoint card (research-tier).
+
+    Three perspectives (\u6fc0\u8fdb / \u4fdd\u5b88 / \u4e2d\u6027) frame the same evidence under
+    different priors. Each stance is shown with its directional view and core
+    risk argument \u2014 NO position percentages, since this report is research,
+    not a position-sizing instruction.
+    """
     if not view.risk_debate_summary:
         return ""
+    # Map BUY/SELL/HOLD into research-tier viewpoint language
+    _VIEW_LABEL = {"BUY": "\u503e\u5411\u504f\u591a", "SELL": "\u503e\u5411\u504f\u7a7a", "VETO": "\u8bc1\u636e\u4e0d\u8db3", "HOLD": "\u7ef4\u6301\u4e2d\u6027"}
     cols = ""
     for rd in view.risk_debate_summary:
         stance = _esc(rd.get("stance", ""))
         rec = rd.get("recommendation", "").upper()
         rec_class = "buy" if rec == "BUY" else ("sell" if rec in ("SELL", "VETO") else "hold")
-        rec_label = _esc(rec or "\u2014")
-        pos_raw = rd.get("position_pct", "")
-        pos = _esc(f"{pos_raw}%" if isinstance(pos_raw, (int, float)) else (str(pos_raw) or "\u2014"))
+        view_label = _esc(_VIEW_LABEL.get(rec, rec or "\u2014"))
         risk = _esc(str(rd.get("key_risk", "") or "\u2014"))
         cols += (
             f'<div class="rd-col">'
-            f'<div class="rd-stance">{stance}\u6d3e</div>'
-            f'<div class="rd-rec badge badge-{rec_class}">{rec_label}</div>'
-            f'<div class="rd-pos">\u4ed3\u4f4d {pos}</div>'
-            f'<div class="rd-risk">\u6838\u5fc3\u98ce\u9669: {risk}</div>'
+            f'<div class="rd-stance">{stance}\u6d3e\u89c6\u89d2</div>'
+            f'<div class="rd-rec badge badge-{rec_class}">{view_label}</div>'
+            f'<div class="rd-risk">\u6838\u5fc3\u8bba\u636e: {risk}</div>'
             f'</div>'
         )
     return f"""
     <div class="card">
-      <h3>\u98ce\u63a7\u59d4\u5458\u4f1a</h3>
+      <h3>\u98ce\u63a7\u59d4\u5458\u4f1a \u00b7 \u4e09\u6d3e\u89c6\u89d2 <span style="font-size:.65rem;color:var(--muted);font-weight:500;margin-left:.4rem">\u89c2\u70b9\u5bf9\u7167\uff0c\u975e\u4ed3\u4f4d\u6307\u4ee4</span></h3>
       <div class="risk-debate-row">{cols}</div>
     </div>"""
 
@@ -136,9 +328,11 @@ def _render_battle_plan(view: SnapshotView) -> str:
         "HOLD" if side in ("WAIT", "HOLD") else "BUY"
     )))
 
-    side_label = {"LONG": "\u505a\u591a", "SHORT": "\u505a\u7a7a", "WAIT": "\u7b49\u5f85",
-                  "BUY": "\u505a\u591a", "SELL": "\u505a\u7a7a", "AVOID": "\u56de\u907f",
-                  "HOLD": "\u7b49\u5f85", "VETO": "\u5426\u51b3"}.get(side, side)
+    # Research-tier language (NOT trading instruction). These describe the
+    # weight of evidence for downstream decision-makers, not orders.
+    side_label = {"LONG": "\u504f\u591a", "SHORT": "\u504f\u7a7a", "WAIT": "\u4e2d\u6027\u89c2\u5bdf",
+                  "BUY": "\u504f\u591a", "SELL": "\u504f\u7a7a", "AVOID": "\u504f\u7a7a",
+                  "HOLD": "\u4e2d\u6027\u89c2\u5bdf", "VETO": "\u8bc1\u636e\u4e0d\u8db3"}.get(side, side)
     if confidence >= 0:
         conf_cls = "buy" if confidence >= 0.7 else ("hold" if confidence >= 0.4 else "sell")
         conf_badge = f'<span class="badge badge-{conf_cls}">\u7f6e\u4fe1\u5ea6 {confidence:.0%}</span>'
@@ -152,8 +346,30 @@ def _render_battle_plan(view: SnapshotView) -> str:
         f'</div>'
     )
 
-    rationale_clean = _summarize_display_text(rationale, max_chars=180)
-    rationale_html = f'<div class="bp-rationale">{_esc(rationale_clean)}</div>' if rationale_clean else ""
+    # Rationale: split a long single-paragraph rationale into 3-5 short bullets
+    # so traders can scan the core argument quickly. Falls back to inline text
+    # when the rationale is already short or has no natural break points.
+    rationale_clean = _summarize_display_text(rationale, max_chars=400)
+    rationale_html = ""
+    if rationale_clean:
+        # Split on Chinese clause separators "；。，" but keep clauses ≥ 12 chars
+        # to avoid fragmenting tiny phrases.
+        import re as _re
+        parts = [seg.strip() for seg in _re.split(r"[；。，]", rationale_clean) if seg.strip()]
+        # Merge fragments shorter than 12 chars into the previous one
+        merged: list = []
+        for seg in parts:
+            if merged and len(seg) < 12:
+                merged[-1] = merged[-1] + "，" + seg
+            else:
+                merged.append(seg)
+        # Cap each bullet at 60 chars and total at 5 bullets
+        bullets = [b[:60] + ("…" if len(b) > 60 else "") for b in merged[:5]]
+        if len(bullets) >= 2:
+            li_html = "".join(f"<li>{_esc(b)}</li>" for b in bullets)
+            rationale_html = f'<ul class="bp-rationale-list" style="margin:.3rem 0 .6rem 1.1rem;padding:0;font-size:.88rem;color:var(--fg);line-height:1.55;">{li_html}</ul>'
+        else:
+            rationale_html = f'<div class="bp-rationale">{_esc(rationale_clean)}</div>'
 
     # Entry setups table
     setups = tp.get("entry_setups", [])
@@ -194,7 +410,11 @@ def _render_battle_plan(view: SnapshotView) -> str:
     except (ValueError, TypeError):
         sl_price = 0
     if sl_price > 0:
-        sl_html = f'<div class="tp-row tp-stop"><span class="tp-label">\u6b62\u635f\u4f4d</span><span class="mono num" style="color:var(--red)">{sl_price:.2f}</span></div>'
+        sl_html = (
+            f'<div class="tp-row tp-stop"><span class="tp-label">'
+            f'<span title="\u4ef7\u683c\u7a81\u7834\u6b64\u6c34\u5e73\u65f6\uff0c\u672c\u7814\u7a76\u7684\u6838\u5fc3\u8bba\u636e\u5931\u6548">\u4e0b\u884c\u8b66\u6212\u6c34\u5e73</span></span>'
+            f'<span class="mono num" style="color:var(--red)">{sl_price:.2f}</span></div>'
+        )
 
     # Take profit (may be list of dicts, list of strings, float, or scalar)
     targets_raw = tp.get("take_profit", [])
@@ -216,24 +436,56 @@ def _render_battle_plan(view: SnapshotView) -> str:
             t_label = ""
         else:
             continue
-        tp_html += f'<div class="tp-row tp-target"><span class="tp-label">{t_label}</span><span class="mono num" style="color:var(--green)">{t_str}</span></div>'
+        # Research framing: these are reference levels, not trade targets.
+        tp_label_research = (t_label or "参考价位").replace("目标", "参考")
+        tp_html += (
+            f'<div class="tp-row tp-target"><span class="tp-label">{tp_label_research}</span>'
+            f'<span class="mono num" style="color:var(--green)">{t_str}</span></div>'
+        )
 
     # Invalidation
     invalidators_raw = tp.get("invalidators", [])
     invalidators = invalidators_raw if isinstance(invalidators_raw, list) else []
     inval_html = ""
     if invalidators:
-        items = "".join(f"<li>{_esc(str(inv))}</li>" for inv in invalidators[:4])
+        # Each invalidator is checked for vague language; concrete conditions
+        # render plain, vague ones get an inline \u26a0 "\u542b\u7cca\u6761\u4ef6" red badge.
+        items = "".join(
+            f'<li>{_esc(str(inv))}{_vague_phrase_warning(str(inv))}</li>'
+            for inv in invalidators[:4]
+        )
         inval_html = f'<div style="margin-top:.5rem"><div class="tp-section-title" style="color:var(--red)">\u5931\u6548\u6761\u4ef6</div><ul class="tp-inval-list">{items}</ul></div>'
 
-    # Risk gauge
+    def _compact_list(title: str, items, color: str) -> str:
+        if isinstance(items, str):
+            items = [items] if items.strip() else []
+        if not isinstance(items, list) or not items:
+            return ""
+        lis = "".join(f"<li>{_esc(str(x))}</li>" for x in items[:3])
+        return (
+            f'<div style="margin-top:.5rem"><div class="tp-section-title" style="color:{color}">'
+            f'{_esc(title)}</div><ul class="tp-inval-list">{lis}</ul></div>'
+        )
+
+    confirmations_html = _compact_list("参与前确认", tp.get("confirmations", []), "var(--green)")
+    avoid_html = _compact_list("不参与条件", tp.get("avoid_conditions", []), "var(--yellow)")
+    review_html = _compact_list("重新评估触发", tp.get("review_triggers", []), "var(--blue)")
+    time_stop = tp.get("time_stop", "")
+    time_stop_html = (
+        f'<div class="tp-row"><span class="tp-label">时间止损</span>'
+        f'<span class="tp-detail">{_esc(str(time_stop))}</span></div>'
+        if time_stop else ""
+    )
+
+    # Research-tier risk indicator (NOT a position-sizing input)
     gauge_html = ""
     if risk_score > 0:
         gauge_pct = min(int(risk_score * 10), 100)
         gauge_color = "var(--red)" if risk_score >= 7 else ("var(--yellow)" if risk_score >= 4 else "var(--green)")
+        risk_lbl = "\u9ad8" if risk_score >= 7 else ("\u4e2d" if risk_score >= 4 else "\u4f4e")
         gauge_html = f"""
         <div style="margin-top:.5rem;">
-          <div style="font-size:.8rem;color:var(--muted)">\u98ce\u9669\u8bc4\u5206 {risk_score}/10</div>
+          <div style="font-size:.8rem;color:var(--muted)">\u8bba\u636e\u8b66\u793a\u7b49\u7ea7 \u00b7 {risk_lbl} ({risk_score}/10)</div>
           <div class="bp-gauge"><div class="bp-gauge-fill" style="width:{gauge_pct}%;background:{gauge_color}"></div></div>
         </div>"""
 
@@ -250,6 +502,7 @@ def _render_battle_plan(view: SnapshotView) -> str:
         entries=ladder_entries,
         targets=ladder_targets,
         current=current_price,
+        side=side,
     )
     if ladder_svg_raw:
         ladder_svg = (
@@ -260,7 +513,7 @@ def _render_battle_plan(view: SnapshotView) -> str:
 
     return f"""
     <div class="card battle-plan {plan_class}">
-      <h3>AI \u4f5c\u6218\u8ba1\u5212</h3>
+      <h3>\u7814\u7a76\u8981\u70b9 \u00b7 \u5173\u952e\u76d1\u6d4b\u6c34\u5e73 <span style="font-size:.65rem;color:var(--muted);font-weight:500;margin-left:.4rem">\u4ec5\u4f9b\u5206\u6790\u53c2\u8003\uff0c\u975e\u4ea4\u6613\u6307\u4ee4</span></h3>
       {header}
       {rationale_html}
       <div class="bp-body" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1.2rem;align-items:start">
@@ -268,7 +521,11 @@ def _render_battle_plan(view: SnapshotView) -> str:
           {setup_html}
           {sl_html}
           {tp_html}
+          {confirmations_html}
+          {avoid_html}
           {inval_html}
+          {review_html}
+          {time_stop_html}
           {gauge_html}
         </div>
         <div class="bp-body-right">{ladder_svg}</div>
@@ -386,23 +643,31 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
         if view.metrics_fallback:
             fb = view.metrics_fallback
             kpis = []
-            for key, label in [("pe", "PE(TTM)"), ("pb", "PB"), ("roe", "ROE(%)"),
-                                ("gross_margin", "\u6bdb\u5229\u7387(%)"), ("market_cap", "\u603b\u5e02\u503c(\u4ebf)"),
-                                ("eps", "EPS"), ("net_profit", "\u51c0\u5229\u6da6")]:
+            _PE_LABEL = _pe_label_html()
+            for key, label, label_html in [
+                ("pe", _PE_LABEL, True),
+                ("pb", "PB", False),
+                ("roe", "ROE(%)", False),
+                ("gross_margin", "\u6bdb\u5229\u7387(%)", False),
+                ("market_cap", "\u603b\u5e02\u503c(\u4ebf)", False),
+                ("eps", "EPS", False),
+                ("net_profit", "\u51c0\u5229\u6da6", False),
+            ]:
                 val = fb.get(key)
                 if val is not None:
-                    kpis.append(f'<div class="kpi"><span class="kpi-val">{_esc(str(val))}</span><span class="kpi-label">{_esc(label)}</span></div>')
+                    label_render = label if label_html else _esc(label)
+                    kpis.append(f'<div class="kpi"><span class="kpi-val">{_esc(str(val))}</span><span class="kpi-label">{label_render}</span></div>')
             if kpis:
                 degraded_chart = f'<div class="card"><h3>\u57fa\u672c\u9762\u901f\u89c8</h3><div class="kpi-row">{"".join(kpis)}</div></div>'
 
         body = f"""
     <h1>{_esc(_ticker_display(view))}</h1>
     <p class="subtitle">{_esc(view.trade_date)} &middot; \u7814\u7a76\u5feb\u7167</p>
-    <div class="banner">{AI_DISCLAIMER_BANNER}</div>
     {_degraded_banner(view.degradation_reasons)}
     {conclusion}
     {degraded_chart}
-    {risks_html}"""
+    {risks_html}
+    <div class="banner banner-footer">{AI_DISCLAIMER_BANNER}</div>"""
 
         return _html_wrap(f"{_ticker_display(view)} \u7814\u7a76\u5feb\u7167 \u2014 {view.trade_date}", body, "\u7814\u7a76\u5feb\u7167", extra_head=_COUNTUP_JS)
 
@@ -416,9 +681,18 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     _conf_ring_html = ""
     _conf_delta_html = ""
     if view.confidence >= 0:
-        _ring_label = "\u7f6e\u4fe1\u5ea6"
+        # Research-tier framing: this is "weight of evidence", NOT a calibrated
+        # probability. Reflection data shows the 4pp calibration gap means the
+        # underlying number is unreliable; we surface it as an evidence strength
+        # tier so readers don't mistake it for a price-prediction probability.
+        if view.confidence >= 0.70:
+            _ring_label = "\u8bc1\u636e\u5f3a\u5ea6 \u00b7 \u5f3a"
+        elif view.confidence >= 0.55:
+            _ring_label = "\u8bc1\u636e\u5f3a\u5ea6 \u00b7 \u4e2d"
+        else:
+            _ring_label = "\u8bc1\u636e\u5f3a\u5ea6 \u00b7 \u5f31"
         if getattr(view, "confidence_defaulted", False):
-            _ring_label = "\u7f6e\u4fe1\u5ea6(\u9ed8\u8ba4)"
+            _ring_label = "\u8bc1\u636e\u5f3a\u5ea6 \u00b7 \u9ed8\u8ba4"
         _conf_ring_html = _confidence_ring_svg(view.confidence, size=100, label=_ring_label)
         if view.previous_confidence >= 0:
             _cdiff = view.confidence - view.previous_confidence
@@ -435,20 +709,39 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     ev_label = _evidence_strength_label(view.evidence_strength)
     hero_kpis.append(f'<div class="kpi kpi-secondary"><span class="kpi-val" style="font-size:1.2rem">{_esc(ev_label)}</span><span class="kpi-label">\u8bc1\u636e\u5f3a\u5ea6</span></div>')
 
-    # Sparkline from price history
+    # Hero sparkline removed — full price chart is now rendered as a standalone
+    # card below the cover (see _render_kline_card). Keeping this var empty
+    # avoids changing the hero_kpi_grid template below.
     _sparkline_html = ""
-    if getattr(view, "price_history", None) and len(view.price_history) >= 2:
-        _sparkline_html = f'<div class="hero-sparkline">{_sparkline_svg(view.price_history)}</div>'
 
     _ring_block = (
         f'<div style="display:flex;flex-direction:column;align-items:center;gap:.3rem;margin-bottom:.6rem">'
         f'{_conf_ring_html}{_conf_delta_html}'
         f'</div>'
     ) if _conf_ring_html else ""
+    _industry_mini_html = _render_hero_industry_kpis(view.industry_compare or {})
     hero_kpi_grid = (
         f'{_ring_block}{_sparkline_html}'
         f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;">{"".join(hero_kpis)}</div>'
+        f'{_industry_mini_html}'
     )
+
+    # Directional lean badge (only show for HOLD with explicit lean to surface tension)
+    _lean = (getattr(view, "directional_lean", "") or "").strip().lower()
+    _lean_reason = getattr(view, "lean_reason", "") or ""
+    _lean_html = ""
+    if (view.research_action or "").upper() == "HOLD" and _lean in ("bullish", "bearish", "neutral"):
+        _LEAN_LABEL = {"bullish": "\u503e\u5411\u770b\u591a", "bearish": "\u503e\u5411\u770b\u7a7a", "neutral": "\u771f\u4e2d\u6027"}
+        _LEAN_CSS = {"bullish": "buy", "bearish": "sell", "neutral": "hold"}
+        _label = _LEAN_LABEL.get(_lean, _lean)
+        _css = _LEAN_CSS.get(_lean, "hold")
+        _reason_attr = f' title="{_esc(_lean_reason)}"' if _lean_reason else ""
+        _lean_html = (
+            f'<div style="margin-top:.4rem;font-size:.85rem;color:var(--muted);">'
+            f'\u65b9\u5411\u503e\u5411: <span class="badge badge-{_css}"{_reason_attr}>{_label}</span>'
+            + (f' <span style="color:var(--muted);font-size:.78rem;">\u2014 {_esc(_lean_reason)}</span>' if _lean_reason else '')
+            + '</div>'
+        )
 
     conclusion = f"""
     <div class="hero reveal">
@@ -460,6 +753,7 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
           </div>
           <div class="hero-summary">{_esc(view.one_line_summary)}</div>
           <div style="font-size:.88rem;color:var(--muted);">{_esc(view.action_explanation)}</div>
+          {_lean_html}
           <div style="font-size:.65rem;color:var(--muted);margin-top:.3rem;">\u4fe1\u53f7\u8272: <span style="color:var(--red)">\u25cf</span> \u6da8/\u79ef\u6781 <span style="color:var(--green)">\u25cf</span> \u8dcc/\u6d88\u6781</div>
         </div>
         <div class="hero-right">
@@ -498,17 +792,32 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     if view.metrics_fallback:
         fb = view.metrics_fallback
         kpis = []
+        # (key, label, kind, label_is_html) \u2014 pe label uses HTML for the
+        # 'TTM' superscript; other labels are plain Chinese text.
+        _PE_LABEL = _pe_label_html()
         label_map = [
-            ("pe", "PE(TTM)"), ("pb", "PB"), ("roe", "ROE(%)"),
-            ("gross_margin", "\u6bdb\u5229\u7387(%)"), ("market_cap", "\u603b\u5e02\u503c(\u4ebf)"),
-            ("eps", "EPS"), ("net_profit", "\u51c0\u5229\u6da6"),
+            ("pe", _PE_LABEL, "ratio", True),
+            ("pb", "PB", "ratio", False),
+            ("roe", "ROE", "pct_simple", False),
+            ("gross_margin", "\u6bdb\u5229\u7387", "pct_simple", False),
+            ("market_cap", "\u603b\u5e02\u503c", "mktcap_yi", False),
+            ("eps", "EPS", "eps", False),
+            ("net_profit", "\u51c0\u5229\u6da6", "default", False),
         ]
-        for key, label in label_map:
+        for key, label, kind, label_is_html in label_map:
             val = fb.get(key)
             if val is not None:
-                kpis.append(f'<div class="kpi"><span class="kpi-val">{_esc(str(val))}</span><span class="kpi-label">{_esc(label)}</span></div>')
+                fmt = _format_finance_num(val, kind)
+                label_render = label if label_is_html else _esc(label)
+                kpis.append(
+                    f'<div class="kpi"><span class="kpi-val">{_esc(fmt)}</span>'
+                    f'<span class="kpi-label">{label_render}</span></div>'
+                )
         if kpis:
-            chart_html = f'<div class="card reveal reveal-d2"><h3>\u57fa\u672c\u9762\u901f\u89c8</h3><div class="kpi-row">{"".join(kpis)}</div></div>'
+            chart_html = (
+                f'<div class="card reveal reveal-d2"><h3>\u57fa\u672c\u9762\u901f\u89c8</h3>'
+                f'<div class="kpi-row">{"".join(kpis)}</div></div>'
+            )
 
     # Core drivers
     drivers_html = ""
@@ -565,31 +874,80 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
 
     # ── Feature cards ──
     battle_plan_html = _render_battle_plan(view)
+    pillar_consensus_html = _render_pillar_consensus_bar(view)
     checklist_html = _render_checklist(view)
     risk_debate_html = _render_risk_debate_summary(view)
     signal_history_html = _render_signal_history(view)
 
-    # Wrap supporting sections for mobile collapse
-    def _mc(summary_label: str, content: str) -> str:
+    # Wrap supporting sections for mobile collapse. Core analysis stays open;
+    # secondary diagnostic blocks default to closed to lift first-screen density.
+    def _mc(summary_label: str, content: str, default_open: bool = True) -> str:
         if not content or not content.strip():
             return ""
-        return f'<details class="mobile-collapse" open><summary>{_esc(summary_label)}</summary>{content}</details>'
+        attr = " open" if default_open else ""
+        return f'<details class="mobile-collapse"{attr}><summary>{_esc(summary_label)}</summary>{content}</details>'
 
+    cover_html = _render_cover_card(view)
+    kline_card_html = _render_kline_card(view)
+    industry_card_html = _render_industry_compare_card(view.industry_compare or {})
+    stock_profile_html = _render_stock_profile_card(view.stock_profile or {})
+    calibration_html = _render_calibration_card(view.calibration_summary or {})
+    data_quality_html = _render_data_quality_flags(view.data_quality_flags or [])
+    context_html = (
+        f'<div class="cols"><div>{stock_profile_html}</div><div>{calibration_html}</div></div>'
+        if (stock_profile_html or calibration_html) else ""
+    )
+    _short_run = (view.run_id[-8:] if view.run_id else "\u2014")
+
+    # Research-quality grade badge \u2014 shared helper across all 4 report types
+    _grade_badge_html = _quality_grade_badge_html(
+        grade=view.quality_grade,
+        score=view.quality_score,
+        weak_dims=view.quality_weak_dims,
+    )
+
+    watermark_html = (
+        f'<div class="report-watermark">'
+        f'{_grade_badge_html}'
+        f'{"<span>\u00b7</span>" if _grade_badge_html else ""}'
+        f'<span>\u62a5\u544a ID \u00b7 {_esc(_short_run)}</span>'
+        f'<span>\u00b7</span>'
+        f'<span>\u6570\u636e\u622a\u6b62 \u00b7 {_esc(view.trade_date)}</span>'
+        f'<span>\u00b7</span>'
+        f'<span>17 \u53f8\u534f\u4f5c\u751f\u6210</span>'
+        f'</div>'
+    )
+
+    research_banner_html = (
+        f'<div class="research-banner" style="margin:.6rem 0 .8rem;'
+        f'padding:.6rem .9rem;background:linear-gradient(90deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04));'
+        f'border:1px solid rgba(96,165,250,0.32);border-radius:12px;'
+        f'color:var(--blue);font-size:.78rem;line-height:1.5;letter-spacing:.02em">'
+        f'{RESEARCH_HEADER_BANNER}</div>'
+    )
     body = f"""
     <h1>{_esc(_ticker_display(view))}</h1>
     <p class="subtitle">{_esc(view.trade_date)} &middot; \u7814\u7a76\u5feb\u7167</p>
-    <div class="banner">{AI_DISCLAIMER_BANNER}</div>
+    {watermark_html}
+    {research_banner_html}
+    {cover_html}
+    {kline_card_html}
     {degradation_banner_html}
     {conclusion}
+    {pillar_consensus_html}
     {lights_html}
     {battle_plan_html}
+    {_mc("\u4e2a\u80a1\u7c7b\u578b / \u5386\u53f2\u6821\u51c6", context_html)}
     {_mc("\u57fa\u672c\u9762\u901f\u89c8", chart_html)}
+    {_mc("\u884c\u4e1a\u5bf9\u6bd4", industry_card_html)}
+    {_mc("\u6570\u636e\u53e3\u5f84\u98ce\u9669", data_quality_html, default_open=False)}
     {_mc("\u6838\u5fc3\u9a71\u52a8 / \u98ce\u9669", f'<div class="cols"><div>{drivers_html}</div><div>{risks_html}</div></div>')}
     {_mc("\u8bc1\u636e\u5f3a\u5ea6", evidence_html)}
     {_mc("\u4fe1\u53f7\u6838\u9a8c", checklist_html)}
-    {_mc("\u98ce\u63a7\u8fa9\u8bba", risk_debate_html)}
+    {_mc("\u98ce\u63a7\u8fa9\u8bba", risk_debate_html, default_open=False)}
     {_mc("\u50ac\u5316\u5242", catalyst_html)}
-    {_mc("\u4fe1\u53f7\u5386\u53f2", signal_history_html)}"""
+    {_mc("\u4fe1\u53f7\u5386\u53f2", signal_history_html, default_open=False)}
+    <div class="banner banner-footer">{AI_DISCLAIMER_BANNER}</div>"""
 
     nav = _nav_bar(view.ticker, view.run_id, "snapshot")
     return _html_wrap(f"{_ticker_display(view)} \u7814\u7a76\u5feb\u7167 \u2014 {view.trade_date}", body, "\u7814\u7a76\u5feb\u7167", nav_html=nav)

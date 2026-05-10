@@ -160,6 +160,13 @@ class AkshareBundle:
     financial_summary: dict = field(default_factory=dict)
     financial_ratios: dict = field(default_factory=dict)
 
+    # ── Industry comparison (added for A4/C2 valuation context) ──
+    # Shape: {industry_name, pe_percentile_5y, pb_percentile_5y,
+    #         industry_pe_median, industry_pb_median, industry_roe_median,
+    #         peers: [{ticker, name, pe, pb, roe, revenue_growth,
+    #                  is_current, market_cap_yi}, ...]}
+    industry_compare: dict = field(default_factory=dict)
+
     # ── Formatted markdown (for agents) ──
     markdown_report: str = ""
 
@@ -314,6 +321,64 @@ class AkshareBundle:
                     f"| {row['date']} | {_fmt_num(row.get('pe_ttm'))} "
                     f"| {_fmt_num(row.get('pb'))} |"
                 )
+
+        # Industry comparison + peer valuation context
+        ic = self.industry_compare or {}
+        if ic:
+            ind_name = ic.get("industry_name", self.sector or "—")
+            parts.append(f"\n## 行业对比（{ind_name}）")
+            bits: list = []
+            if ic.get("pe_percentile_5y") is not None:
+                bits.append(f"PE 历史分位 {ic['pe_percentile_5y']}%")
+            if ic.get("pb_percentile_5y") is not None:
+                bits.append(f"PB 历史分位 {ic['pb_percentile_5y']}%")
+            if ic.get("industry_pe_median") is not None:
+                bits.append(f"行业中位 PE {ic['industry_pe_median']}")
+            if ic.get("industry_pb_median") is not None:
+                bits.append(f"行业中位 PB {ic['industry_pb_median']}")
+            if ic.get("industry_ps_median") is not None:
+                bits.append(f"行业中位 PS {ic['industry_ps_median']}")
+            if ic.get("industry_roe_median") is not None:
+                bits.append(f"行业中位 ROE {ic['industry_roe_median']}")
+            if ic.get("industry_gross_margin_median") is not None:
+                bits.append(f"行业中位 毛利率 {ic['industry_gross_margin_median']}")
+            if ic.get("industry_revenue_growth_median") is not None:
+                bits.append(f"行业中位 营收增速 {ic['industry_revenue_growth_median']}")
+            if ic.get("industry_size"):
+                bits.append(f"成份股 {ic['industry_size']} 只")
+            if bits:
+                parts.append("- " + " · ".join(bits))
+
+            peers = ic.get("peers") or []
+            if peers:
+                parts.append("")
+                show_quality_cols = any(
+                    p.get("roe") is not None
+                    or p.get("gross_margin") is not None
+                    or p.get("revenue_growth") is not None
+                    for p in peers
+                )
+                if show_quality_cols:
+                    parts.append("| 代码 | 名称 | PE | PB | ROE | 毛利率 | 营收增速 | 成交额(亿) |")
+                    parts.append("|------|------|----|----|-----|--------|----------|------|")
+                else:
+                    parts.append("| 代码 | 名称 | PE | PB | 成交额(亿) |")
+                    parts.append("|------|------|----|----|------|")
+                for p in peers:
+                    marker = " ★" if p.get("is_current") else ""
+                    if show_quality_cols:
+                        parts.append(
+                            f"| {p.get('ticker','')}{marker} | {p.get('name','')} | "
+                            f"{_fmt_num(p.get('pe'))} | {_fmt_num(p.get('pb'))} | "
+                            f"{_fmt_num(p.get('roe'))} | {_fmt_num(p.get('gross_margin'))} | "
+                            f"{_fmt_num(p.get('revenue_growth'))} | {_fmt_num(p.get('turnover_yi'))} |"
+                        )
+                    else:
+                        parts.append(
+                            f"| {p.get('ticker','')}{marker} | {p.get('name','')} | "
+                            f"{_fmt_num(p.get('pe'))} | {_fmt_num(p.get('pb'))} | "
+                            f"{_fmt_num(p.get('turnover_yi'))} |"
+                        )
 
         # Top 10 shareholders
         if self.top10_shareholders:
@@ -1133,6 +1198,268 @@ def _collect_earnings_date(b: AkshareBundle) -> None:
         b.earnings_actually_disclosed = True
 
 
+# ── Industry comparison + valuation percentile (added 2026-04-30) ──────
+
+
+def _peer_field(row: dict, *names):
+    for name in names:
+        if name in row and row.get(name) not in (None, ""):
+            return row.get(name)
+    return None
+
+
+def _safe_peer_number(val) -> Optional[float]:
+    """Parse numeric peer fields that may contain Chinese units."""
+    if val is None:
+        return None
+    if isinstance(val, str):
+        raw = val.strip().replace(",", "")
+        if not raw or raw in ("-", "—", "None", "nan"):
+            return None
+        multiplier = 1.0
+        if raw.endswith("万亿"):
+            multiplier = 1e12
+            raw = raw[:-2]
+        elif raw.endswith("亿"):
+            multiplier = 1e8
+            raw = raw[:-1]
+        elif raw.endswith("万"):
+            multiplier = 1e4
+            raw = raw[:-1]
+        try:
+            return float(raw) * multiplier
+        except ValueError:
+            return None
+    return _safe_float(val)
+
+
+def _normalize_industry_peers(rows: list) -> list:
+    """Normalize EM/THS/spot constituent rows to the EM-like schema used below."""
+    normalized = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        code = str(_peer_field(row, "代码", "股票代码", "证券代码", "code") or "").strip()
+        code = code.replace(".SH", "").replace(".SZ", "").replace(".BJ", "")
+        if len(code) > 6 and code[-6:].isdigit():
+            code = code[-6:]
+        name = str(_peer_field(row, "名称", "股票简称", "证券简称", "name") or "").strip()
+        pe = _safe_peer_number(_peer_field(row, "市盈率-动态", "市盈率", "PE", "pe"))
+        pb = _safe_peer_number(_peer_field(row, "市净率", "PB", "pb"))
+        ps = _safe_peer_number(_peer_field(row, "市销率", "市销率TTM", "PS", "ps"))
+        roe = _safe_peer_number(_peer_field(row, "净资产收益率", "ROE", "roe"))
+        gross_margin = _safe_peer_number(_peer_field(row, "毛利率", "销售毛利率", "gross_margin"))
+        revenue_growth = _safe_peer_number(_peer_field(row, "营收同比", "营业收入同比增长", "revenue_growth"))
+        amount = _safe_peer_number(_peer_field(row, "成交额", "成交金额", "amount"))
+
+        out = dict(row)
+        out["代码"] = code
+        out["名称"] = name
+        out["市盈率-动态"] = pe
+        out["市净率"] = pb
+        out["市销率"] = ps
+        out["净资产收益率"] = roe
+        out["毛利率"] = gross_margin
+        out["营收同比"] = revenue_growth
+        out["成交额"] = amount
+        normalized.append(out)
+    return normalized
+
+
+def _collect_industry_compare(b: AkshareBundle) -> None:
+    """Populate `b.industry_compare` with valuation-percentile + peer table.
+
+    Two-part call:
+      1. `ak.stock_value_em(symbol=ticker)` — full historical PE/PB time
+         series. We compute current-vs-history percentile (≤ 5y window).
+      2. `ak.stock_board_industry_cons_em(symbol=industry)` — same-industry
+         constituents' PE/PB. Cached at industry+date level so peers in the
+         same sector on the same day share one API call.
+
+    Failure-tolerant: any sub-step that raises is swallowed and the bundle
+    keeps whatever partial data was collected (or `{}` if nothing succeeded).
+    """
+    import akshare as ak
+    import pandas as pd
+    import statistics
+    from .data_cache import DataCache
+
+    ic: dict = {}
+
+    # Step A — historical PE/PB time series → current percentile
+    try:
+        with em_proxy_session():
+            hist = _retry_call(ak.stock_value_em, symbol=b.ticker)
+        if hist is not None and not hist.empty:
+            # Last row = most recent observation
+            last_row = hist.iloc[-1]
+            cur_pe = _safe_float(last_row.get("PE(TTM)"))
+            cur_pb = _safe_float(last_row.get("市净率"))
+
+            # Percentile: how many history points are STRICTLY less than current.
+            # Filter to plausible positive values (drop NaN, negatives, outliers).
+            pe_series = pd.to_numeric(hist["PE(TTM)"], errors="coerce").dropna()
+            pe_valid = pe_series[(pe_series > 0) & (pe_series < 1000)]
+            pb_series = pd.to_numeric(hist["市净率"], errors="coerce").dropna()
+            pb_valid = pb_series[(pb_series > 0) & (pb_series < 100)]
+
+            if cur_pe is not None and cur_pe > 0 and len(pe_valid) >= 30:
+                pct = float((pe_valid < cur_pe).sum()) / len(pe_valid) * 100.0
+                ic["pe_percentile_5y"] = round(pct, 1)
+            if cur_pb is not None and cur_pb > 0 and len(pb_valid) >= 30:
+                pct = float((pb_valid < cur_pb).sum()) / len(pb_valid) * 100.0
+                ic["pb_percentile_5y"] = round(pct, 1)
+            ic["history_days"] = int(len(pe_valid))
+    except Exception as e:
+        logger.debug(f"  [industry_compare] stock_value_em failed: {e}")
+
+    # Step B — resolve industry name (already populated by basic_info)
+    industry_name = (b.sector or "").strip()
+    if not industry_name:
+        if ic:
+            b.industry_compare = ic
+        return
+
+    ic["industry_name"] = industry_name
+
+    # Step C — industry constituents (cached at industry level so 30+ tickers
+    # in the same industry on the same day share one cache entry)
+    cache = DataCache()
+    peers_data = cache.get("industry_cons", industry_name, b.trade_date)
+
+    if peers_data is None:
+        try:
+            with em_proxy_session():
+                df = _retry_call(ak.stock_board_industry_cons_em, symbol=industry_name)
+            if df is not None and not df.empty:
+                peers_data = df.to_dict("records")
+                # JSON-safety: convert NaN to None for cache serialization
+                for r in peers_data:
+                    for k, v in list(r.items()):
+                        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                            r[k] = None
+                cache.put("industry_cons", industry_name, b.trade_date, peers_data)
+        except Exception as e:
+            logger.debug(f"  [industry_compare] EM industry_cons failed: {e}")
+            peers_data = None
+
+    # Fallback 1 — THS industry constituents (different vendor, often works
+    # when EM rate-limits or returns empty). THS uses different industry
+    # naming so we try the EM name first, then strip "Ⅱ"/"Ⅲ" suffixes.
+    if not peers_data:
+        for try_name in [industry_name, re.sub(r"[ⅡⅢIVX]+$", "", industry_name).strip()]:
+            if not try_name:
+                continue
+            try:
+                with em_proxy_session():
+                    df_ths = _retry_call(ak.stock_board_industry_cons_ths, symbol=try_name)
+                if df_ths is not None and not df_ths.empty:
+                    peers_data = df_ths.to_dict("records")
+                    for r in peers_data:
+                        for k, v in list(r.items()):
+                            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                                r[k] = None
+                    cache.put("industry_cons", industry_name, b.trade_date, peers_data)
+                    ic["industry_data_source"] = "ths_fallback"
+                    logger.debug(f"  [industry_compare] THS fallback OK ({try_name}): {len(peers_data)} peers")
+                    break
+            except Exception as e:
+                logger.debug(f"  [industry_compare] THS fallback ({try_name}) failed: {e}")
+
+    # Fallback 2 — spot DataFrame filter by industry (only works if 行业 col present)
+    if not peers_data:
+        try:
+            global _cached_spot_df
+            spot_df = _cached_spot_df
+            if spot_df is not None and not spot_df.empty and "行业" in spot_df.columns:
+                same_ind = spot_df[spot_df["行业"].astype(str).str.strip() == industry_name]
+                if not same_ind.empty:
+                    peers_data = same_ind.to_dict("records")
+                    for r in peers_data:
+                        for k, v in list(r.items()):
+                            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                                r[k] = None
+                    cache.put("industry_cons", industry_name, b.trade_date, peers_data)
+                    ic["industry_data_source"] = "spot_fallback"
+                    logger.debug(f"  [industry_compare] spot fallback OK: {len(peers_data)} peers")
+        except Exception as e:
+            logger.debug(f"  [industry_compare] spot fallback failed: {e}")
+
+    if peers_data:
+        peers_data = _normalize_industry_peers(peers_data)
+
+    if not peers_data:
+        # No peers available across all 3 sources — still keep what we have
+        # (percentile + industry name) so renderer can show partial card
+        ic["industry_data_unavailable"] = True
+        b.industry_compare = ic
+        return
+
+    # Step D — industry medians (filter implausible values)
+    pe_vals = [_safe_float(r.get("市盈率-动态")) for r in peers_data]
+    pe_vals = [v for v in pe_vals if v is not None and 0 < v < 1000]
+    pb_vals = [_safe_float(r.get("市净率")) for r in peers_data]
+    pb_vals = [v for v in pb_vals if v is not None and 0 < v < 100]
+    ps_vals = [_safe_float(r.get("市销率")) for r in peers_data]
+    ps_vals = [v for v in ps_vals if v is not None and 0 < v < 100]
+    roe_vals = [_safe_float(r.get("净资产收益率")) for r in peers_data]
+    roe_vals = [v for v in roe_vals if v is not None and -100 < v < 100]
+    gm_vals = [_safe_float(r.get("毛利率")) for r in peers_data]
+    gm_vals = [v for v in gm_vals if v is not None and -100 < v < 100]
+    rev_g_vals = [_safe_float(r.get("营收同比")) for r in peers_data]
+    rev_g_vals = [v for v in rev_g_vals if v is not None and -200 < v < 500]
+    if pe_vals:
+        ic["industry_pe_median"] = round(statistics.median(pe_vals), 2)
+    if pb_vals:
+        ic["industry_pb_median"] = round(statistics.median(pb_vals), 2)
+    if ps_vals:
+        ic["industry_ps_median"] = round(statistics.median(ps_vals), 2)
+    if roe_vals:
+        ic["industry_roe_median"] = round(statistics.median(roe_vals), 2)
+    if gm_vals:
+        ic["industry_gross_margin_median"] = round(statistics.median(gm_vals), 2)
+    if rev_g_vals:
+        ic["industry_revenue_growth_median"] = round(statistics.median(rev_g_vals), 2)
+    ic["industry_size"] = len(peers_data)
+
+    # Step E — pick top 5-8 active peers (by turnover proxy) + ensure current
+    # ticker is included
+    peers_sorted = sorted(
+        peers_data,
+        key=lambda r: _safe_float(r.get("成交额")) or 0,
+        reverse=True,
+    )
+    current_row = next(
+        (r for r in peers_data if str(r.get("代码", "")).strip() == b.ticker),
+        None,
+    )
+
+    selected = peers_sorted[:8]
+    if current_row and not any(
+        str(r.get("代码", "")).strip() == b.ticker for r in selected
+    ):
+        # Replace the smallest selected with the current ticker
+        selected = selected[:7] + [current_row]
+
+    peers_out: list = []
+    for r in selected:
+        code = str(r.get("代码", "")).strip()
+        peers_out.append({
+            "ticker": code,
+            "name": str(r.get("名称", "")).strip(),
+            "pe": _safe_float(r.get("市盈率-动态")),
+            "pb": _safe_float(r.get("市净率")),
+            "ps": _safe_float(r.get("市销率")),
+            "roe": _safe_float(r.get("净资产收益率")),
+            "gross_margin": _safe_float(r.get("毛利率")),
+            "revenue_growth": _safe_float(r.get("营收同比")),
+            "is_current": code == b.ticker,
+            "turnover_yi": round((_safe_float(r.get("成交额")) or 0) / 1e8, 2),
+        })
+    ic["peers"] = peers_out
+    b.industry_compare = ic
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Markdown formatter
 # ──────────────────────────────────────────────────────────────────────
@@ -1194,6 +1521,65 @@ def _build_markdown(b: AkshareBundle) -> str:
         status = "已披露" if b.earnings_actually_disclosed else "预约"
         lines.append(f"| 年报披露日期 | {b.earnings_disclosure_date} ({status}) |")
     lines.append("")
+
+    # ── Industry comparison + valuation percentile ──
+    ic = b.industry_compare or {}
+    if ic:
+        ind_name = ic.get("industry_name", "—")
+        lines.append(f"## 行业对比（{ind_name}）")
+        bits: list = []
+        if ic.get("pe_percentile_5y") is not None:
+            bits.append(f"PE 历史分位 {ic['pe_percentile_5y']}%")
+        if ic.get("pb_percentile_5y") is not None:
+            bits.append(f"PB 历史分位 {ic['pb_percentile_5y']}%")
+        if ic.get("industry_pe_median") is not None:
+            bits.append(f"行业中位 PE {ic['industry_pe_median']}")
+        if ic.get("industry_pb_median") is not None:
+            bits.append(f"行业中位 PB {ic['industry_pb_median']}")
+        if ic.get("industry_ps_median") is not None:
+            bits.append(f"行业中位 PS {ic['industry_ps_median']}")
+        if ic.get("industry_roe_median") is not None:
+            bits.append(f"行业中位 ROE {ic['industry_roe_median']}")
+        if ic.get("industry_gross_margin_median") is not None:
+            bits.append(f"行业中位 毛利率 {ic['industry_gross_margin_median']}")
+        if ic.get("industry_revenue_growth_median") is not None:
+            bits.append(f"行业中位 营收增速 {ic['industry_revenue_growth_median']}")
+        if ic.get("industry_size"):
+            bits.append(f"成份股 {ic['industry_size']} 只")
+        if bits:
+            lines.append("- " + " · ".join(bits))
+
+        peers = ic.get("peers") or []
+        if peers:
+            lines.append("")
+            show_quality_cols = any(
+                p.get("roe") is not None
+                or p.get("gross_margin") is not None
+                or p.get("revenue_growth") is not None
+                for p in peers
+            )
+            if show_quality_cols:
+                lines.append("| 代码 | 名称 | PE | PB | ROE | 毛利率 | 营收增速 | 成交额(亿) |")
+                lines.append("|------|------|----|----|-----|--------|----------|------|")
+            else:
+                lines.append("| 代码 | 名称 | PE | PB | 成交额(亿) |")
+                lines.append("|------|------|----|----|------|")
+            for p in peers:
+                marker = " ★" if p.get("is_current") else ""
+                if show_quality_cols:
+                    lines.append(
+                        f"| {p.get('ticker','')}{marker} | {p.get('name','')} | "
+                        f"{_fmt_num(p.get('pe'))} | {_fmt_num(p.get('pb'))} | "
+                        f"{_fmt_num(p.get('roe'))} | {_fmt_num(p.get('gross_margin'))} | "
+                        f"{_fmt_num(p.get('revenue_growth'))} | {_fmt_num(p.get('turnover_yi'))} |"
+                    )
+                else:
+                    lines.append(
+                        f"| {p.get('ticker','')}{marker} | {p.get('name','')} | "
+                        f"{_fmt_num(p.get('pe'))} | {_fmt_num(p.get('pb'))} | "
+                        f"{_fmt_num(p.get('turnover_yi'))} |"
+                    )
+        lines.append("")
 
     # ── Price history (last 10 days) ──
     if b.price_history:
@@ -1403,6 +1789,7 @@ _COLLECTORS = [
     ("margin",             _collect_margin),
     ("block_trades",       _collect_block_trades),
     ("earnings_date",      _collect_earnings_date),
+    ("industry_compare",   _collect_industry_compare),
 ]
 
 

@@ -46,6 +46,27 @@ class AuditView:
     audit_conclusion_label: str = ""   # 高可信 / 中等可信 / 低可信
     audit_conclusion_text: str = ""    # Full explanation
 
+    # Report-level research context
+    stock_profile: Dict = field(default_factory=dict)
+    calibration_summary: Dict = field(default_factory=dict)
+    data_quality_flags: List[Dict] = field(default_factory=list)
+
+    # K-line card fields (no cover card on audit — that's tearsheet territory)
+    price_history: List[float] = field(default_factory=list)
+    signal_history: List[Dict] = field(default_factory=list)
+    period_days: int = 0
+
+    # Backward-compat for K-line card consumer (audit doesn't show these prominently
+    # but renderer pulls them via getattr — populating saves a None-check downstream)
+    current_price: float = 0.0
+    period_high: float = 0.0
+    period_low: float = 0.0
+
+    # Research-quality badge, computed from the loaded trace itself.
+    quality_grade: str = ""
+    quality_score: float = 0.0
+    quality_weak_dims: List[str] = field(default_factory=list)
+
     banner: Optional[BannerView] = None
 
     @classmethod
@@ -156,6 +177,60 @@ class AuditView:
         from .decision_labels import compute_audit_conclusion
         ac_level, ac_label, ac_text = compute_audit_conclusion(trust_signals, weakest_node)
 
+        fund_out = service.show_node_output(run_id, "Fundamentals Analyst") or {}
+        fund_sd = fund_out.get("structured_data") or {}
+        stock_profile_data = fund_sd.get("stock_profile", {}) or {}
+        calibration_data = fund_sd.get("calibration_summary", {}) or {}
+        data_quality_flags = fund_sd.get("data_quality_flags", []) or []
+
+        # ── K-line data (price + past signals) ──
+        mkt_out = service.show_node_output(run_id, "Market Analyst") or {}
+        mkt_sd = mkt_out.get("structured_data") or {}
+        raw_prices = mkt_sd.get("price_history", []) or []
+        ph_data: List[float] = [float(p) for p in raw_prices if p is not None][:30]
+        sh_data: List[Dict] = []
+        try:
+            past_runs = service.store.list_runs(ticker=trace.ticker, limit=10)
+            count = 0
+            for pr in past_runs:
+                pr_rid = pr.get("run_id", "")
+                if pr_rid == run_id:
+                    continue
+                pr_conf = 0.0
+                if pr_rid:
+                    try:
+                        pr_trace = service.store.load(pr_rid)
+                        if pr_trace and pr_trace.final_confidence >= 0:
+                            pr_conf = float(pr_trace.final_confidence)
+                    except Exception:
+                        pass
+                sh_data.append({
+                    "trade_date": pr.get("trade_date", ""),
+                    "action": pr.get("research_action", ""),
+                    "confidence": pr_conf,
+                    "run_id": pr_rid,
+                })
+                count += 1
+                if count >= 5:
+                    break
+        except Exception:
+            pass
+        cur_p = float(ph_data[-1]) if ph_data else 0.0
+        hi_p = float(max(ph_data)) if ph_data else 0.0
+        lo_p = float(min(ph_data)) if ph_data else 0.0
+
+        quality_grade = ""
+        quality_score = 0.0
+        quality_weak_dims: List[str] = []
+        try:
+            from ..research_quality import evaluate_trace_quality
+            qrec = evaluate_trace_quality(trace.to_dict())
+            quality_grade = qrec.composite_grade
+            quality_score = qrec.composite_score
+            quality_weak_dims = list(qrec.weak_dimensions)
+        except Exception:
+            pass
+
         return cls(
             run_id=run_id,
             ticker=trace.ticker,
@@ -175,5 +250,17 @@ class AuditView:
             audit_conclusion_level=ac_level,
             audit_conclusion_label=ac_label,
             audit_conclusion_text=ac_text,
+            stock_profile=stock_profile_data,
+            calibration_summary=calibration_data,
+            data_quality_flags=data_quality_flags,
+            price_history=ph_data,
+            signal_history=sh_data,
+            period_days=len(ph_data),
+            current_price=cur_p,
+            period_high=hi_p,
+            period_low=lo_p,
+            quality_grade=quality_grade,
+            quality_score=quality_score,
+            quality_weak_dims=quality_weak_dims,
             banner=BannerView.from_trace(trace),
         )

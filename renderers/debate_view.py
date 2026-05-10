@@ -172,6 +172,11 @@ class DebateView:
     consensus_label: str = "收敛中等"
     report_url: str = ""              # link to full research report
 
+    # Research-quality badge, computed from the trace passed to the builder.
+    quality_grade: str = ""
+    quality_score: float = 0.0
+    quality_weak_dims: List[str] = field(default_factory=list)
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -274,6 +279,7 @@ def build_debate_view(run_trace) -> DebateView:
                       or run_trace.get("trade_date", run_trace.get("as_of", "")))
         run_id = meta.get("run_id", "") or run_trace.get("run_id", "")
         mkt_ctx = run_trace.get("market_context", {}) or {}
+        quality_trace = dict(run_trace)
     else:
         nodes = []
         for nt in getattr(run_trace, "node_traces", []):
@@ -301,6 +307,25 @@ def build_debate_view(run_trace) -> DebateView:
         mkt_ctx = getattr(run_trace, "market_context", {}) or {}
         trade_date = getattr(run_trace, "trade_date", "")
         run_id = getattr(run_trace, "run_id", "")
+        quality_trace = run_trace.to_dict() if hasattr(run_trace, "to_dict") else {}
+
+    if "node_traces" not in quality_trace and nodes:
+        quality_trace = dict(quality_trace)
+        quality_trace["node_traces"] = nodes
+        quality_trace.setdefault("total_nodes", len(nodes))
+        quality_trace.setdefault("error_count", 0)
+
+    quality_grade = ""
+    quality_score = 0.0
+    quality_weak_dims: List[str] = []
+    try:
+        from ..research_quality import evaluate_trace_quality
+        qrec = evaluate_trace_quality(quality_trace)
+        quality_grade = qrec.composite_grade
+        quality_score = qrec.composite_score
+        quality_weak_dims = list(qrec.weak_dimensions)
+    except Exception:
+        pass
 
     # Reverse map: node_name → agent_key
     from ..bridge import AGENT_NODE_MAP
@@ -706,6 +731,9 @@ def build_debate_view(run_trace) -> DebateView:
         conflict_label=conflict_label,
         consensus_level=consensus_level,
         consensus_label=consensus_label,
+        quality_grade=quality_grade,
+        quality_score=quality_score,
+        quality_weak_dims=quality_weak_dims,
     )
 
 

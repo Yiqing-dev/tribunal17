@@ -140,6 +140,31 @@ class TestBuildPrompt:
         prompt = build_prompt(req)
         assert "宏观利好" in prompt
 
+    def test_extra_context_blocks_reach_prompt(self):
+        req = self._req(
+            "research_manager",
+            extra={
+                "stock_profile": {
+                    "primary": "loss_making",
+                    "label_cn": "亏损/困境股",
+                    "key_checks": ["现金余额", "债务压力"],
+                    "warnings": ["亏损股不得以PE作为主估值锚"],
+                },
+                "calibration_summary": {
+                    "overall": {"decided_n": 2, "accuracy": 0.5, "calibration_gap": 0.2},
+                    "ticker": {"decided_n": 1, "accuracy": 0.0, "calibration_gap": 0.8},
+                    "confidence_bucket": {"decided_n": 1, "accuracy": 0.0, "calibration_gap": 0.8},
+                    "action": {"decided_n": 1, "accuracy": 0.0, "calibration_gap": 0.8},
+                    "notes": ["整体置信度偏高"],
+                },
+            },
+        )
+        prompt = build_prompt(req)
+        assert "亏损/困境股" in prompt
+        assert "亏损股不得以PE作为主估值锚" in prompt
+        assert "历史校准反馈" in prompt
+        assert "整体置信度偏高" in prompt
+
 
 # ╔══════════════════════════════════════════════════════════════════════╗
 # ║  4. parse_output                                                    ║

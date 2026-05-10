@@ -1,4 +1,4 @@
-"""Regression tests for the 4 data integrity bugs found in 2026-04-27 reports:
+"""Regression tests for data integrity bugs found in 2026-04-27 reports:
 
 1. ``_extract_financial_metrics`` (bridge.py) — PB grabbed years like 2025
    when prose used ``=`` instead of ``:`` and the regex fell back to a lazy
@@ -13,13 +13,25 @@
 4. ``collect_limit_board`` (recap_collector.py) — when EM spot API failed,
    the recap showed 0 / 0 for limit-up / limit-down counts even though
    ``stock_zt_pool_em`` / ``stock_zt_pool_dtgc_em`` were healthy.
+5. Industry comparison data was collected but not reliably propagated into
+   agent markdown / structured report views.
 """
 from __future__ import annotations
 
 import pytest
 
-from subagent_pipeline.akshare_collector import _fmt_num
-from subagent_pipeline.bridge import _extract_financial_metrics
+from subagent_pipeline.akshare_collector import (
+    AkshareBundle,
+    _fmt_num,
+    _normalize_industry_peers,
+)
+from subagent_pipeline.bridge import (
+    _augment_industry_compare,
+    _augment_metric_metadata,
+    _build_data_quality_flags,
+    _extract_financial_metrics,
+    _extract_industry_compare_from_text,
+)
 from subagent_pipeline.renderers.views import _strip_internal_tokens
 
 
@@ -143,6 +155,11 @@ class TestExtractFinancialMetrics:
             "002131": {"pe": "94.14", "pb": "3.48", "market_cap": "460.48"},
             "002370": {"pe": "-485.58", "pb": "4.50", "market_cap": "50.26"},
         }
+        signature_path = results / "000710_fundamentals_report.txt"
+        if signature_path.exists():
+            signature_text = signature_path.read_text(encoding="utf-8")
+            if not all(v in signature_text for v in expected["000710"].values()):
+                pytest.skip("agent_artifacts/results is not the pinned 2026-04-27 fixture set")
         for ticker, exp in expected.items():
             path = results / f"{ticker}_fundamentals_report.txt"
             if not path.exists():
@@ -233,6 +250,131 @@ class TestFmtNumSignedZero:
 
     def test_none_returns_em_dash(self):
         assert _fmt_num(None) == "—"
+
+
+# ── Fix 5 — industry comparison propagation ─────────────────────────────
+
+class TestIndustryComparisonPropagation:
+    def test_fundamentals_agent_markdown_includes_industry_compare(self):
+        b = AkshareBundle(
+            ticker="603065",
+            name="宿迁联盛",
+            sector="化学制品",
+            industry_compare={
+                "industry_name": "化学制品",
+                "pe_percentile_5y": 30.0,
+                "industry_pe_median": 18.5,
+                "industry_size": 42,
+                "peers": [
+                    {
+                        "ticker": "603065",
+                        "name": "宿迁联盛",
+                        "pe": 28.8,
+                        "pb": 1.7,
+                        "turnover_yi": 1.23,
+                        "is_current": True,
+                    }
+                ],
+            },
+        )
+        md = b.render_fundamentals_analyst_md()
+        assert "## 行业对比（化学制品）" in md
+        assert "PE 历史分位 30.0%" in md
+        assert "| 603065 ★ | 宿迁联盛 | 28.80 | 1.70 | 1.23 |" in md
+
+    def test_ths_peer_rows_normalize_to_expected_schema(self):
+        rows = [{
+            "股票代码": "SH603065",
+            "股票简称": "宿迁联盛",
+            "市盈率": "28.8",
+            "PB": "1.7",
+            "市销率": "2.5",
+            "净资产收益率": "8.2",
+            "销售毛利率": "31.5",
+            "营收同比": "12.3",
+            "成交金额": "1.23亿",
+        }]
+        got = _normalize_industry_peers(rows)
+        assert got[0]["代码"] == "603065"
+        assert got[0]["名称"] == "宿迁联盛"
+        assert got[0]["市盈率-动态"] == pytest.approx(28.8)
+        assert got[0]["市净率"] == pytest.approx(1.7)
+        assert got[0]["市销率"] == pytest.approx(2.5)
+        assert got[0]["净资产收益率"] == pytest.approx(8.2)
+        assert got[0]["毛利率"] == pytest.approx(31.5)
+        assert got[0]["营收同比"] == pytest.approx(12.3)
+        assert got[0]["成交额"] == pytest.approx(123000000.0)
+
+    def test_bridge_extracts_industry_compare_markdown_for_report_injection(self):
+        text = """
+## 基本面
+pillar_score = 2
+
+## 行业对比（化学制品）
+- PE 历史分位 30.0% · PB 历史分位 20.0% · 行业中位 PE 18.5 · 行业中位 PB 1.4 · 成份股 42 只
+
+| 代码 | 名称 | PE | PB | 成交额(亿) |
+|------|------|----|----|------|
+| 603065 ★ | 宿迁联盛 | 28.80 | 1.70 | 1.23 |
+| 600000 | 同业A | 18.50 | 1.40 | 2.00 |
+
+## 十大流通股东
+"""
+        ic = _extract_industry_compare_from_text(text, ticker="603065")
+        assert ic["industry_name"] == "化学制品"
+        assert ic["industry_pe_median"] == pytest.approx(18.5)
+        assert ic["industry_size"] == 42
+        assert ic["peers"][0]["ticker"] == "603065"
+        assert ic["peers"][0]["is_current"] is True
+
+    def test_bridge_extracts_expanded_industry_peer_columns(self):
+        text = """
+## 行业对比（化学制品）
+- PE 历史分位 30.0% · 行业中位 PE 18.5 · 行业中位 PB 1.4 · 行业中位 PS 2.0 · 行业中位 ROE 7.5 · 行业中位 毛利率 25.0 · 行业中位 营收增速 9.0 · 成份股 42 只
+
+| 代码 | 名称 | PE | PB | ROE | 毛利率 | 营收增速 | 成交额(亿) |
+|------|------|----|----|-----|--------|----------|------|
+| 603065 ★ | 宿迁联盛 | 28.80 | 1.70 | 8.20 | 31.50 | 12.30 | 1.23 |
+| 600000 | 同业A | 18.50 | 1.40 | 7.50 | 25.00 | 9.00 | 2.00 |
+"""
+        ic = _extract_industry_compare_from_text(text, ticker="603065")
+        assert ic["industry_ps_median"] == pytest.approx(2.0)
+        assert ic["industry_roe_median"] == pytest.approx(7.5)
+        assert ic["industry_gross_margin_median"] == pytest.approx(25.0)
+        assert ic["industry_revenue_growth_median"] == pytest.approx(9.0)
+        assert ic["peers"][0]["roe"] == pytest.approx(8.2)
+        assert ic["peers"][0]["gross_margin"] == pytest.approx(31.5)
+        assert ic["peers"][0]["revenue_growth"] == pytest.approx(12.3)
+        assert ic["peers"][0]["turnover_yi"] == pytest.approx(1.23)
+
+    def test_relative_industry_labels_and_data_quality_flags(self):
+        metrics = {
+            "pe": "30",
+            "pb": "2.0",
+            "roe": "5",
+            "gross_margin": "18",
+            "revenue_growth": "3",
+        }
+        ic = _augment_industry_compare(
+            {
+                "industry_name": "化学制品",
+                "industry_pe_median": 20,
+                "industry_roe_median": 8,
+                "industry_gross_margin_median": 25,
+                "industry_revenue_growth_median": 10,
+            },
+            metrics,
+        )
+        assert ic["relative_valuation_label"] == "premium"
+        assert ic["relative_valuation_basis"] == "PE"
+        assert ic["relative_quality_label"] == "weak_quality"
+
+        enriched = _augment_metric_metadata({"pe": "-15.5", "eps": "-0.12"}, "预计Q1净利润亏损", "2026-04-30")
+        flags = _build_data_quality_flags(enriched, {}, "PE=10，PE=40")
+        messages = [f["message"] for f in flags]
+        assert any("PE不得作为主估值锚" in m for m in messages)
+        assert any("forecast" in m for m in messages)
+        assert any("行业对比数据不足" in m for m in messages)
 
 
 # ── Fix 4 — collect_limit_board fallback (smoke; needs network) ──────────

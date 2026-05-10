@@ -85,9 +85,29 @@ class ResearchView:
     # Trade plan (public entry/exit framework, position-independent)
     trade_plan: Dict = field(default_factory=dict)
 
+    # Cover-card + K-line card fields (parallels SnapshotView).
+    # Derived in build() from Market Analyst price_history + signal log.
+    metrics_fallback: Dict = field(default_factory=dict)
+    industry_compare: Dict = field(default_factory=dict)
+    stock_profile: Dict = field(default_factory=dict)
+    calibration_summary: Dict = field(default_factory=dict)
+    data_quality_flags: List[Dict] = field(default_factory=list)
+    price_history: List[float] = field(default_factory=list)
+    signal_history: List[Dict] = field(default_factory=list)
+    current_price: float = 0.0
+    pct_change_5d: float = 0.0
+    period_high: float = 0.0
+    period_low: float = 0.0
+    period_days: int = 0
+
     # Degradation detection
     is_degraded: bool = False
     degradation_reasons: List[str] = field(default_factory=list)
+
+    # Research-quality badge, computed from the loaded trace itself.
+    quality_grade: str = ""
+    quality_score: float = 0.0
+    quality_weak_dims: List[str] = field(default_factory=list)
 
     banner: Optional[BannerView] = None
 
@@ -242,6 +262,76 @@ class ResearchView:
         ro_sd = ro_out.get("structured_data") or {}
         trade_plan_data = ro_sd.get("trade_plan") or {}
 
+        # ── Cover-card + K-line + industry data (parallels SnapshotView) ──
+        fund_out = service.show_node_output(run_id, "Fundamentals Analyst") or {}
+        fund_sd = fund_out.get("structured_data") or {}
+        metrics_fb_data = fund_sd.get("metrics_fallback", {}) or {}
+        industry_cmp_data = fund_sd.get("industry_compare", {}) or {}
+        stock_profile_data = fund_sd.get("stock_profile", {}) or {}
+        calibration_data = fund_sd.get("calibration_summary", {}) or {}
+        data_quality_flags = fund_sd.get("data_quality_flags", []) or []
+
+        mkt_out = service.show_node_output(run_id, "Market Analyst") or {}
+        mkt_sd = mkt_out.get("structured_data") or {}
+        raw_prices = mkt_sd.get("price_history", []) or []
+        price_history_data: List[float] = [float(p) for p in raw_prices if p is not None][:30]
+
+        signal_history_data: List[Dict] = []
+        try:
+            past_runs = service.store.list_runs(ticker=trace.ticker, limit=10)
+            count = 0
+            for pr in past_runs:
+                pr_rid = pr.get("run_id", "")
+                if pr_rid == run_id:
+                    continue
+                pr_conf = 0.0
+                if pr_rid:
+                    try:
+                        pr_trace = service.store.load(pr_rid)
+                        if pr_trace and pr_trace.final_confidence >= 0:
+                            pr_conf = float(pr_trace.final_confidence)
+                    except Exception:
+                        pass
+                signal_history_data.append({
+                    "trade_date": pr.get("trade_date", ""),
+                    "action": pr.get("research_action", ""),
+                    "confidence": pr_conf,
+                    "run_id": pr_rid,
+                })
+                count += 1
+                if count >= 5:
+                    break
+        except Exception:
+            pass
+
+        # Cover-card derivations from price history
+        cur_price_data = 0.0
+        pct_5d_data = 0.0
+        hi_data = 0.0
+        lo_data = 0.0
+        days_data = 0
+        if price_history_data:
+            cur_price_data = float(price_history_data[-1])
+            hi_data = float(max(price_history_data))
+            lo_data = float(min(price_history_data))
+            days_data = len(price_history_data)
+            if len(price_history_data) >= 6:
+                start_p = float(price_history_data[-6])
+                if start_p > 0:
+                    pct_5d_data = (cur_price_data - start_p) / start_p * 100.0
+
+        quality_grade = ""
+        quality_score = 0.0
+        quality_weak_dims: List[str] = []
+        try:
+            from ..research_quality import evaluate_trace_quality
+            qrec = evaluate_trace_quality(trace.to_dict())
+            quality_grade = qrec.composite_grade
+            quality_score = qrec.composite_score
+            quality_weak_dims = list(qrec.weak_dimensions)
+        except Exception:
+            pass
+
         return cls(
             run_id=run_id,
             ticker=trace.ticker,
@@ -283,7 +373,22 @@ class ResearchView:
             evidence_strength=ev_str,
             lineage_stages=lineage.get("stages", []),
             trade_plan=trade_plan_data,
+            metrics_fallback=metrics_fb_data,
+            industry_compare=industry_cmp_data,
+            stock_profile=stock_profile_data,
+            calibration_summary=calibration_data,
+            data_quality_flags=data_quality_flags,
+            price_history=price_history_data,
+            signal_history=signal_history_data,
+            current_price=cur_price_data,
+            pct_change_5d=pct_5d_data,
+            period_high=hi_data,
+            period_low=lo_data,
+            period_days=days_data,
             is_degraded=is_degraded,
             degradation_reasons=degradation_reasons,
+            quality_grade=quality_grade,
+            quality_score=quality_score,
+            quality_weak_dims=quality_weak_dims,
             banner=BannerView.from_trace(trace),
         )

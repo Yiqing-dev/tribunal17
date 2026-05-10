@@ -14,12 +14,17 @@ from .decision_labels import (
     NODE_STATUS_LABELS, PARSE_STATUS_LABELS, COMPLIANCE_STATUS_LABELS,
     FRESHNESS_STATUS_LABELS, NO_COMPLIANCE_LABEL,
     safe_badge_class, get_severity_label,
+    AI_DISCLAIMER_BANNER, RESEARCH_HEADER_BANNER,
 )
 from .shared_utils import (
     _esc, _html_wrap, _ticker_display, _status_light, _nav_bar,
     _score_pill, _priority_chip, _heat_cell, _section_divider,
     _confidence_ring_svg, format_confidence_pct,
+    _quality_grade_badge_html,
+    _render_stock_profile_card, _render_calibration_card,
+    _render_data_quality_flags,
 )
+from .snapshot_renderer import _render_kline_card
 
 
 # Back-compat alias — shared helper is the single source of truth.
@@ -260,12 +265,46 @@ def render_audit(view: AuditView) -> str:
       </div>
     </div>"""
 
+    _short_run = (view.run_id[-8:] if view.run_id else "\u2014")
+    _grade_badge = _quality_grade_badge_html(
+        grade=view.quality_grade,
+        score=view.quality_score,
+        weak_dims=list(view.quality_weak_dims),
+    )
+    _watermark = (
+        f'<div class="report-watermark" style="display:inline-flex;align-items:center;gap:.4rem;'
+        f'font-family:var(--mono);font-size:.7rem;color:var(--muted);margin-bottom:.2rem;letter-spacing:.04em">'
+        f'{_grade_badge}{"<span>\u00b7</span>" if _grade_badge else ""}'
+        f'<span>\u62a5\u544a ID \u00b7 {_esc(_short_run)}</span><span>\u00b7</span>'
+        f'<span>\u6570\u636e\u622a\u6b62 \u00b7 {_esc(view.trade_date)}</span><span>\u00b7</span>'
+        f'<span>17 \u53f8\u534f\u4f5c\u751f\u6210</span></div>'
+    )
+    kline_html = _render_kline_card(view)
+    stock_profile_html = _render_stock_profile_card(view.stock_profile or {})
+    calibration_html = _render_calibration_card(view.calibration_summary or {})
+    data_quality_html = _render_data_quality_flags(view.data_quality_flags or [])
+    audit_context_html = (
+        f'<div class="cols reveal reveal-d1">{stock_profile_html}{calibration_html}</div>'
+        if (stock_profile_html or calibration_html) else ""
+    )
+    _research_banner_audit = (
+        f'<div class="research-banner" style="margin:.6rem 0 .8rem;'
+        f'padding:.6rem .9rem;background:linear-gradient(90deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04));'
+        f'border:1px solid rgba(96,165,250,0.32);border-radius:12px;'
+        f'color:var(--blue);font-size:.78rem;line-height:1.5;letter-spacing:.02em">'
+        f'{RESEARCH_HEADER_BANNER}</div>'
+    )
     body = f"""
     <h1>{_esc(_ticker_display(view))}</h1>
     <p class="subtitle">{_esc(view.trade_date)} &middot; \u4fe1\u4efb\u5ba1\u8ba1\u62a5\u544a</p>
-    <div class="banner">\u672c\u62a5\u544a\u5e2e\u52a9\u60a8\u5224\u65ad\uff1a\u8fd9\u6b21\u7ed3\u8bba\u662f\u5426\u503c\u5f97\u4fe1\u4efb\uff1f\u54ea\u4e9b\u73af\u8282\u9700\u8981\u4eba\u5de5\u590d\u6838\uff1f</div>
+    {_watermark}
+    {_research_banner_audit}
+    {kline_html}
+    <div class="banner" style="background:rgba(96,165,250,0.06);border-color:rgba(96,165,250,0.18);color:var(--blue);font-size:.78rem">\u672c\u62a5\u544a\u5e2e\u52a9\u60a8\u5224\u65ad\uff1a\u7814\u7a76\u8bba\u636e\u662f\u5426\u624e\u5b9e\uff1f\u54ea\u4e9b\u73af\u8282\u9700\u8981\u4eba\u5de5\u590d\u6838\uff1f</div>
 
     <div class="reveal">{conclusion_html}</div>
+    {audit_context_html}
+    {data_quality_html}
 
     <h2>\u4fe1\u4efb\u4fe1\u53f7</h2>
     <div class="reveal reveal-d1">{trust_html}</div>
@@ -300,7 +339,8 @@ def render_audit(view: AuditView) -> str:
     <div class="reveal reveal-d6">
       <h3>\u6545\u969c\u4e0e\u8b66\u544a</h3>
       {failures_html or '<div class="card" style="color:var(--green);">\u65e0\u6545\u969c\u8bb0\u5f55\u3002</div>'}
-    </div>"""
+    </div>
+    <div class="banner banner-footer" style="margin:2rem 0 0;background:rgba(255,255,255,0.03);border-color:rgba(255,255,255,0.06);color:var(--muted);font-size:.75rem">{AI_DISCLAIMER_BANNER}</div>"""
 
     nav = _nav_bar(view.ticker, view.run_id, "audit")
     return _html_wrap(f"{_ticker_display(view)} \u4fe1\u4efb\u5ba1\u8ba1\u62a5\u544a \u2014 {view.trade_date}", body, "\u4fe1\u4efb\u5ba1\u8ba1\u62a5\u544a", nav_html=nav)

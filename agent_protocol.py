@@ -106,6 +106,42 @@ class AgentSpec:
 # Each translates an AgentRequest into the specific prompt function call.
 
 
+def _extra_value(r: AgentRequest, key: str, default: Any = "") -> Any:
+    return (r.extra or {}).get(key, default)
+
+
+def _common_kwargs(r: AgentRequest) -> Dict[str, Any]:
+    """Build optional COMMON INPUT BLOCK enrichments from AgentRequest.extra."""
+    extra = r.extra or {}
+    out: Dict[str, Any] = {}
+
+    stock_profile_block = extra.get("stock_profile_block", "")
+    if not stock_profile_block and extra.get("stock_profile"):
+        try:
+            from .stock_profile import stock_profile_prompt_block
+            stock_profile_block = stock_profile_prompt_block(extra.get("stock_profile"))
+        except Exception:
+            stock_profile_block = ""
+    if stock_profile_block:
+        out["stock_profile_block"] = stock_profile_block
+
+    calibration_block = extra.get("calibration_block", "")
+    if not calibration_block and extra.get("calibration_summary"):
+        try:
+            from .calibration import format_calibration_feedback
+            calibration_block = format_calibration_feedback(extra.get("calibration_summary"))
+        except Exception:
+            calibration_block = ""
+    if calibration_block:
+        out["calibration_block"] = calibration_block
+
+    return out
+
+
+def _feedback_block(r: AgentRequest) -> str:
+    return str(_extra_value(r, "feedback_block", "") or "")
+
+
 def _build_macro(r: AgentRequest) -> str:
     return prompts.macro_analyst(r.trade_date, r.market_snapshot_md)
 
@@ -123,19 +159,39 @@ def _build_market_analyst(r: AgentRequest) -> str:
         r.ticker, r.trade_date,
         market_context_block=r.market_context_block,
         akshare_md=r.akshare_md,
+        feedback_block=_feedback_block(r),
+        **_common_kwargs(r),
     )
 
 
 def _build_fundamentals(r: AgentRequest) -> str:
-    return prompts.fundamentals_analyst(r.ticker, r.trade_date, akshare_md=r.akshare_md)
+    return prompts.fundamentals_analyst(
+        r.ticker,
+        r.trade_date,
+        akshare_md=r.akshare_md,
+        feedback_block=_feedback_block(r),
+        **_common_kwargs(r),
+    )
 
 
 def _build_news(r: AgentRequest) -> str:
-    return prompts.news_analyst(r.ticker, r.trade_date, akshare_md=r.akshare_md)
+    return prompts.news_analyst(
+        r.ticker,
+        r.trade_date,
+        akshare_md=r.akshare_md,
+        feedback_block=_feedback_block(r),
+        **_common_kwargs(r),
+    )
 
 
 def _build_sentiment(r: AgentRequest) -> str:
-    return prompts.sentiment_analyst(r.ticker, r.trade_date, akshare_md=r.akshare_md)
+    return prompts.sentiment_analyst(
+        r.ticker,
+        r.trade_date,
+        akshare_md=r.akshare_md,
+        feedback_block=_feedback_block(r),
+        **_common_kwargs(r),
+    )
 
 
 def _build_catalyst(r: AgentRequest) -> str:
@@ -148,6 +204,7 @@ def _build_catalyst(r: AgentRequest) -> str:
         sentiment_report=rp.get("sentiment_report", ""),
         evidence_block=r.evidence_block,
         current_date=r.trade_date,
+        **_common_kwargs(r),
     )
 
 
@@ -199,8 +256,12 @@ def _build_research_manager(r: AgentRequest) -> str:
         debate_input=r.debate_history or rp.get("debate_input", ""),
         evidence_block=r.evidence_block,
         scenario_block=rp.get("scenario_output", ""),
+        ledger_block=str(_extra_value(r, "ledger_block", "") or ""),
+        past_memory=str(_extra_value(r, "past_memory", "") or ""),
         market_context_block=r.market_context_block,
+        feedback_block=_feedback_block(r),
         current_date=r.trade_date,
+        **_common_kwargs(r),
     )
 
 
@@ -250,8 +311,11 @@ def _build_risk_manager(r: AgentRequest) -> str:
         trader_plan=rp.get("research_manager", ""),
         risk_debate_history=rp.get("risk_debate_history", ""),
         evidence_block=r.evidence_block,
+        claim_audit=str(_extra_value(r, "claim_audit", "") or ""),
+        past_memory=str(_extra_value(r, "past_memory", "") or ""),
         market_context_block=r.market_context_block,
         current_date=r.trade_date,
+        **_common_kwargs(r),
     )
 
 
@@ -261,8 +325,10 @@ def _build_research_output(r: AgentRequest) -> str:
         company_name=r.ticker_name or r.ticker,
         investment_plan=rp.get("investment_plan", ""),
         current_date=r.trade_date,
+        past_memory=str(_extra_value(r, "past_memory", "") or ""),
         ticker=r.ticker,
         akshare_md=r.akshare_md,
+        **_common_kwargs(r),
     )
 
 

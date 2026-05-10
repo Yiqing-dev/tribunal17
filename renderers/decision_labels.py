@@ -33,12 +33,14 @@ def get_signal_emoji(action: str) -> str:
 
 # ── Action Labels ────────────────────────────────────────────────────────
 
-# (label, css_class, explanation)
+# (label, css_class, explanation) — research-tier language, NOT a trading
+# instruction. Decision-makers (quant signals / human PMs) interpret these
+# views and decide on actual positions; this report is analysis only.
 ACTION_MAP: Dict[str, Tuple[str, str, str]] = {
-    "BUY":  ("建议关注", "buy",  "当前研究结论偏积极，建议纳入重点观察池"),
-    "HOLD": ("维持观察", "hold", "当前信号不明确，建议持续跟踪关键变量变化"),
-    "SELL": ("建议回避", "sell", "多维度分析偏谨慎，建议降低关注优先级"),
-    "VETO": ("风控否决", "veto", "证据链不完整或触发风控硬规则，建议暂不操作"),
+    "BUY":  ("研究观点 · 偏多",   "buy",  "多维度论据偏向积极，供决策者参考；具体进出场点位由量化信号或人工判断"),
+    "HOLD": ("研究观点 · 中性",   "hold", "论据正反混合或信号不明，建议持续跟踪关键变量；不构成持仓建议"),
+    "SELL": ("研究观点 · 偏空",   "sell", "多维度论据偏向谨慎；具体仓位与止损由决策者根据自身框架确定"),
+    "VETO": ("证据链不足 · 暂缓", "veto", "证据链不完整或触发硬规则，本研究无法形成有效观点"),
 }
 
 
@@ -371,7 +373,19 @@ NO_COMPLIANCE_LABEL = "未捕获独立合规轨迹，建议结合总状态判断
 
 # ── AI Disclaimer Banner ──────────────────────────────────────────────
 
-AI_DISCLAIMER_BANNER = "本报告由 AI 多智能体系统自动生成，仅供研究参考，不构成投资建议。使用前请结合人工判断。"
+AI_DISCLAIMER_BANNER = (
+    "本报告由 AI 多智能体系统自动生成，定位为<strong>研究报告工厂</strong>"
+    "（信息综合 · 多视角论证 · 风险列举），<strong>不构成任何买卖、仓位或择时建议</strong>。"
+    "具体交易决策应由量化信号或人工决策者基于自身框架独立判断。"
+)
+
+# Prominent header banner — sits at top of every report to set expectations
+# before any "action label" is read.
+RESEARCH_HEADER_BANNER = (
+    "📋 <strong>研究报告 · 仅供分析参考</strong> "
+    "&middot; 多视角论证 / 风险列举 / 不构成投资建议 "
+    "&middot; 仓位与进出场点位由决策者独立判断"
+)
 
 
 # ── Market Regime & Breadth Labels ────────────────────────────────────

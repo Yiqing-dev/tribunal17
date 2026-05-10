@@ -65,12 +65,23 @@ class SnapshotView:
     was_vetoed: bool = False
     veto_source: str = ""
 
-    # Bull vs Bear strength (for bar chart)
-    bull_strength: int = 0          # number of bull claims
-    bear_strength: int = 0          # number of bear claims
+    # Bull vs Bear strength (for bar chart) — confidence-weighted sum (float)
+    # Falls back to raw claim count when claims have no per-claim confidence.
+    bull_strength: float = 0.0
+    bear_strength: float = 0.0
 
     # Fallback financial metrics (from fundamentals analyst text when vendor unavailable)
     metrics_fallback: Dict = field(default_factory=dict)
+
+    # Industry comparison + valuation percentile (injected via
+    # bridge.generate_report(industry_data=...) → Fundamentals Analyst node sd).
+    # Shape documented in akshare_collector.AkshareBundle.industry_compare.
+    industry_compare: Dict = field(default_factory=dict)
+
+    # Report-level research context
+    stock_profile: Dict = field(default_factory=dict)
+    calibration_summary: Dict = field(default_factory=dict)
+    data_quality_flags: List[Dict] = field(default_factory=list)
 
     # Degradation detection
     is_degraded: bool = False
@@ -79,6 +90,18 @@ class SnapshotView:
     # Action Checklist (pillar scores from 4 analysts)
     pillar_checklist: List[Dict] = field(default_factory=list)
     # Each: {"pillar": "技术面", "score": 2, "emoji": "✅", "label": "多头排列确认"}
+
+    # Pillar consensus summary (derived from pillar_checklist)
+    # {"bullish": 2, "bearish": 1, "neutral": 1, "total": 4,
+    #  "verdict": "split"|"lean_bullish"|"lean_bearish"|"strong_bullish"|"strong_bearish"|"neutral",
+    #  "tension": bool}  — tension=True when ≥3 pillars agree but action is HOLD
+    pillar_consensus: Dict = field(default_factory=dict)
+
+    # PM directional lean (research improvement #2): for HOLD actions, captures
+    # PM's "if forced to pick a direction" stance. Empty string when not provided
+    # or when action is BUY/SELL (in which case lean equals action).
+    directional_lean: str = ""        # bullish / bearish / neutral / ""
+    lean_reason: str = ""             # one-line justification
 
     # Risk Debate Summary (3 debaters)
     risk_debate_summary: List[Dict] = field(default_factory=list)
@@ -94,6 +117,19 @@ class SnapshotView:
     # Visual enhancement fields
     price_history: List[float] = field(default_factory=list)
     previous_confidence: float = -1.0
+
+    # Cover-card fields (derived from price_history + metrics_fallback when present)
+    current_price: float = 0.0       # last price in history
+    pct_change_5d: float = 0.0       # 5-day return % (price-anchored, not signal-anchored)
+    period_high: float = 0.0         # max of available price_history (typically ~30d)
+    period_low: float = 0.0          # min of available price_history
+    period_days: int = 0             # length of price_history window
+
+    # Research-quality grade (price-free internal yardstick)
+    # See research_quality.evaluate_trace_quality() for the 7-dim scoring.
+    quality_grade: str = ""          # A / B / C / D, "" when evaluation skipped
+    quality_score: float = 0.0       # 0.0-1.0 composite
+    quality_weak_dims: List[str] = field(default_factory=list)
 
     banner: Optional[BannerView] = None
 
@@ -126,18 +162,24 @@ class SnapshotView:
         bear_out = service.show_node_output(run_id, "Bear Researcher")
         catalyst_out = service.show_node_output(run_id, "Catalyst Agent")
 
-        # ── One-line summary: prefer structured conclusion, but keep it readable ──
+        # ── One-line summary: prefer structured conclusion, allow longer text so
+        # the hero doesn't end with a meaningless ellipsis. 240 chars (~80-120
+        # zh chars) lets one full reasoning sentence land cleanly in the hero. ──
         one_line = ""
+        directional_lean = ""
+        lean_reason = ""
         if pm_out:
             pm_sd = pm_out.get("structured_data") or {}
             if pm_sd.get("conclusion"):
-                one_line = _summarize_display_text(pm_sd["conclusion"], max_chars=120)
+                one_line = _summarize_display_text(pm_sd["conclusion"], max_chars=240)
             else:
-                one_line = _summarize_display_text(pm_out.get("output_excerpt", ""), max_chars=120)
+                one_line = _summarize_display_text(pm_out.get("output_excerpt", ""), max_chars=240)
+            directional_lean = str(pm_sd.get("directional_lean", "") or "")
+            lean_reason = str(pm_sd.get("lean_reason", "") or "")
         if not one_line:
             one_line = _summarize_display_text(
                 f"研究经理综合判断：{label}，置信度 {f'{trace.final_confidence:.0%}' if trace.final_confidence >= 0 else '—'}",
-                max_chars=120,
+                max_chars=240,
             )
 
         # ── Core drivers: prefer structured bull claims ──
@@ -252,16 +294,50 @@ class SnapshotView:
         core_drivers = [_strip_internal_tokens(d) for d in core_drivers]
         core_drivers = [d for d in core_drivers if d]  # remove empty after stripping
 
-        # Bull vs Bear claim counts
-        bull_claims = bull_out.get("claims_produced", 0) if bull_out else 0
-        bear_claims = bear_out.get("claims_produced", 0) if bear_out else 0
+        # Bull vs Bear strength — confidence-weighted sum, fallback to count.
+        # Sums per-claim confidence so a bear case backed by 8 claims at 0.85
+        # registers as 6.8 strength while a bull case of 16 claims at 0.45
+        # registers as 7.2 — much more honest than raw 8 vs 16. Falls back to
+        # claim count when no per-claim confidence is available (older traces).
+        def _weighted_or_count(node_out, claims_key: str) -> float:
+            if not node_out:
+                return 0.0
+            sd = node_out.get("structured_data") or {}
+            claims_list = sd.get(claims_key) or []
+            confs = []
+            for c in claims_list:
+                if not isinstance(c, dict):
+                    continue
+                v = c.get("confidence")
+                try:
+                    f = float(v) if v is not None else 0.0
+                except (TypeError, ValueError):
+                    f = 0.0
+                if f > 0:
+                    confs.append(f)
+            if confs:
+                return float(sum(confs))
+            return float(node_out.get("claims_produced", 0) or 0)
 
-        # Fallback financial metrics from fundamentals analyst text
+        bull_claims = _weighted_or_count(bull_out, "supporting_claims")
+        bear_claims = _weighted_or_count(bear_out, "opposing_claims")
+
+        # Fallback financial metrics + industry comparison data injected via
+        # bridge.generate_report(industry_data=...).
         metrics_fb: Dict = {}
+        industry_cmp: Dict = {}
         fund_out = service.show_node_output(run_id, "Fundamentals Analyst")
         if fund_out:
             fund_sd = fund_out.get("structured_data") or {}
             metrics_fb = fund_sd.get("metrics_fallback", {})
+            industry_cmp = fund_sd.get("industry_compare", {}) or {}
+            stock_profile_data = fund_sd.get("stock_profile", {}) or {}
+            calibration_data = fund_sd.get("calibration_summary", {}) or {}
+            data_quality_flags = fund_sd.get("data_quality_flags", []) or []
+        else:
+            stock_profile_data = {}
+            calibration_data = {}
+            data_quality_flags = []
 
         # ── Pillar Checklist (Feature 2) ──
         from .decision_labels import PILLAR_EMOJI
@@ -335,6 +411,42 @@ class SnapshotView:
                             "label": "",
                         })
 
+        # ── Pillar Consensus Summary (research improvement #1) ──
+        # Score scale: 0/1 = bearish, 2 = neutral, 3/4 = bullish
+        _bull = sum(1 for p in pillar_checklist if p.get("score", -1) >= 3)
+        _bear = sum(1 for p in pillar_checklist if 0 <= p.get("score", -1) <= 1)
+        _neut = sum(1 for p in pillar_checklist if p.get("score", -1) == 2)
+        _total = _bull + _bear + _neut
+        if _total >= 3:
+            if _bull >= 3:
+                _verdict = "strong_bullish" if _bull == 4 else "lean_bullish"
+            elif _bear >= 3:
+                _verdict = "strong_bearish" if _bear == 4 else "lean_bearish"
+            elif _bull == _bear:
+                _verdict = "split"
+            elif _bull > _bear:
+                _verdict = "lean_bullish"
+            elif _bear > _bull:
+                _verdict = "lean_bearish"
+            else:
+                _verdict = "neutral"
+        else:
+            _verdict = "insufficient"
+        # Tension flag: ≥3 pillars agree on direction but PM action is HOLD
+        _action_upper = (action or "").upper()
+        _tension = (
+            _action_upper == "HOLD"
+            and (_bull >= 3 or _bear >= 3)
+        )
+        pillar_consensus = {
+            "bullish": _bull,
+            "bearish": _bear,
+            "neutral": _neut,
+            "total": _total,
+            "verdict": _verdict,
+            "tension": _tension,
+        }
+
         # ── Risk Debate Summary (Feature 2) ──
         risk_debate_summary: List[Dict] = []
         _debater_map = [
@@ -396,13 +508,42 @@ class SnapshotView:
         except Exception:
             pass
 
-        # ── Price History (for sparkline) ──
+        # ── Price History (for sparkline + cover card) ──
         _price_history: List[float] = []
         mkt_out = service.show_node_output(run_id, "Market Analyst")
         if mkt_out:
             _msd = (mkt_out.get("structured_data") or {})
             _raw_prices = _msd.get("price_history", [])
             _price_history = [float(p) for p in _raw_prices if p is not None][:30]
+
+        # Derive cover-card fields from price history (no new data source needed)
+        _current_price = 0.0
+        _pct_5d = 0.0
+        _hi = 0.0
+        _lo = 0.0
+        _days = 0
+        if _price_history:
+            _current_price = float(_price_history[-1])
+            _hi = float(max(_price_history))
+            _lo = float(min(_price_history))
+            _days = len(_price_history)
+            if len(_price_history) >= 6:
+                _start = float(_price_history[-6])
+                if _start > 0:
+                    _pct_5d = (_current_price - _start) / _start * 100.0
+
+        # Research-quality grade — price-free internal yardstick
+        _quality_grade = ""
+        _quality_score = 0.0
+        _quality_weak: List[str] = []
+        try:
+            from ..research_quality import evaluate_trace_quality
+            _qrec = evaluate_trace_quality(trace.to_dict())
+            _quality_grade = _qrec.composite_grade
+            _quality_score = _qrec.composite_score
+            _quality_weak = list(_qrec.weak_dimensions)
+        except Exception:
+            pass
 
         # ── Previous confidence (for trend arrow) ──
         _prev_conf = -1.0
@@ -448,14 +589,29 @@ class SnapshotView:
             bull_strength=bull_claims,
             bear_strength=bear_claims,
             metrics_fallback=metrics_fb,
+            industry_compare=industry_cmp,
+            stock_profile=stock_profile_data,
+            calibration_summary=calibration_data,
+            data_quality_flags=data_quality_flags,
             is_degraded=is_degraded,
             degradation_reasons=degradation_reasons,
             pillar_checklist=pillar_checklist,
+            pillar_consensus=pillar_consensus,
+            directional_lean=directional_lean,
+            lean_reason=lean_reason,
             risk_debate_summary=risk_debate_summary,
             tradecard=tradecard_data,
             trade_plan=trade_plan_data,
             signal_history=signal_history,
             price_history=_price_history,
             previous_confidence=_prev_conf,
+            current_price=_current_price,
+            pct_change_5d=_pct_5d,
+            period_high=_hi,
+            period_low=_lo,
+            period_days=_days,
+            quality_grade=_quality_grade,
+            quality_score=_quality_score,
+            quality_weak_dims=_quality_weak,
             banner=BannerView.from_trace(trace),
         )

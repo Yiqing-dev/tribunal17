@@ -39,17 +39,89 @@ CANONICAL_RISK_FLAGS = {
     # fund_flow family
     "fund_flow": ("fund_flow", "medium"),
     "capital_flow": ("fund_flow", "medium"),
+    "capital_flow_risk": ("fund_flow", "medium"),
+    "capital_outflow": ("fund_flow", "high"),
+    "fund_outflow": ("fund_flow", "high"),
+    "短期资金面偏空": ("fund_flow", "medium"),
+    "资金面偏空": ("fund_flow", "medium"),
+    "资金面持续偏空": ("fund_flow", "high"),
     "资金面": ("fund_flow", "medium"),
     "资金面风险": ("fund_flow", "medium"),
     "资金流向风险": ("fund_flow", "medium"),
+    "资金流出风险": ("fund_flow", "high"),
+    "资金流动风险": ("fund_flow", "medium"),
+    "资金面恶化": ("fund_flow", "high"),
+    "资金面信息真空": ("fund_flow", "low"),
+    "资金面真空": ("fund_flow", "low"),
+    "资金面虚假信号": ("fund_flow", "low"),
+    "资金面出货": ("fund_flow", "high"),
+    "资金面游资出货": ("fund_flow", "high"),
+    "资金面系统性出逃": ("fund_flow", "high"),
+    "资金面系统性撤退": ("fund_flow", "high"),
+    "资金持续净流出": ("fund_flow", "high"),
+    "资金流入递减": ("fund_flow", "medium"),
+    "资金脉冲衰减": ("fund_flow", "medium"),
+    "短期资金面": ("fund_flow", "medium"),
     "主力流出": ("fund_flow", "high"),
     "主力净流出": ("fund_flow", "high"),
+    "主力资金出货": ("fund_flow", "high"),
+    "主力出货": ("fund_flow", "high"),
+    "资金出货": ("fund_flow", "high"),
+    "sector_capital_flow": ("fund_flow", "medium"),
     # valuation family
     "valuation": ("valuation", "medium"),
     "估值": ("valuation", "medium"),
     "估值风险": ("valuation", "medium"),
     "高估值": ("valuation", "high"),
     "valuation_stretch": ("valuation", "high"),
+    "valuation_dislocation": ("valuation", "high"),
+    "valuation_erosion": ("valuation", "medium"),
+    "valuation_concern": ("valuation", "medium"),
+    "valuation_ceiling": ("valuation", "medium"),
+    "估值高估": ("valuation", "high"),
+    "估值偏高": ("valuation", "high"),
+    "估值泡沫": ("valuation", "high"),
+    "估值泡沫风险": ("valuation", "high"),
+    "估值争议": ("valuation", "medium"),
+    "估值动态风险": ("valuation", "medium"),
+    "估值失锚": ("valuation", "high"),
+    "估值安全边际": ("valuation", "medium"),
+    "估值安全边际不足": ("valuation", "high"),
+    "PE估值偏高": ("valuation", "high"),
+    "AI溢价兑现风险": ("valuation", "high"),
+    "DDM利率敏感性": ("valuation", "low"),
+    # catalyst family
+    "催化剂": ("event_risk", "low"),
+    "催化剂缺失": ("event_risk", "low"),
+    "催化剂风险": ("event_risk", "medium"),
+    "催化剂执行风险": ("event_risk", "medium"),
+    "催化剂真空": ("event_risk", "low"),
+    "催化剂真空风险": ("event_risk", "low"),
+    "催化剂定性存疑": ("event_risk", "medium"),
+    "前瞻性催化剂偏空": ("event_risk", "medium"),
+    "catalyst_vacuum": ("event_risk", "low"),
+    # sector / regime family
+    "板块轮动": ("macro", "low"),
+    "板块轮动不确定": ("macro", "low"),
+    "板块错配风险": ("macro", "medium"),
+    "板块切换": ("macro", "low"),
+    "板块系统性": ("macro", "medium"),
+    "板块防御失效": ("macro", "medium"),
+    "sector_decoupling": ("macro", "medium"),
+    "sector_systemic": ("macro", "high"),
+    "sector_risk": ("macro", "medium"),
+    "regime_mismatch": ("macro", "medium"),
+    "RISK_OFF市场环境": ("macro", "high"),
+    "市场环境": ("macro", "low"),
+    "市场环境风险": ("macro", "medium"),
+    "市场环境约束": ("macro", "low"),
+    "市场环境逆风": ("macro", "medium"),
+    "市场环境加重": ("macro", "high"),
+    "市场系统性": ("macro", "high"),
+    "市场系统性风险": ("macro", "high"),
+    "systemic_risk_off": ("macro", "high"),
+    "市场对齐": ("macro", "low"),
+    "风格切换风险": ("macro", "medium"),
     # event risk family
     "earnings_event": ("event_risk", "high"),
     "annual_report": ("event_risk", "high"),
@@ -72,6 +144,24 @@ CANONICAL_RISK_FLAGS = {
     "技术面": ("technical", "medium"),
     "技术面风险": ("technical", "medium"),
     "macd_death_cross": ("technical", "medium"),
+    # technical_break* family — same fact triple-counted in raw flags (research improvement #4)
+    "technical_break": ("technical", "high"),
+    "technical_breakdown": ("technical", "high"),
+    "technical_breakdown_risk": ("technical", "high"),
+    "technical_bearish": ("technical", "high"),
+    "technical_weak": ("technical", "medium"),
+    "技术面破位": ("technical", "high"),
+    "技术面破位风险": ("technical", "high"),
+    "技术面下行通道": ("technical", "high"),
+    "技术面空头格局": ("technical", "high"),
+    "技术面压力": ("technical", "medium"),
+    "技术面临界": ("technical", "medium"),
+    "技术面待确认": ("technical", "low"),
+    "技术面方向待定": ("technical", "low"),
+    "技术面验证": ("technical", "low"),
+    "技术面赔率不对称": ("technical", "medium"),
+    "技术确认缺口": ("technical", "medium"),
+    "技术分析": ("technical", "low"),
     # liquidity family
     "liquidity": ("liquidity", "medium"),
     "流动性": ("liquidity", "medium"),
@@ -171,8 +261,15 @@ def common_input_block(
     capital: int = 200_000,
     currency: str = "CNY",
     language: str = "Chinese",
+    stock_profile_block: str = "",
+    calibration_block: str = "",
 ) -> str:
     # No input validation by design — callers (prompts.py functions) are trusted internal code.
+    extra = ""
+    if stock_profile_block:
+        extra += f"\n{stock_profile_block.strip()}\n"
+    if calibration_block:
+        extra += f"\n{calibration_block.strip()}\n"
     return (
         f"**COMMON INPUT BLOCK**:\n"
         f"【Target】 {ticker}\n"
@@ -182,6 +279,7 @@ def common_input_block(
         f"【Mode】 {mode}\n"
         f"【Capital】 {capital:,.0f} {currency}\n"
         f"【Language】 {language}\n"
+        f"{extra}"
     )
 
 

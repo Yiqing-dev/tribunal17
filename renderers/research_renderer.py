@@ -20,15 +20,19 @@ from .decision_labels import (
     get_thesis_label, get_risk_label, get_node_label, get_dimension_label,
     get_signal_emoji,
     safe_badge_class, get_severity_label,
-    AI_DISCLAIMER_BANNER,
+    AI_DISCLAIMER_BANNER, RESEARCH_HEADER_BANNER,
 )
 from .shared_css import _COUNTUP_JS, _BRAND_LOGO_SM
 from .shared_utils import (
     _esc, _html_wrap, _ticker_display, _strip_preamble,
     _format_price_zone, _degraded_banner, _empty_state, _nav_bar,
     _conf_dots, _conf_tier, _ridge_bar, _section_divider,
-    _priority_chip,
+    _priority_chip, _render_industry_compare_card,
+    _quality_grade_badge_html,
+    _render_stock_profile_card, _render_calibration_card,
+    _render_data_quality_flags,
 )
+from .snapshot_renderer import _render_cover_card, _render_kline_card
 
 
 # ── Tier 2 Degraded Mode ───────────────────────────────────────────────
@@ -85,14 +89,29 @@ def _render_research_degraded(view: ResearchView) -> str:
       {risk_content}
     </div>"""
 
+    _short_run = (view.run_id[-8:] if view.run_id else "\u2014")
+    _grade_badge = _quality_grade_badge_html(
+        grade=view.quality_grade,
+        score=view.quality_score,
+        weak_dims=list(view.quality_weak_dims),
+    )
+    _watermark = (
+        f'<div class="report-watermark" style="display:inline-flex;align-items:center;gap:.4rem;'
+        f'font-family:var(--mono);font-size:.7rem;color:var(--muted);margin-bottom:.2rem;letter-spacing:.04em">'
+        f'{_grade_badge}{"<span>\u00b7</span>" if _grade_badge else ""}'
+        f'<span>\u62a5\u544a ID \u00b7 {_esc(_short_run)}</span><span>\u00b7</span>'
+        f'<span>\u6570\u636e\u622a\u6b62 \u00b7 {_esc(view.trade_date)}</span><span>\u00b7</span>'
+        f'<span>17 \u53f8\u534f\u4f5c\u751f\u6210</span></div>'
+    )
     body = f"""
     <h1>{_esc(_ticker_display(view))}</h1>
     <p class="subtitle">{_esc(view.trade_date)} &middot; \u6df1\u5ea6\u7814\u7a76\u62a5\u544a</p>
-    <div class="banner">{AI_DISCLAIMER_BANNER}</div>
+    {_watermark}
     {_degraded_banner(view.degradation_reasons)}
     {exec_summary}
     {synth_html}
-    {risk_html}"""
+    {risk_html}
+    <div class="banner banner-footer" style="margin:2rem 0 0;background:rgba(255,255,255,0.03);border-color:rgba(255,255,255,0.06);color:var(--muted);font-size:.75rem">{AI_DISCLAIMER_BANNER}</div>"""
 
     nav = _nav_bar(view.ticker, view.run_id, "research")
     return _html_wrap(f"{_ticker_display(view)} \u6df1\u5ea6\u7814\u7a76 \u2014 {view.trade_date}", body, "\u6df1\u5ea6\u7814\u7a76\u62a5\u544a", extra_head=_COUNTUP_JS, nav_html=nav)
@@ -126,6 +145,11 @@ def _render_trade_plan_card(tp: dict) -> str:
         stop = {}
     targets = tp.get("take_profit", [])
     invalidators = tp.get("invalidators", [])
+    confirmations = tp.get("confirmations", [])
+    avoid_conditions = tp.get("avoid_conditions", [])
+    review_triggers = tp.get("review_triggers", [])
+    time_stop = tp.get("time_stop", "")
+    scenario_actions = tp.get("scenario_actions", {})
     horizon = tp.get("holding_horizon", "")
     confidence = _normalize_confidence(tp.get("confidence", 0))
 
@@ -214,6 +238,37 @@ def _render_trade_plan_card(tp: dict) -> str:
           <ul class="tp-inval-list">{items}</ul>
         </div>"""
 
+    def _list_block(title: str, items, color: str = "var(--muted)") -> str:
+        if isinstance(items, str):
+            items = [items] if items.strip() else []
+        if not isinstance(items, list) or not items:
+            return ""
+        lis = "".join(f"<li>{_esc(str(x))}</li>" for x in items[:5])
+        return (
+            f'<div style="margin-top:.75rem">'
+            f'<div class="tp-section-title" style="color:{color}">{_esc(title)}</div>'
+            f'<ul class="tp-inval-list">{lis}</ul></div>'
+        )
+
+    confirmations_html = _list_block("参与前确认", confirmations, "var(--green)")
+    avoid_html = _list_block("不参与条件", avoid_conditions, "var(--yellow)")
+    review_html = _list_block("重新评估触发", review_triggers, "var(--blue)")
+    time_stop_html = (
+        f'<div class="tp-row"><span class="tp-label">时间止损</span>'
+        f'<span class="tp-detail">{_esc(str(time_stop))}</span></div>'
+        if time_stop else ""
+    )
+    scenario_html = ""
+    if isinstance(scenario_actions, dict) and scenario_actions:
+        rows = "".join(
+            f'<tr><td>{_esc(str(k))}</td><td>{_esc(str(v))}</td></tr>'
+            for k, v in list(scenario_actions.items())[:3]
+        )
+        scenario_html = (
+            f'<div style="margin-top:.75rem"><div class="tp-section-title">情景动作</div>'
+            f'<table class="tp-table"><tbody>{rows}</tbody></table></div>'
+        )
+
     return f"""
     <div class="card" style="overflow:hidden;">
       <div style="position:absolute;inset:0 auto auto 0;width:4px;height:100%;background:var(--blue);border-radius:20px 0 0 20px;"></div>
@@ -231,7 +286,12 @@ def _render_trade_plan_card(tp: dict) -> str:
         </table>
         {sl_html}
         {target_rows}
+        {confirmations_html}
+        {avoid_html}
         {inval_html}
+        {review_html}
+        {time_stop_html}
+        {scenario_html}
       </div>
     </div>"""
 
@@ -548,21 +608,59 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
       <div class="timeline">{"".join(steps)}</div>
     </div>"""
 
+    _short_run2 = (view.run_id[-8:] if view.run_id else "\u2014")
+    _grade_badge2 = _quality_grade_badge_html(
+        grade=view.quality_grade,
+        score=view.quality_score,
+        weak_dims=list(view.quality_weak_dims),
+    )
+    _watermark2 = (
+        f'<div class="report-watermark" style="display:inline-flex;align-items:center;gap:.4rem;'
+        f'font-family:var(--mono);font-size:.7rem;color:var(--muted);margin-bottom:.2rem;letter-spacing:.04em">'
+        f'{_grade_badge2}{"<span>\u00b7</span>" if _grade_badge2 else ""}'
+        f'<span>\u62a5\u544a ID \u00b7 {_esc(_short_run2)}</span><span>\u00b7</span>'
+        f'<span>\u6570\u636e\u622a\u6b62 \u00b7 {_esc(view.trade_date)}</span><span>\u00b7</span>'
+        f'<span>17 \u53f8\u534f\u4f5c\u751f\u6210</span></div>'
+    )
+    cover_html = _render_cover_card(view)
+    kline_html = _render_kline_card(view)
+    industry_html = _render_industry_compare_card(view.industry_compare or {})
+    stock_profile_html = _render_stock_profile_card(view.stock_profile or {})
+    calibration_html = _render_calibration_card(view.calibration_summary or {})
+    data_quality_html = _render_data_quality_flags(view.data_quality_flags or [])
+    context_html = (
+        f'<div class="cols reveal reveal-d1">{stock_profile_html}{calibration_html}</div>'
+        if (stock_profile_html or calibration_html) else ""
+    )
+    _research_banner2 = (
+        f'<div class="research-banner" style="margin:.6rem 0 .8rem;'
+        f'padding:.6rem .9rem;background:linear-gradient(90deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04));'
+        f'border:1px solid rgba(96,165,250,0.32);border-radius:12px;'
+        f'color:var(--blue);font-size:.78rem;line-height:1.5;letter-spacing:.02em">'
+        f'{RESEARCH_HEADER_BANNER}</div>'
+    )
     body = f"""
     <h1>{_esc(_ticker_display(view))}</h1>
     <p class="subtitle">{_esc(view.trade_date)} &middot; \u6df1\u5ea6\u7814\u7a76\u62a5\u544a</p>
-    <div class="banner">{AI_DISCLAIMER_BANNER}</div>
+    {_watermark2}
+    {_research_banner2}
+    {cover_html}
+    {kline_html}
     {degradation_banner_html}
     {exec_summary}
+    {context_html}
+    {data_quality_html}
     <nav style="font-size:.8rem;margin:.5rem 0;">
       <a href="#bull-bear" style="color:var(--blue);text-decoration:none;">\u591a\u7a7a\u5206\u6790</a> &middot;
       <a href="#synthesis" style="color:var(--blue);text-decoration:none;">\u7efc\u5408\u7814\u5224</a> &middot;
+      <a href="#industry" style="color:var(--blue);text-decoration:none;">\u884c\u4e1a\u5bf9\u6bd4</a> &middot;
       <a href="#risk" style="color:var(--blue);text-decoration:none;">\u98ce\u9669\u8bc4\u4f30</a> &middot;
       <a href="#trade-plan" style="color:var(--blue);text-decoration:none;">\u4ea4\u6613\u8ba1\u5212</a>
     </nav>
     <details open><summary><h2 id="bull-bear">\u591a\u7a7a\u5206\u6790</h2></summary>
     <div class="cols reveal reveal-d1">{bull_html}{bear_html}</div>
     </details>
+    {f'<a id="industry"></a>{industry_html}' if industry_html else ''}
     <details open><summary><h2 id="synthesis">\u7efc\u5408\u7814\u5224</h2></summary>
     <div class="reveal reveal-d2">{synthesis_html}</div>
     <div class="reveal reveal-d3">{scenario_html}</div>
@@ -572,10 +670,11 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     <div class="reveal reveal-d5" id="trade-plan">{trade_plan_html}</div>
     <div class="reveal reveal-d5">{catalyst_html}</div>
     </details>
-    <details open><summary><h2 id="lineage">\u51b3\u7b56\u94fe\u8def</h2></summary>
+    <details><summary><h2 id="lineage">\u51b3\u7b56\u94fe\u8def</h2></summary>
     <div class="reveal reveal-d6">{inval_html}</div>
     <div class="reveal reveal-d6">{lineage_html}</div>
-    </details>"""
+    </details>
+    <div class="banner banner-footer" style="margin:2rem 0 0;background:rgba(255,255,255,0.03);border-color:rgba(255,255,255,0.06);color:var(--muted);font-size:.75rem">{AI_DISCLAIMER_BANNER}</div>"""
 
     nav = _nav_bar(view.ticker, view.run_id, "research")
     return _html_wrap(f"{_ticker_display(view)} \u6df1\u5ea6\u7814\u7a76 \u2014 {view.trade_date}", body, "\u6df1\u5ea6\u7814\u7a76\u62a5\u544a", extra_head=_COUNTUP_JS, nav_html=nav)
