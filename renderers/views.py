@@ -646,6 +646,7 @@ from .snapshot_view import SnapshotView
 from .research_view import ResearchView
 from .audit_view import AuditView
 from .pool_view import StockDivergenceRow, DivergencePoolView
+from .workbench_view import WorkbenchRow, WorkbenchView
 from .market_view import MarketView, _normalize_consecutive_boards, _extract_breadth_counts
 
 __all__ = [
@@ -667,6 +668,8 @@ __all__ = [
     "AuditView",
     "StockDivergenceRow",
     "DivergencePoolView",
+    "WorkbenchRow",
+    "WorkbenchView",
     "MarketView",
     "_normalize_consecutive_boards",
     "_extract_breadth_counts",

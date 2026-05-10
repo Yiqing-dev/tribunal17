@@ -116,6 +116,11 @@ h3 {
   transform: translateY(-2px);
   border-color: rgba(255, 255, 255, 0.1);
 }
+.report-delta-card {
+  border-color: rgba(96, 165, 250, 0.18);
+  background: linear-gradient(180deg, rgba(15, 30, 45, 0.94), rgba(8, 16, 25, 0.92));
+}
+.report-delta-card h3 { margin-bottom: .55rem; }
 
 /* ── Glass Panel (recap / debate / pool) ── */
 .glass {

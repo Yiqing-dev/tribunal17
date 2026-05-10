@@ -284,10 +284,10 @@ class ResearchView:
                 pr_rid = pr.get("run_id", "")
                 if pr_rid == run_id:
                     continue
-                pr_conf = 0.0
+                pr_conf = -1.0
                 if pr_rid:
                     try:
-                        pr_trace = service.store.load(pr_rid)
+                        pr_trace = service.load_run(pr_rid)
                         if pr_trace and pr_trace.final_confidence >= 0:
                             pr_conf = float(pr_trace.final_confidence)
                     except Exception:

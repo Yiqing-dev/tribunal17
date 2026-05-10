@@ -2,6 +2,7 @@
 
 from subagent_pipeline.renderers.views import _strip_internal_tokens, _summarize_display_text
 from subagent_pipeline.renderers.research_renderer import _render_trade_plan_card
+from subagent_pipeline.renderers.shared_utils import _nav_bar, _render_report_delta_card
 from subagent_pipeline.renderers.report_renderer import generate_brief_report
 from subagent_pipeline.replay_store import ReplayStore
 from subagent_pipeline.trace_models import RunTrace, NodeTrace
@@ -29,6 +30,86 @@ def test_render_trade_plan_card_accepts_string_confidence():
 
     assert "80%" in html_num
     assert "80%" in html_label
+
+
+def test_report_delta_card_renders_previous_signal_change():
+    class View:
+        ticker = "601985"
+        run_id = "run-current"
+        research_action = "BUY"
+        confidence = 0.80
+        signal_history = [{
+            "trade_date": "2026-04-01",
+            "action": "HOLD",
+            "confidence": 0.50,
+            "run_id": "run-prev-001",
+        }]
+
+    html = _render_report_delta_card(View())
+    assert "与上次报告相比" in html
+    assert "HOLD → BUY" in html
+    assert "置信度 +30%" in html
+    assert "601985-run-prev-001-snapshot.html" in html
+
+
+def test_report_delta_card_skips_noop_and_missing_previous_confidence():
+    class NoopView:
+        ticker = "601985"
+        run_id = "run-current"
+        research_action = "HOLD"
+        confidence = 0.50
+        signal_history = [{
+            "trade_date": "2026-04-01",
+            "action": "HOLD",
+            "confidence": 0.50,
+            "run_id": "run-prev-001",
+        }]
+
+    class MissingConfView:
+        ticker = "601985"
+        run_id = "run-current"
+        research_action = "HOLD"
+        confidence = 0.80
+        signal_history = [{
+            "trade_date": "2026-04-01",
+            "action": "HOLD",
+            "confidence": -1.0,
+            "run_id": "run-prev-001",
+        }]
+
+    assert _render_report_delta_card(NoopView()) == ""
+    assert _render_report_delta_card(MissingConfView()) == ""
+
+
+def test_report_delta_card_changed_action_with_missing_previous_confidence_has_no_fake_jump():
+    class View:
+        ticker = "601985"
+        run_id = "run-current"
+        research_action = "BUY"
+        confidence = 0.80
+        signal_history = [{
+            "trade_date": "2026-04-01",
+            "action": "HOLD",
+            "confidence": -1.0,
+            "run_id": "run-prev-001",
+        }]
+
+    html = _render_report_delta_card(View())
+    assert "HOLD → BUY" in html
+    assert "置信度 —" in html
+    assert "置信度 +80%" not in html
+
+
+def test_nav_bar_only_links_workbench_when_file_exists(monkeypatch):
+    import pathlib
+
+    monkeypatch.setattr(pathlib.Path, "exists", lambda self: False)
+    html = _nav_bar("601985", "run-abc123", "snapshot")
+    assert "工作台" not in html
+
+    monkeypatch.setattr(pathlib.Path, "exists", lambda self: str(self).endswith("workbench.html"))
+    html = _nav_bar("601985", "run-abc123", "snapshot")
+    assert "workbench.html" in html
 
 
 def test_summarize_display_text_skips_markdown_meta_noise():

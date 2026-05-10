@@ -15,7 +15,7 @@ from subagent_pipeline.bridge import (
     generate_report, validate_market_agent_dates,
 )
 from subagent_pipeline.renderers.report_renderer import (
-    generate_pool_report, generate_market_report,
+    generate_pool_report, generate_market_report, generate_workbench_report,
 )
 from subagent_pipeline.renderers.debate_renderer import generate_committee_report
 from subagent_pipeline.replay_store import ReplayStore
@@ -193,6 +193,9 @@ def main():
         market_snapshot=snap_dict,
     )
     print("  \u2713 pool report generated")
+
+    generate_workbench_report(output_dir=REPORTS, storage_dir=REPLAYS)
+    print("  \u2713 workbench generated")
 
     # ── Step 6: Regenerate L6 market report ──
     print("\n=== Step 6: Regenerate L6 market report ===")

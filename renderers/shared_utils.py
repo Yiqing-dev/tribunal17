@@ -417,6 +417,62 @@ def _render_data_quality_flags(flags: list) -> str:
     )
 
 
+def _render_report_delta_card(view) -> str:
+    """Render current-vs-previous report delta for the same ticker."""
+    history = getattr(view, "signal_history", None) or []
+    if not history:
+        return ""
+    prev = history[0] or {}
+    prev_action = str(prev.get("action", "") or "")
+    prev_date = str(prev.get("trade_date", "") or "")
+    prev_run_id = str(prev.get("run_id", "") or "")
+    cur_action = str(getattr(view, "research_action", "") or "")
+    cur_conf = getattr(view, "confidence", -1.0)
+    prev_conf = prev.get("confidence", -1.0)
+    def _valid_conf(value) -> float:
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return -1.0
+        return v if 0.0 <= v <= 1.0 else -1.0
+
+    cur_conf_f = _valid_conf(cur_conf)
+    prev_conf_f = _valid_conf(prev_conf)
+
+    changed = bool(prev_action and cur_action and prev_action != cur_action)
+    has_delta = cur_conf_f >= 0 and prev_conf_f >= 0
+    delta = cur_conf_f - prev_conf_f if has_delta else 0.0
+    if not changed and (not has_delta or abs(delta) < 0.01):
+        return ""
+    d_cls = "buy" if delta > 0.03 else ("sell" if delta < -0.03 else "hold")
+    change_cls = "sell" if changed else "hold"
+    change_text = f"{prev_action} → {cur_action}" if changed else "方向未变"
+    delta_text = f"置信度 {delta:+.0%}" if has_delta else "置信度 —"
+
+    prev_link = ""
+    if prev_run_id:
+        try:
+            from .report_renderer import _safe_filename
+            safe_t = _safe_filename(getattr(view, "ticker", ""))
+            short = prev_run_id.replace("run-", "")[:12]
+            href = f"{safe_t}-run-{short}-snapshot.html"
+            prev_link = f'<a href="{_esc(href)}" style="color:var(--blue);text-decoration:none">查看上一版</a>'
+        except Exception:
+            prev_link = ""
+
+    return (
+        f'<div class="card report-delta-card reveal">'
+        f'<h3>与上次报告相比</h3>'
+        f'<div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">'
+        f'<span class="badge badge-{change_cls}">{_esc(change_text)}</span>'
+        f'<span class="badge badge-{d_cls}">{_esc(delta_text)}</span>'
+        f'<span style="color:var(--muted);font-size:.82rem">上一版 {_esc(prev_date or "—")}</span>'
+        f'{prev_link}'
+        f'</div>'
+        f'</div>'
+    )
+
+
 def _vague_phrase_warning(text: str) -> str:
     """Render an inline warning when a falsifiability condition contains
     vague language. Returns "" when the text is concrete (has number / date).
@@ -1970,12 +2026,19 @@ def _nav_bar(ticker: str, run_id: str, current_page: str) -> str:
     safe_t = _safe_filename(ticker)
     short_id = run_id.replace("run-", "")[:12]
 
-    pages = [
+    pages = []
+    try:
+        from pathlib import Path
+        if Path("workbench.html").exists() or Path("data/reports/workbench.html").exists():
+            pages.append(("workbench", "工作台", "workbench.html"))
+    except Exception:
+        pass
+    pages.extend([
         ("snapshot", "结论", f"{safe_t}-run-{short_id}-snapshot.html"),
         ("research", "研究", f"{safe_t}-run-{short_id}-research.html"),
         ("audit", "审计", f"{safe_t}-run-{short_id}-audit.html"),
         ("committee", "辩论", f"{safe_t}-{run_id}-committee.html"),
-    ]
+    ])
     links = []
     for key, label, href in pages:
         cls = ' class="active"' if key == current_page else ""

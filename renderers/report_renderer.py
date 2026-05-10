@@ -155,6 +155,16 @@ from .pool_renderer import (  # noqa: E402 — re-export for backward compat
 )
 
 
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  Product Workbench — report library / watchlist                        ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+from .workbench_renderer import (  # noqa: E402 — re-export for backward compat
+    render_workbench,
+    generate_workbench_report,
+)
+
+
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║  Market Page — extracted to market_renderer.py                         ║

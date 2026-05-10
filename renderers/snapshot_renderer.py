@@ -36,7 +36,7 @@ from .shared_utils import (
     _render_industry_compare_card, _render_hero_industry_kpis,
     _quality_grade_badge_html, _vague_phrase_warning,
     _render_stock_profile_card, _render_calibration_card,
-    _render_data_quality_flags,
+    _render_data_quality_flags, _render_report_delta_card,
 )
 
 
@@ -893,6 +893,7 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     stock_profile_html = _render_stock_profile_card(view.stock_profile or {})
     calibration_html = _render_calibration_card(view.calibration_summary or {})
     data_quality_html = _render_data_quality_flags(view.data_quality_flags or [])
+    report_delta_html = _render_report_delta_card(view)
     context_html = (
         f'<div class="cols"><div>{stock_profile_html}</div><div>{calibration_html}</div></div>'
         if (stock_profile_html or calibration_html) else ""
@@ -934,6 +935,7 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     {kline_card_html}
     {degradation_banner_html}
     {conclusion}
+    {report_delta_html}
     {pillar_consensus_html}
     {lights_html}
     {battle_plan_html}

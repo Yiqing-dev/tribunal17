@@ -30,7 +30,7 @@ from .shared_utils import (
     _priority_chip, _render_industry_compare_card,
     _quality_grade_badge_html,
     _render_stock_profile_card, _render_calibration_card,
-    _render_data_quality_flags,
+    _render_data_quality_flags, _render_report_delta_card,
 )
 from .snapshot_renderer import _render_cover_card, _render_kline_card
 
@@ -628,6 +628,7 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     stock_profile_html = _render_stock_profile_card(view.stock_profile or {})
     calibration_html = _render_calibration_card(view.calibration_summary or {})
     data_quality_html = _render_data_quality_flags(view.data_quality_flags or [])
+    report_delta_html = _render_report_delta_card(view)
     context_html = (
         f'<div class="cols reveal reveal-d1">{stock_profile_html}{calibration_html}</div>'
         if (stock_profile_html or calibration_html) else ""
@@ -648,6 +649,7 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     {kline_html}
     {degradation_banner_html}
     {exec_summary}
+    {report_delta_html}
     {context_html}
     {data_quality_html}
     <nav style="font-size:.8rem;margin:.5rem 0;">

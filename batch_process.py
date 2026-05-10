@@ -301,6 +301,19 @@ def process_all(trade_date: str = ""):
         except Exception as e:
             print(f"  [WARN] Brief report generation failed: {e}")
 
+    # --- Step 6d: Generate product workbench / report library ---
+    workbench_path = None
+    if run_ids:
+        try:
+            from .renderers.report_renderer import generate_workbench_report
+            workbench_path = generate_workbench_report(
+                output_dir=str(REPORTS_DIR),
+                storage_dir=str(_REPLAYS_DIR),
+            )
+            print(f"  [WORKBENCH] {workbench_path}")
+        except Exception as e:
+            print(f"  [WARN] Workbench generation failed: {e}")
+
     # --- Step 7: Generate market report ---
     market_report_path = None
     if market_context is not None:
@@ -333,6 +346,8 @@ def process_all(trade_date: str = ""):
             print(f"    {t}: {p}")
     if market_report_path:
         print(f"  [MARKET] {market_report_path}")
+    if workbench_path:
+        print(f"  [WORKBENCH] {workbench_path}")
 
     # --- Degradation summary ---
     if _degradations:

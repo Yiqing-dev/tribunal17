@@ -12,6 +12,7 @@ __all__ = [
     "generate_all_tiers",
     "generate_brief_report",
     "generate_brief_report_file",
+    "generate_workbench_report",
     # Pool / market / debate / recap
     "generate_pool_report",
     "generate_market_report",
