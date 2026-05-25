@@ -1288,6 +1288,21 @@ def _parse_analyst(agent_key: str, text: str, nt: NodeTrace) -> None:
                 nt.structured_data = {}
             nt.structured_data["metrics_fallback"] = extracted
 
+    # News analyst: extract information_thin flag (added 2026-05-19 to let PM
+    # distinguish "no news to analyze" from "neutral/mixed news" — previously both
+    # collapsed to pillar_score=2 and were treated as a neutral vote).
+    if agent_key == "news_analyst":
+        if nt.structured_data is None:
+            nt.structured_data = {}
+        m_thin = re.search(
+            r'information_thin\s*=\s*(true|false)',
+            text, flags=re.IGNORECASE,
+        )
+        if m_thin:
+            nt.structured_data["information_thin"] = (m_thin.group(1).lower() == "true")
+        else:
+            nt.structured_data["information_thin"] = None
+
     # Sentiment analyst: extract hot-money probability + type (added 2026-04-30
     # to mitigate the structural SELL-bias on small-cap speculative stocks).
     if agent_key == "sentiment_analyst":
@@ -2300,6 +2315,10 @@ def generate_report(
                 if nt.structured_data is None:
                     nt.structured_data = {}
                 nt.structured_data["price_history"] = price_history
+                try:
+                    nt.structured_data["current_price"] = float(price_history[-1])
+                except (TypeError, ValueError, IndexError):
+                    pass
                 break
 
     # 1c. Inject industry comparison data into Fundamentals Analyst node so

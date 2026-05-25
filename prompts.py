@@ -468,13 +468,27 @@ C3. Novice Mode Scoring (pillar_score)
 - **1**: Negative catalyst emerging, regulatory risk, or adverse event.
 - **0**: Negative Catalyst OR High Uncertainty (Event Lock).
 
+**C3-bis. Information Density Flag (Mandatory)**
+
+判断本次分析的 news 信息密度，并在最终输出中写出 `information_thin` 标志：
+
+- **information_thin = true** 当满足任一：
+  * C1 中"公司事件"实质条目 < 3（凑数项不计 — 仅泛行业新闻 / 旧闻 / 无具体动作的研报、估值标签复述如 "PB 历史分位 30%" 都属于凑数）
+  * 所有事件均为存量信息，无任何新动作（无新合同、无新公告、无新监管事项、无业绩调整）
+  * pillar_score = 2 且无任何 P0/P1 级催化
+
+- **information_thin = false**：有 ≥3 条**新公司事件** OR 任一 P0/P1 级催化（监管动作 / 业绩公告 / 重大合同 / 政策变化 / 大股东变动）
+
+⚠️ **禁止通过虚构 / 拉低事件门槛来凑数让 information_thin=false**。如果数据真的稀薄，必须 information_thin=true — PM 会据此降权 news pillar 而不是把它当作"中性投票"。这条规则的目的就是让"无新闻"和"中性新闻"分开，让 PM 做出更准的判断。
+
 C4. Output Table (Mandatory)
 Columns: Event | Date | Source Tier | Link | Impact Path | Duration | Reversal | Weight
 (Markdown Table)
 
 **FINAL OUTPUT FORMAT**:
-At the very end of your response, you MUST output the score line exactly as:
+At the very end of your response, you MUST output the two score lines exactly as:
 `pillar_score = {{0, 1, 2, 3, or 4}}`
+`information_thin = <true|false>`
 
 <<<USER_DATA>>>
 {_data_instruction}
@@ -816,7 +830,11 @@ def research_manager(
   · M3 情景树中 Bear Case 概率不低于 35%
   · 除非看多方有 P0 级催化剂（已发布的政策文件、已公告的业绩超预期），否则不得给出 BUY
 - 如果市场 regime 为 RISK_ON:
-  · 正常权重（1:1），但 Bull Case 概率不低于 20%
+  · 看多论据权重 ×1.15（对称镜像 NEUTRAL 的看空加成，略低以避免矫枉过正）
+  · Bull Case 概率不低于 30%
+  · 静态旧熊因子（历史多季度亏损 / 估值分位 ≥ 80% / 无机构覆盖 / 流动性弱 / PB-ROE 不匹配）权重 ×0.85 — 这些已被市场长期定价，不是新增信号
+  · 新发生的负面事件（监管处罚 / 违约 / Q1 业绩暴雷 / 大股东减持公告 / 重大合同流失）按原权重，不降权
+  · 仅当看多侧有 P1+ 级新催化（行业政策、订单、业绩超预期）且 ≥3 pillar 方向一致时，才允许 research_action=BUY；缺一即降为 HOLD-bullish lean
 """
     return f"""**ROLE**: You are the [Research Manager / Investment Committee CIRO] (Pro v2).
 **OBJECTIVE**: Synthesize structured claims from Bull/Bear analysts into a definitive, actionable decision. Arbitrate conflicts using strict evidence rules.
@@ -857,6 +875,19 @@ M2. Arbitration (Crucial)
   c) Confidence score
 - Explain WHY one side is credible, citing specific claim IDs.
 
+**M2-bis. News Pillar Information Density 处理**
+
+在 debate_input / 输入材料中查找 news_analyst 输出的 `information_thin = true|false` 标志：
+
+- 若 **information_thin = true**：
+  * news pillar 的 claims 在 M2 仲裁中按"**未提供论据**"处理（**不计入"中性投票"**，避免被误读为"news pillar 平衡了多空"）
+  * 不得在 thesis / bull_case / bear_case 中引用 news pillar 的论据作为主锚（可作为补充背景，但不能作为决策依据）
+  * 必须在 SYNTHESIS_OUTPUT.open_questions 中追加一条："news 信息稀薄，决策不依赖 news pillar"
+
+- 若 **information_thin = false**：按 M2 现行规则正常仲裁，news pillar 与其他 pillar 同等权重。
+
+- 若 **找不到 information_thin 标志**（旧版 news_analyst 或解析失败）：按现行规则处理，但在 open_questions 中标注 "news information density unknown"。
+
 **M2a. 逐条裁决协议（Claim-by-Claim Adjudication）**
 - 对双方所有置信度 ≥ 0.60 的 claims，**必须逐条给出裁决**：采纳(ACCEPT)/驳回(REJECT)/搁置(DEFER)
 - **必须使用 claim ID（从 debate_input 中提取，格式 `clm-u001`/`clm-r001` 等）**。若多空辩论未分配 claim ID，你须在裁决前按 bull-01, bull-02, bear-01, bear-02… 的顺序自行编号。
@@ -884,7 +915,27 @@ M4. Preliminary Decision (BUY / HOLD / SELL)
   * `confidence < 0.55` — 称为"探索性结论"。证据稀薄或多空胶着，决策应偏保守（默认 HOLD）。
 - **conclusion 字段中必须使用对应分级用语**：禁止在 conf=0.62 的判断里使用"高置信度看空/看多"这类表述。
 - **校准自检**：写完 confidence 后，问自己一个问题——"如果我重复 100 次类似分析，有多少次会是这个方向？" 如果你不敢说 ≥70 次，confidence 就不能 ≥0.70。
-- **校准惩罚**：若同一支柱在过去 30 天对此 ticker 的方向准确率 < 50%（见 feedback_block），confidence 必须额外打 0.85x 折扣后再输出。
+
+**M4b-bis. Pillar Reliability Weighting（基于 feedback_block 历史数据）**
+
+对每个 pillar（market / fundamental / news / sentiment），从 feedback_block 读取 (n, accuracy_pct)，按以下规则处理：
+
+a) **n ≥ 5 且 accuracy < 40%**（明显失准）：
+   - 该 pillar 的 claim 在 M2 仲裁中权重 ×0.7
+   - 该 pillar 的 evidence 仍可在论据中引用，但不得作为 thesis 的主锚
+   - 在 SYNTHESIS_OUTPUT.conclusion 末尾追加 "(<pillar> reliability adjusted)" 注脚
+
+b) **n ≥ 5 且 40% ≤ accuracy < 50%**（弱信号）：
+   - 该 pillar 权重 ×0.85
+   - 不限制全局 confidence 上限
+
+c) **n < 5**（样本不足）：
+   - 不应用任何降权（避免 n=2 accuracy=0% 过度惩罚）
+   - 在 open_questions 中标注 "pillar sample thin: <pillar>=<n>"
+
+d) **全局 confidence 上限**：若 ≥3 pillar 同时触发 (a) 降权（说明真没什么可信论据），PM confidence 上限 0.65；否则按上面 M4b 分级规则。
+
+⚠️ **设计原则**：低准确率应降低该 pillar 在论据天平上的贡献，而不是把 PM 整体判断变模糊。**不再使用「乘以 0.85 折扣全局 confidence」的做法** — 那会造成"低准确率 → 降全局 confidence → 该 pillar 论据进不来 → 无新数据校准 → 准确率永远低"的死循环。
 
 M5. Novice Mode Output
 - **manager_score** (0-16, sum of 4 analysts if available, else estimate)
