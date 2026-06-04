@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from .akshare_collector import _retry_call, _last_trading_day, _is_cn_trading_day
 from .proxy_pool import em_proxy_session
 from .trace_models import _now_cst  # CST 'now' so date defaults don't roll back in UTC containers
+from .shared import limit_threshold_pct  # single source for 涨跌停 threshold
 
 logger = logging.getLogger(__name__)
 
@@ -613,11 +614,9 @@ def collect_limit_board(trade_date: str = "", spot_df=None) -> LimitBoardSummary
         for _, r in spot_df.iterrows():
             pct = _safe_float(r.get("涨跌幅")) or 0
             code = str(r.get("代码", ""))
-            is_chinext = code.startswith("3") or code.startswith("68")
-            is_bje = code.startswith(("8", "4"))
-            is_st = "ST" in str(r.get("名称", ""))
-            # NOTE: Threshold logic duplicated in akshare_collector._collect_breadth — see M-14
-            limit_threshold = 4.9 if is_st else (29.9 if is_bje else (19.9 if is_chinext else 9.9))
+            # Single source of truth (shared.limit_threshold_pct) — identical to
+            # akshare_collector._collect_breadth; fixes 北交所(9xx)/B股 mismatch.
+            limit_threshold = limit_threshold_pct(code, str(r.get("名称", "")))
 
             amt = (_safe_float(r.get("成交额")) or 0) / 1e8
 
@@ -761,10 +760,10 @@ def collect_red_close_screen(
     spot_df=None,
     pool_size: int = None,
 ) -> RedCloseScreen:
-    """Screen stocks for 14-day red close streaks.
+    """Screen stocks for 14-day 红盘/阳线 streaks.
 
-    Red close definition: today's close > previous trading day's close.
-    Screens top stocks by market cap.
+    红盘/阳线 definition: a day's close > its own open (A-share K-line color),
+    NOT close > previous close (that is a gain day). Screens top stocks by cap.
     """
     ak = _get_ak()
     pool_size = pool_size or RECAP_CONFIG["red_close_pool_size"]
@@ -812,14 +811,23 @@ def collect_red_close_screen(
                 continue
 
             close_col = "收盘" if "收盘" in hist.columns else "close"
+            open_col = "开盘" if "开盘" in hist.columns else "open"
             closes = hist[close_col].tolist()
-            # Count red closes (close > prev close)
-            reds = sum(1 for i in range(1, len(closes)) if closes[i] > closes[i - 1])
+            opens = hist[open_col].tolist() if open_col in hist.columns else []
+            # 红盘/阳线 = K-line close > open (the A-share meaning of 收红), NOT
+            # close > previous close (that is 上涨/gain). Use open when available;
+            # fall back to gain-days only if the open column is missing.
+            if opens and len(opens) == len(closes):
+                reds = sum(1 for c, o in zip(closes, opens) if c > o)
+                total = len(closes)
+            else:
+                reds = sum(1 for i in range(1, len(closes)) if closes[i] > closes[i - 1])
+                total = len(closes) - 1
             if trade_days_seen == 0:
-                trade_days_seen = len(closes) - 1
+                trade_days_seen = total
 
             red_counts[code] = {"ticker": code, "name": name, "red_days": reds,
-                                "total_days": len(closes) - 1}
+                                "total_days": total}
         except Exception as _e:
             logger.debug("red close analysis for %s failed: %s", code, _e)
             continue

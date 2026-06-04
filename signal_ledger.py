@@ -29,6 +29,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .shared import is_bse_code  # single source for 北交所 code detection
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_PATH = "data/signals/signals.jsonl"
@@ -38,7 +40,8 @@ def normalize_ticker(ticker: str) -> str:
     """Ensure ticker has the correct exchange suffix.
 
     Canonical source for ticker normalization across the codebase.
-    Rules: 6xx→.SS (Shanghai), 0xx/3xx→.SZ (Shenzhen), 8xx/4xx/9xx→.BJ (Beijing).
+    Rules: 6xx→.SS (Shanghai), 0xx/3xx→.SZ (Shenzhen), 8xx/43xx/920xx→.BJ (Beijing),
+    900xx→.SS (Shanghai B-share — NOT Beijing).
     Always strips and re-applies the suffix to fix wrong ones (e.g., 920344.SZ → 920344.BJ).
     """
     bare = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
@@ -48,8 +51,10 @@ def normalize_ticker(ticker: str) -> str:
         correct = f"{bare}.SS"
     elif bare.startswith(("0", "3")):
         correct = f"{bare}.SZ"
-    elif bare.startswith(("8", "4", "9")):
+    elif is_bse_code(bare):
         correct = f"{bare}.BJ"
+    elif bare.startswith("9"):
+        correct = f"{bare}.SS"   # 900xxx = 上交所 B-share
     else:
         correct = f"{bare}.SZ"
     return correct

@@ -70,6 +70,35 @@ def normalize_confidence_value(val) -> float:
     return max(0.0, min(1.0, conf))
 
 
+# ── A-share price-limit board rules (single source of truth) ────────────
+# Used for limit-up/down counting AND exchange-suffix routing, so the two
+# never disagree (previously akshare used ("8","4","9"), recap used ("8","4"),
+# and bare "9" wrongly classified 900xxx 上交所B股 as 北交所).
+def is_bse_code(code: str) -> bool:
+    """北交所 (Beijing Stock Exchange) bare code? 8xxxxx (83/87/88), 920xxx, or
+    43xxxx (legacy NEEQ). Bare '9' is NOT BSE — 900xxx is a 上交所 B-share (±10%)."""
+    code = str(code).strip()
+    return code.startswith(("8", "43", "920"))
+
+
+def limit_threshold_pct(code: str, name: str = "", *, near: bool = True) -> float:
+    """A-share daily price-limit % for tagging limit-up / limit-down.
+
+    ST/*ST ±5 · 创业板(300/301)/科创板(688/689) ±20 · 北交所 ±30 · else ±10
+    (主板 and B-shares 900xxx/200xxx). ``near=True`` returns the slightly
+    inside-the-limit counting threshold (4.9/19.9/29.9/9.9) that tags a stock as
+    'at limit' despite float rounding; ``near=False`` returns the exact limit.
+    """
+    code = str(code).strip()
+    if "ST" in str(name or "").upper():
+        return 4.9 if near else 5.0
+    if is_bse_code(code):
+        return 29.9 if near else 30.0
+    if code.startswith(("3", "68")):
+        return 19.9 if near else 20.0
+    return 9.9 if near else 10.0
+
+
 # ── Risk flag canonicalization ──────────────────────────────────────────
 # Maps many synonyms (中/英变体) to a small set of canonical categories.
 # Used by bridge._parse_risk_manager() to de-duplicate 200+ raw labels into

@@ -771,3 +771,32 @@ class TestTagConstants:
             if attr.startswith("TAG_") and attr not in skip:
                 assert getattr(bridge, attr) == getattr(shared, attr), \
                     f"{attr} mismatch between bridge and shared"
+
+
+class TestLimitThresholdAndExchangeRouting:
+    """B-group item 2: 涨跌停阈值 + 交易所后缀 single source — 900xxx (SH B-share)
+    must NOT be treated as 北交所; 920xxx must."""
+
+    def test_is_bse_code(self):
+        from subagent_pipeline.shared import is_bse_code
+        assert is_bse_code("920819") and is_bse_code("830799") and is_bse_code("430139")
+        assert not is_bse_code("900957")   # 上交所 B-share
+        assert not is_bse_code("600519") and not is_bse_code("300750")
+
+    def test_limit_threshold_pct(self):
+        from subagent_pipeline.shared import limit_threshold_pct
+        assert limit_threshold_pct("600519", "贵州茅台") == 9.9
+        assert limit_threshold_pct("300750", "宁德时代") == 19.9
+        assert limit_threshold_pct("688981", "中芯国际") == 19.9
+        assert limit_threshold_pct("920819", "x") == 29.9
+        assert limit_threshold_pct("900957", "x") == 9.9   # B-share, NOT 北交所
+        assert limit_threshold_pct("600519", "*ST 退") == 4.9
+        assert limit_threshold_pct("600519", "茅台", near=False) == 10.0
+
+    def test_normalize_ticker_bse_vs_b_share(self):
+        from subagent_pipeline.signal_ledger import normalize_ticker
+        assert normalize_ticker("920819") == "920819.BJ"
+        assert normalize_ticker("830799") == "830799.BJ"
+        assert normalize_ticker("900957") == "900957.SS"   # SH B-share, not .BJ
+        assert normalize_ticker("600519") == "600519.SS"
+        assert normalize_ticker("300750") == "300750.SZ"
