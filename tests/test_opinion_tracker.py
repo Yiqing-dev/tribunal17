@@ -991,3 +991,18 @@ class TestStaleDetection:
         )
         d = compute_drift(s1, s2)
         assert abs(d.confidence_delta) >= 0.02  # does NOT qualify as stale
+
+
+def test_confidence_delta_unknown_on_sentinel():
+    """XC-06/DRIFT-001: a -1.0 sentinel confidence makes the delta 'unknown'
+    (confidence_delta_known=False), not a genuine 0 ('unchanged')."""
+    from subagent_pipeline.opinion_tracker import DailySnapshot, compute_drift
+    a = DailySnapshot(trade_date="2026-06-02", action="BUY", confidence=-1.0)
+    b = DailySnapshot(trade_date="2026-06-03", action="BUY", confidence=-1.0)
+    d = compute_drift(a, b)
+    assert d.confidence_delta_known is False and d.confidence_delta == 0.0
+    c = compute_drift(
+        DailySnapshot(trade_date="2026-06-02", action="BUY", confidence=0.70),
+        DailySnapshot(trade_date="2026-06-03", action="BUY", confidence=0.72),
+    )
+    assert c.confidence_delta_known is True and abs(c.confidence_delta - 0.02) < 1e-6

@@ -3,6 +3,10 @@
 Compares pipeline predictions against actual forward price action,
 extracts structured lessons, and persists them for future runs.
 
+Lifecycle: runs AFTER forward outcomes are known (days/weeks later), so it is
+intentionally NOT part of the same-day report batch (batch_process). Invoked by a
+separate review/reflection pass — not dead code.
+
 This module does NOT call LLMs. It produces structured reflection data
 that can be:
 1. Fed to an LLM agent via Claude Code's Agent tool for deeper analysis

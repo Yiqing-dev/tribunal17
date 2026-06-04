@@ -287,7 +287,12 @@ class RunTrace:
         if not had_started_at:
             rt.started_at = None  # don't let default_factory mask missing data
         if pm_conf is not None:
-            rt._pm_confidence = pm_conf
+            rt._pm_confidence = min(1.0, pm_conf) if pm_conf >= 0 else pm_conf
+        # CONF-02: old on-disk traces may predate the finalize() clamp — cap the
+        # displayed confidence at 1.0 while preserving the <0 "not set" sentinel,
+        # so a legacy 75.0 never renders as 7500%.
+        if rt.final_confidence > 1.0:
+            rt.final_confidence = 1.0
         rt.node_traces = [NodeTrace.from_dict(nd) for nd in node_dicts]
         return rt
 

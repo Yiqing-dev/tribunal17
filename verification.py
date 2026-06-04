@@ -6,6 +6,11 @@ Two components:
 
 The verification agent receives the akshare data bundle, independently searches
 for the same data points via WebSearch, and checks consistency.
+
+Lifecycle: this is a DATA-COLLECTION-TIME gate driven by Claude Code's Agent tool
+(it needs a WebSearch LLM call), so it is intentionally NOT invoked from the
+pure-Python report batch (batch_process). Wired by the orchestrating agent when
+collecting a bundle — not dead code.
 """
 
 import re

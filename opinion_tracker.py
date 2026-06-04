@@ -135,6 +135,9 @@ class OpinionDrift:
     confidence_prev: float = -1.0
     confidence_curr: float = -1.0
     confidence_delta: float = 0.0
+    # XC-06/DRIFT-001: False when either side's confidence is the -1.0 sentinel —
+    # then confidence_delta is "unknown", NOT a genuine 0 ("unchanged").
+    confidence_delta_known: bool = True
 
     # Pillar score deltas
     market_score_delta: int = 0
@@ -566,8 +569,9 @@ def compute_drift(prev: DailySnapshot, curr: DailySnapshot) -> OpinionDrift:
         regime_changed=prev.market_regime != curr.market_regime,
     )
 
-    # Confidence delta (guard sentinels)
-    if prev.confidence >= 0 and curr.confidence >= 0:
+    # Confidence delta (guard sentinels — distinguish "unchanged" from "unknown")
+    d.confidence_delta_known = (prev.confidence >= 0 and curr.confidence >= 0)
+    if d.confidence_delta_known:
         d.confidence_delta = curr.confidence - prev.confidence
 
     # Pillar score deltas
@@ -684,7 +688,9 @@ def build_watchlist_report(
         _STALE_THRESHOLD = 3
         for i, dr in enumerate(drift_list):
             same_action = not dr.action_changed
-            small_conf = abs(dr.confidence_delta) < 0.02  # <2% on 0.0-1.0 scale
+            # Unknown confidence (sentinel) is NOT "unchanged" — don't let a data
+            # gap masquerade as a stale streak (XC-06/DRIFT-001).
+            small_conf = dr.confidence_delta_known and abs(dr.confidence_delta) < 0.02
             same_pillars = (dr.market_score_delta == 0
                             and dr.fundamental_score_delta == 0
                             and dr.news_score_delta == 0

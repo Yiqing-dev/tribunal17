@@ -825,11 +825,12 @@ def research_manager(
     # news_report text when provided, so the feature actually fires instead of
     # always hitting the "flag not found" branch.
     if news_information_thin is None and news_report:
-        _low = news_report.lower()
-        if "information_thin = true" in _low or "information_thin=true" in _low:
-            news_information_thin = True
-        elif "information_thin = false" in _low or "information_thin=false" in _low:
-            news_information_thin = False
+        # PROMPT-DF-02: first-occurrence regex, identical semantics to bridge's
+        # information_thin parse (not a separate substring + true-priority impl).
+        import re as _re
+        _m = _re.search(r"information_thin\s*=\s*(true|false)", news_report, _re.IGNORECASE)
+        if _m:
+            news_information_thin = (_m.group(1).lower() == "true")
     if news_information_thin is True:
         _news_thin = ("\n**【编排层注入】news_information_thin = TRUE**（来自 news_analyst 节点，"
                       "以此为准，无需在 debate_input 中搜索）：按下方 M2-bis 对 true 的规则处理。\n")

@@ -859,14 +859,17 @@ def _derive_market_weather(idx_summary: IndexSummary) -> tuple:
     down_count = sum(1 for ix in indices if ix.get("pct_change", 0) < -0.3)
     total = len(indices)
 
-    # Breadth
+    # Breadth — distinguish "missing data" from a genuinely weak market: when
+    # advancers+decliners==0 (collection failed), adv_ratio would be 0 and wrongly
+    # push the market to 下跌/防守. Fall back to index direction only.
+    breadth_known = (idx_summary.advancers + idx_summary.decliners) > 0
     adv_ratio = idx_summary.advancers / max(idx_summary.advancers + idx_summary.decliners, 1)
 
     # Determine weather
-    if up_count >= total * 0.6 and adv_ratio > 0.55:
+    if up_count >= total * 0.6 and (adv_ratio > 0.55 or not breadth_known):
         weather = "上涨"
         advice = "进攻"
-    elif down_count >= total * 0.6 and adv_ratio < 0.45:
+    elif down_count >= total * 0.6 and (adv_ratio < 0.45 and breadth_known):
         weather = "下跌"
         advice = "防守"
     else:
@@ -879,7 +882,7 @@ def _derive_market_weather(idx_summary: IndexSummary) -> tuple:
         risks.append("成交额大幅萎缩")
     if idx_summary.northbound_flow_yi < -30:
         risks.append("北向资金大幅流出")
-    if adv_ratio < 0.3:
+    if breadth_known and adv_ratio < 0.3:
         risks.append("市场宽度极差")
     risk_note = "；".join(risks) if risks else ""
 
