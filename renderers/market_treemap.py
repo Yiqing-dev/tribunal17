@@ -16,25 +16,32 @@ from .shared_utils import _esc, _pct_to_hex, render_svg_treemap
 
 
 def _heatmap_color(pct_change, action=""):
-    """Return fill color for a heatmap node."""
-    if action == "BUY":
-        if pct_change > 0:
-            return "#1a7f37"
-        return "#2ea043"
-    elif action == "SELL":
-        if pct_change < 0:
-            return "#cf222e"
-        return "#da3633"
-    elif action == "VETO":
-        return "#6e40c9"
-    # Neutral / HOLD
-    if pct_change > 3:
-        return "#1a7f37"
-    elif pct_change > 0:
-        return "#2ea043"
-    elif pct_change > -3:
-        return "#da3633"
-    return "#cf222e"
+    """Fill color for a heatmap node = 涨跌幅 color (A-share: 红涨绿跌).
+
+    The signal (BUY/SELL/VETO) is conveyed by the tile BORDER, not the fill —
+    see _heatmap_action_stroke(). This keeps fill meaning unambiguous: red = up,
+    green = down (CLAUDE.md rule #8). `action` is accepted for signature
+    compatibility but no longer affects the fill.
+    """
+    try:
+        return _pct_to_hex(float(pct_change))
+    except (ValueError, TypeError):
+        return _pct_to_hex(0.0)
+
+
+def _heatmap_action_stroke(action=""):
+    """Border color encodes the signal (A-share intuition): BUY 红 / SELL 绿 / VETO 紫.
+
+    Returns "" for HOLD / neutral (no action border).
+    """
+    a = str(action).upper()
+    if a == "BUY":
+        return "#cf222e"   # red border — bullish signal
+    if a == "SELL":
+        return "#2aac7e"   # green border — bearish signal
+    if a == "VETO":
+        return "#8957e5"   # purple — vetoed
+    return ""
 
 
 def _heatmap_risk_color(confidence):
@@ -52,15 +59,16 @@ def _heatmap_risk_color(confidence):
 
 
 def _render_heatmap_legend():
-    """Render heatmap color legend."""
+    """Render heatmap color legend \u2014 fill = \u6da8\u8dcc\u5e45 (\u7ea2\u6da8\u7eff\u8dcc), border = \u4fe1\u53f7."""
     return (
         '<div class="hm-legend">'
-        '<span class="hm-leg-item"><span class="hm-leg-dot" style="background:#1a7f37"></span> BUY/\u2191</span>'
-        '<span class="hm-leg-item"><span class="hm-leg-dot" style="background:#2ea043"></span> HOLD/\u2191</span>'
-        '<span class="hm-leg-item"><span class="hm-leg-dot" style="background:#da3633"></span> HOLD/\u2193</span>'
-        '<span class="hm-leg-item"><span class="hm-leg-dot" style="background:#cf222e"></span> SELL/\u2193</span>'
-        '<span class="hm-leg-item"><span class="hm-leg-dot" style="background:#6e40c9"></span> VETO</span>'
-        '<span class="hm-leg-note">\u9762\u79ef \u221d \u5e02\u503c</span>'
+        '<span class="hm-leg-item"><span class="hm-leg-dot" style="background:#FDA5B5"></span> \u6da8 (\u7ea2)</span>'
+        '<span class="hm-leg-item"><span class="hm-leg-dot" style="background:#F0EAE7"></span> \u5e73</span>'
+        '<span class="hm-leg-item"><span class="hm-leg-dot" style="background:#AAD993"></span> \u8dcc (\u7eff)</span>'
+        '<span class="hm-leg-item"><span class="hm-leg-dot" style="background:transparent;border:2px solid #cf222e"></span> BUY</span>'
+        '<span class="hm-leg-item"><span class="hm-leg-dot" style="background:transparent;border:2px solid #2aac7e"></span> SELL</span>'
+        '<span class="hm-leg-item"><span class="hm-leg-dot" style="background:transparent;border:2px solid #8957e5"></span> VETO</span>'
+        '<span class="hm-leg-note">\u586b\u5145 \u221d \u6da8\u8dcc\u5e45 \u00b7 \u8fb9\u6846 = \u4fe1\u53f7 \u00b7 \u9762\u79ef \u221d \u5e02\u503c</span>'
         '</div>'
     )
 
@@ -109,8 +117,15 @@ def _render_svg_heatmap(heatmap_data, width=960, height=400, max_nodes=0):
     def _rect_attrs(idx, n, fill):
         conf = float(n.get("confidence", 0))
         risk_fill = _heatmap_risk_color(conf)
+        # Signal = border (BUY 红 / SELL 绿 / VETO 紫); fill stays = 涨跌幅 color.
+        action = str(n.get("action", "HOLD")).upper()
+        stroke = _heatmap_action_stroke(action)
+        if stroke:
+            stroke_attrs = f'stroke="{stroke}" stroke-width="3"'
+        else:
+            stroke_attrs = 'stroke="var(--bg, #0d1117)" stroke-width="1.5"'
         return (
-            f'stroke="var(--bg, #0d1117)" stroke-width="1.5" '
+            f'{stroke_attrs} '
             f'data-return-fill="{fill}" data-risk-fill="{risk_fill}"'
         )
 
@@ -193,7 +208,7 @@ def _render_heatmap_js():
         var pct = parseFloat(el.dataset.pct || 0);
         var pctEl = document.getElementById('drawerPct');
         pctEl.textContent = (pct > 0 ? '+' : '') + pct.toFixed(2) + '%';
-        pctEl.style.color = pct > 0 ? 'var(--green)' : (pct < 0 ? 'var(--red)' : 'var(--muted)');
+        pctEl.style.color = pct > 0 ? 'var(--red)' : (pct < 0 ? 'var(--green)' : 'var(--muted)');
         document.getElementById('drawerAction').textContent = el.dataset.action || '--';
         document.getElementById('drawerConf').textContent = el.dataset.conf || '--';
         document.getElementById('drawerSector').textContent = el.dataset.sector || '--';
@@ -486,7 +501,8 @@ def _render_inline_treemap(div_id: str, data: dict, max_depth: int = 2,
 
 def _render_plotly_sector_treemap(sectors: list, limit_ups: list = None,
                                   sector_stocks: dict = None,
-                                  div_id: str = "sectorTreemap") -> str:
+                                  div_id: str = "sectorTreemap",
+                                  degraded: bool = False) -> str:
     """Build a Plotly treemap for board data.
 
     Hierarchy: stock → sector → root.  Click a sector to drill in.
@@ -557,23 +573,34 @@ def _render_plotly_sector_treemap(sectors: list, limit_ups: list = None,
         # Sector parent node (id = "sec:{name}")
         sec_id = f"sec:{sector_name}"
         sign = "+" if pct > 0 else ""
+        nfsign = "+" if net_flow > 0 else ""
         ids.append(sec_id)
         labels.append(sector_name)
         parents.append("root")
         values.append(max(turnover, 0.01))
-        colors.append(_pct_to_hex(pct))
-        texts.append(f"{sector_name} {sign}{pct:.2f}%")
-
-        hover_parts = [
-            f"<b>{_esc(sector_name)}</b>",
-            f"板块涨跌: {sign}{pct:.2f}%",
-            f"成交额: {turnover:.1f}亿",
-        ]
-        if adv or dec:
-            hover_parts.append(f"涨/跌: {adv}/{dec}")
-        if net_flow:
-            fsign = "+" if net_flow > 0 else ""
-            hover_parts.append(f"净流入: {fsign}{net_flow:.1f}亿")
+        if degraded:
+            # No real 涨跌幅 available — neutral grey tile, labelled by net inflow
+            # (not pct), so 资金流向 is never mis-rendered as 红涨绿跌 (rule #8).
+            arrow = "↑" if net_flow > 0 else ("↓" if net_flow < 0 else "")
+            colors.append("#9aa3ad")
+            texts.append(f"{sector_name} {nfsign}{net_flow:.1f}亿{arrow}")
+            hover_parts = [
+                f"<b>{_esc(sector_name)}</b>",
+                f"资金净流入: {nfsign}{net_flow:.1f}亿 (非涨跌幅)",
+                "板块涨跌幅数据缺失，瓦片为中性灰",
+            ]
+        else:
+            colors.append(_pct_to_hex(pct))
+            texts.append(f"{sector_name} {sign}{pct:.2f}%")
+            hover_parts = [
+                f"<b>{_esc(sector_name)}</b>",
+                f"板块涨跌: {sign}{pct:.2f}%",
+                f"成交额: {turnover:.1f}亿",
+            ]
+            if adv or dec:
+                hover_parts.append(f"涨/跌: {adv}/{dec}")
+            if net_flow:
+                hover_parts.append(f"净流入: {nfsign}{net_flow:.1f}亿")
         customdata.append("<br>".join(hover_parts))
 
         # Helper to generate unique stock id

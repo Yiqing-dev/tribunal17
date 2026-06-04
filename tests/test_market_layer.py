@@ -1021,11 +1021,11 @@ class TestGetSignalEmoji:
 
     def test_buy(self):
         from subagent_pipeline.renderers.decision_labels import get_signal_emoji
-        assert get_signal_emoji("BUY") == "\U0001f7e2"
+        assert get_signal_emoji("BUY") == "\U0001f534"   # 🔴 red = buy (A-share)
 
     def test_sell(self):
         from subagent_pipeline.renderers.decision_labels import get_signal_emoji
-        assert get_signal_emoji("SELL") == "\U0001f534"
+        assert get_signal_emoji("SELL") == "\U0001f7e2"  # 🟢 green = sell (A-share)
 
     def test_hold(self):
         from subagent_pipeline.renderers.decision_labels import get_signal_emoji
@@ -1041,4 +1041,4 @@ class TestGetSignalEmoji:
 
     def test_case_insensitive(self):
         from subagent_pipeline.renderers.decision_labels import get_signal_emoji
-        assert get_signal_emoji("buy") == "\U0001f7e2"
+        assert get_signal_emoji("buy") == "\U0001f534"  # 🔴 red = buy (A-share)

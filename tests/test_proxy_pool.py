@@ -83,7 +83,7 @@ class TestProxyConfig:
             cfg = _proxy_config()
             assert cfg is not None
             assert cfg["api_url"] == "https://proxy.example.com/get"
-            assert cfg["timeout"] == 20  # default
+            assert cfg["timeout"] == 60  # default
 
     def test_custom_timeout(self):
         with patch.dict(os.environ, {"PROXY_API_URL": "http://x", "PROXY_TIMEOUT": "30"}):

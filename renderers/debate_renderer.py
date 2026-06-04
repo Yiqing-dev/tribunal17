@@ -22,7 +22,7 @@ from .debate_view import (
 from .decision_labels import safe_badge_class, AI_DISCLAIMER_BANNER, RESEARCH_HEADER_BANNER
 from .shared_css import _BASE_CSS, _COUNTUP_JS, _SHARED_SVG_DEFS
 from .shared_utils import (
-    _esc, _nav_bar,
+    _esc, _nav_bar, _cross_nav_block, refresh_report_nav,
     _priority_chip, _conf_dots, _conf_tier, _confidence_ring_svg,
     _quality_grade_badge_html,
 )
@@ -79,10 +79,11 @@ _DEBATE_CSS = """
   margin-top: .6rem; padding: .4rem 1rem; border-radius: 20px;
   font-size: .9rem; font-weight: 700;
 }
-.hero-verdict.buy  { color: var(--green); background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.25); }
+/* A-share action colors: 买入=红, 卖出=绿, VETO=紫. */
+.hero-verdict.buy  { color: var(--red); background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.25); }
 .hero-verdict.hold { color: var(--yellow); background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.25); }
-.hero-verdict.sell { color: var(--red); background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.25); }
-.hero-verdict.veto { color: var(--red); background: rgba(248,113,113,.15); border: 1px solid rgba(248,113,113,.35); }
+.hero-verdict.sell { color: var(--green); background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.25); }
+.hero-verdict.veto { color: var(--purple); background: rgba(167,139,250,.15); border: 1px solid rgba(167,139,250,.35); }
 .hero-meta { color: var(--muted); font-size: .82rem; margin-top: .6rem; }
 
 /* Roster grid */
@@ -110,8 +111,8 @@ _DEBATE_CSS = """
   justify-content: center; font-size: 1rem;
   border: 2px solid var(--border);
 }
-.roster-avatar.stance-bull { border-color: var(--green); background: rgba(52,211,153,.08); }
-.roster-avatar.stance-bear { border-color: var(--red); background: rgba(248,113,113,.08); }
+.roster-avatar.stance-bull { border-color: var(--red); background: rgba(248,113,113,.08); }
+.roster-avatar.stance-bear { border-color: var(--green); background: rgba(52,211,153,.08); }
 .roster-avatar.stance-neutral { border-color: var(--blue); background: rgba(96,165,250,.08); }
 .roster-avatar.stance-cautious { border-color: var(--yellow); background: rgba(251,191,36,.08); }
 .roster-name { font-size: .82rem; font-weight: 600; color: var(--white); }
@@ -121,8 +122,8 @@ _DEBATE_CSS = """
   padding: 1px 8px; border-radius: 10px;
   font-size: .65rem; font-weight: 600;
 }
-.stance-bull   { color: var(--green); background: rgba(52,211,153,.1); }
-.stance-bear   { color: var(--red);   background: rgba(248,113,113,.1); }
+.stance-bull   { color: var(--red);   background: rgba(248,113,113,.1); }
+.stance-bear   { color: var(--green); background: rgba(52,211,153,.1); }
 .stance-neutral { color: var(--blue); background: rgba(96,165,250,.1); }
 .stance-cautious { color: var(--yellow); background: rgba(251,191,36,.1); }
 
@@ -211,8 +212,8 @@ _DEBATE_CSS = """
   font-size: .9rem; font-weight: 700; margin-bottom: .6rem;
   display: flex; align-items: center; gap: .4rem;
 }
-.arena-bull .arena-side-label { color: var(--green); }
-.arena-bear .arena-side-label { color: var(--red); }
+.arena-bull .arena-side-label { color: var(--red); }
+.arena-bear .arena-side-label { color: var(--green); }
 
 /* Strength bar */
 .strength-bar-wrap { margin-bottom: 1rem; }
@@ -220,22 +221,22 @@ _DEBATE_CSS = """
   display: flex; justify-content: space-between;
   font-size: .72rem; margin-bottom: .3rem;
 }
-.strength-bar-labels .bull-label { color: var(--green); }
-.strength-bar-labels .bear-label { color: var(--red); }
+.strength-bar-labels .bull-label { color: var(--red); }
+.strength-bar-labels .bear-label { color: var(--green); }
 .strength-bar {
   display: flex; height: 8px; border-radius: 4px;
   overflow: hidden; background: rgba(255,255,255,.06);
 }
-.strength-bull { background: linear-gradient(90deg, rgba(52,211,153,.3), var(--green)); border-radius: 4px 0 0 4px;
+.strength-bull { background: linear-gradient(90deg, rgba(248,113,113,.3), var(--red)); border-radius: 4px 0 0 4px;
   animation: tug-grow 1s cubic-bezier(0.22,1,0.36,1) both; }
-.strength-bear { background: linear-gradient(90deg, var(--red), rgba(248,113,113,.3)); border-radius: 0 4px 4px 0;
+.strength-bear { background: linear-gradient(90deg, var(--green), rgba(52,211,153,.3)); border-radius: 0 4px 4px 0;
   animation: tug-grow 1s cubic-bezier(0.22,1,0.36,1) 0.12s both; }
 @keyframes tug-grow { from { max-width: 0; } to { max-width: 100%; } }
 .strength-bar-wrap[data-winner="bull"] .strength-bull {
-  box-shadow: 0 0 10px rgba(52,211,153,0.3);
+  box-shadow: 0 0 10px rgba(248,113,113,0.3);
 }
 .strength-bar-wrap[data-winner="bear"] .strength-bear {
-  box-shadow: 0 0 10px rgba(248,113,113,0.3);
+  box-shadow: 0 0 10px rgba(52,211,153,0.3);
 }
 .strength-pct {
   text-align: center; font-size: .72rem; font-weight: 700;
@@ -253,14 +254,14 @@ _DEBATE_CSS = """
   margin-bottom: .6rem; transition: border-color .2s;
 }
 .claim-card:hover { border-color: rgba(96,165,250,.15); }
-.arena-bull .claim-card { border-left: 3px solid rgba(52,211,153,.3); }
-.arena-bear .claim-card { border-left: 3px solid rgba(248,113,113,.3); }
+.arena-bull .claim-card { border-left: 3px solid rgba(248,113,113,.3); }
+.arena-bear .claim-card { border-left: 3px solid rgba(52,211,153,.3); }
 .claim-dim {
   font-size: .65rem; font-weight: 700; text-transform: uppercase;
   letter-spacing: .06em; margin-bottom: .2rem;
 }
-.arena-bull .claim-dim { color: var(--green); }
-.arena-bear .claim-dim { color: var(--red); }
+.arena-bull .claim-dim { color: var(--red); }
+.arena-bear .claim-dim { color: var(--green); }
 .claim-text { font-size: .82rem; color: var(--fg); line-height: 1.5; }
 .claim-meta {
   display: flex; align-items: center; gap: .6rem;
@@ -271,8 +272,8 @@ _DEBATE_CSS = """
   background: rgba(255,255,255,.06); border-radius: 2px;
 }
 .claim-conf-fill { height: 100%; border-radius: 2px; }
-.arena-bull .claim-conf-fill { background: var(--green); }
-.arena-bear .claim-conf-fill { background: var(--red); }
+.arena-bull .claim-conf-fill { background: var(--red); }
+.arena-bear .claim-conf-fill { background: var(--green); }
 .claim-invalidation {
   font-size: .68rem; color: var(--yellow);
   margin-top: .3rem; padding-left: .5rem;
@@ -301,24 +302,29 @@ _DEBATE_CSS = """
   border-radius: 16px; padding: 1.5rem 1.8rem;
 }
 .verdict-card.buy {
-  background: linear-gradient(135deg, rgba(52,211,153,.06), rgba(96,165,250,.04));
-  border: 1px solid rgba(52,211,153,.2);
+  background: linear-gradient(135deg, rgba(248,113,113,.06), rgba(96,165,250,.04));
+  border: 1px solid rgba(248,113,113,.2);
 }
 .verdict-card.hold {
   background: linear-gradient(135deg, rgba(251,191,36,.06), rgba(96,165,250,.04));
   border: 1px solid rgba(251,191,36,.2);
 }
-.verdict-card.sell, .verdict-card.veto {
-  background: linear-gradient(135deg, rgba(248,113,113,.06), rgba(96,165,250,.04));
-  border: 1px solid rgba(248,113,113,.2);
+.verdict-card.sell {
+  background: linear-gradient(135deg, rgba(52,211,153,.06), rgba(96,165,250,.04));
+  border: 1px solid rgba(52,211,153,.2);
+}
+.verdict-card.veto {
+  background: linear-gradient(135deg, rgba(167,139,250,.06), rgba(96,165,250,.04));
+  border: 1px solid rgba(167,139,250,.2);
 }
 .verdict-action {
   display: inline-flex; align-items: center; gap: .4rem;
   font-size: 1.4rem; font-weight: 800;
 }
-.verdict-action.buy  { color: var(--green); }
+.verdict-action.buy  { color: var(--red); }
 .verdict-action.hold { color: var(--yellow); }
-.verdict-action.sell, .verdict-action.veto { color: var(--red); }
+.verdict-action.sell { color: var(--green); }
+.verdict-action.veto { color: var(--purple); }
 .verdict-reason {
   font-size: .92rem; color: var(--fg); margin-top: .5rem;
   line-height: 1.6; max-width: 700px;
@@ -339,9 +345,10 @@ _DEBATE_CSS = """
   font-family: "JetBrains Mono", "Fira Code", monospace;
 }
 .verdict-kpi .vk-label { font-size: .7rem; color: var(--muted); margin-top: .15rem; }
-.verdict-kpi.buy .vk-val  { color: var(--green); }
+.verdict-kpi.buy .vk-val  { color: var(--red); }
 .verdict-kpi.hold .vk-val { color: var(--yellow); }
-.verdict-kpi.sell .vk-val, .verdict-kpi.veto .vk-val { color: var(--red); }
+.verdict-kpi.sell .vk-val { color: var(--green); }
+.verdict-kpi.veto .vk-val { color: var(--purple); }
 .verdict-kpi.risk-ok .vk-val  { color: var(--green); }
 .verdict-kpi.risk-warn .vk-val { color: var(--yellow); }
 .verdict-kpi.risk-bad .vk-val  { color: var(--red); }
@@ -730,13 +737,13 @@ def _render_radar_chart(bull_claims: list, bear_claims: list) -> str:
         vx, vy = _vertex(i, 1.0)
         svg += f'  <line x1="{cx}" y1="{cy}" x2="{vx:.1f}" y2="{vy:.1f}" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/>\n'
 
-    # Bull polygon (green)
+    # Bull polygon (A-share: 看多 = 红)
     bull_pts = " ".join(f"{_vertex(i, max(0.05, v))[0]:.1f},{_vertex(i, max(0.05, v))[1]:.1f}" for i, v in enumerate(bull_vals))
-    svg += f'  <polygon points="{bull_pts}" fill="rgba(52,211,153,0.2)" stroke="#34d399" stroke-width="1.5"/>\n'
+    svg += f'  <polygon points="{bull_pts}" fill="rgba(248,113,113,0.2)" stroke="#f87171" stroke-width="1.5"/>\n'
 
-    # Bear polygon (red)
+    # Bear polygon (A-share: 看空 = 绿)
     bear_pts = " ".join(f"{_vertex(i, max(0.05, v))[0]:.1f},{_vertex(i, max(0.05, v))[1]:.1f}" for i, v in enumerate(bear_vals))
-    svg += f'  <polygon points="{bear_pts}" fill="rgba(248,113,113,0.2)" stroke="#f87171" stroke-width="1.5"/>\n'
+    svg += f'  <polygon points="{bear_pts}" fill="rgba(52,211,153,0.2)" stroke="#34d399" stroke-width="1.5"/>\n'
 
     # Axis labels
     for i, label in enumerate(axes):
@@ -779,7 +786,7 @@ def _render_arena(v: DebateView) -> str:
     html += '</div>\n'
     html += f'    <div class="strength-bar"><div class="strength-bull" style="width:{bull_pct}%"></div>'
     html += f'<div class="strength-bear" style="width:{bear_pct}%"></div></div>\n'
-    html += f'    <div class="strength-pct" style="color:{"var(--green)" if bull_pct > 55 else "var(--red)" if bull_pct < 45 else "var(--yellow)"}">'
+    html += f'    <div class="strength-pct" style="color:{"var(--red)" if bull_pct > 55 else "var(--green)" if bull_pct < 45 else "var(--yellow)"}">'
     html += f'{bull_pct}% : {bear_pct}%</div>\n'
     html += '  </div>\n'
 
@@ -978,7 +985,7 @@ def _render_market_wind(v: DebateView) -> str:
 
 # ── Main renderer ────────────────────────────────────────────────────
 
-def render_debate_page(view: DebateView) -> str:
+def render_debate_page(view: DebateView, *, artifact_dir=None) -> str:
     """Render the full AI Investment Committee HTML page.
 
     Returns a self-contained HTML string (all CSS inline, no external deps).
@@ -1039,7 +1046,7 @@ def render_debate_page(view: DebateView) -> str:
 <body>
 {_SHARED_SVG_DEFS}
 <div class="debate-shell">
-{_nav_bar(view.ticker, view.run_id, "committee")}
+{_cross_nav_block(_nav_bar(view.ticker, view.run_id, "committee", artifact_dir=artifact_dir))}
 {body}
 <div class="debate-footer">TradingAgents AI Investment Committee v0.2.0</div>
 </div>
@@ -1073,5 +1080,6 @@ def generate_committee_report(
     from .report_renderer import _safe_filename
     ticker_slug = _safe_filename(view.ticker) or "unknown"
     path = out_dir / f"{ticker_slug}-{view.run_id}-committee.html"
-    path.write_text(render_debate_page(view), encoding="utf-8")
+    path.write_text(render_debate_page(view, artifact_dir=out_dir), encoding="utf-8")
+    refresh_report_nav(view.ticker, view.run_id, out_dir)
     return str(path)

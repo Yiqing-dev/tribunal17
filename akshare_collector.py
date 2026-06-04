@@ -20,6 +20,8 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from .proxy_pool import em_proxy_session
+from .trace_models import _now_cst  # CST 'now' so date defaults don't roll back in UTC containers
+from .shared import limit_threshold_pct, is_bse_code  # single source for 涨跌停 / exchange routing
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +35,10 @@ def _exchange_prefix(code: str, upper: bool = True) -> str:
     bare = code.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
     if bare.startswith("6"):
         p = "SH"
-    elif bare.startswith(("8", "4", "9")):
+    elif is_bse_code(bare):
         p = "BJ"
+    elif bare.startswith("9"):
+        p = "SH"   # 900xxx = 上交所 B-share (NOT 北交所)
     else:
         p = "SZ"
     return p if upper else p.lower()
@@ -891,6 +895,7 @@ def _collect_fund_flow(b: AkshareBundle):
 def _collect_top10_shareholders(b: AkshareBundle):
     """stock_gdfx_free_top_10_em — top 10 circulating shareholders."""
     ak = _get_ak()
+    symbol = f"{_exchange_prefix(b.ticker)}{b.ticker}"
     # Try latest quarter
     now = datetime.strptime(b.trade_date[:10], "%Y-%m-%d") if b.trade_date else datetime.now()
     quarters = []
@@ -900,18 +905,28 @@ def _collect_top10_shareholders(b: AkshareBundle):
     for qdate in quarters:
         try:
             with em_proxy_session():
-                df = ak.stock_gdfx_free_top_10_em(symbol=b.ticker, date=qdate)
+                df = ak.stock_gdfx_free_top_10_em(symbol=symbol, date=qdate)
             if df is not None and not df.empty:
                 rows = []
                 for _, r in df.iterrows():
                     rows.append({
-                        "rank": _safe_float(r.get("股东排名")) or _safe_float(r.get("序号")),
+                        "rank": (
+                            _safe_float(r.get("名次"))
+                            or _safe_float(r.get("股东排名"))
+                            or _safe_float(r.get("序号"))
+                        ),
                         "name": str(r.get("股东名称", "")),
                         "type": str(r.get("股东性质", "")),
                         "shares": _safe_float(r.get("持股数量")) or _safe_float(r.get("持股数")),
-                        "pct": _safe_float(r.get("持股比例")),
+                        "pct": (
+                            _safe_float(r.get("持股比例"))
+                            or _safe_float(r.get("占总流通股本持股比例"))
+                        ),
                         "change": str(r.get("增减", "")),
-                        "change_pct": _safe_float(r.get("变动比例")),
+                        "change_pct": (
+                            _safe_float(r.get("变动比例"))
+                            or _safe_float(r.get("变动比率"))
+                        ),
                     })
                 b.top10_shareholders = rows
                 return
@@ -1347,24 +1362,28 @@ def _collect_industry_compare(b: AkshareBundle) -> None:
     # when EM rate-limits or returns empty). THS uses different industry
     # naming so we try the EM name first, then strip "Ⅱ"/"Ⅲ" suffixes.
     if not peers_data:
-        for try_name in [industry_name, re.sub(r"[ⅡⅢIVX]+$", "", industry_name).strip()]:
-            if not try_name:
-                continue
-            try:
-                with em_proxy_session():
-                    df_ths = _retry_call(ak.stock_board_industry_cons_ths, symbol=try_name)
-                if df_ths is not None and not df_ths.empty:
-                    peers_data = df_ths.to_dict("records")
-                    for r in peers_data:
-                        for k, v in list(r.items()):
-                            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
-                                r[k] = None
-                    cache.put("industry_cons", industry_name, b.trade_date, peers_data)
-                    ic["industry_data_source"] = "ths_fallback"
-                    logger.debug(f"  [industry_compare] THS fallback OK ({try_name}): {len(peers_data)} peers")
-                    break
-            except Exception as e:
-                logger.debug(f"  [industry_compare] THS fallback ({try_name}) failed: {e}")
+        ths_cons = getattr(ak, "stock_board_industry_cons_ths", None)
+        if ths_cons is None:
+            logger.debug("  [industry_compare] THS industry constituent API unavailable in this akshare version")
+        else:
+            for try_name in [industry_name, re.sub(r"[ⅡⅢIVX]+$", "", industry_name).strip()]:
+                if not try_name:
+                    continue
+                try:
+                    with em_proxy_session():
+                        df_ths = _retry_call(ths_cons, symbol=try_name)
+                    if df_ths is not None and not df_ths.empty:
+                        peers_data = df_ths.to_dict("records")
+                        for r in peers_data:
+                            for k, v in list(r.items()):
+                                if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                                    r[k] = None
+                        cache.put("industry_cons", industry_name, b.trade_date, peers_data)
+                        ic["industry_data_source"] = "ths_fallback"
+                        logger.debug(f"  [industry_compare] THS fallback OK ({try_name}): {len(peers_data)} peers")
+                        break
+                except Exception as e:
+                    logger.debug(f"  [industry_compare] THS fallback ({try_name}) failed: {e}")
 
     # Fallback 2 — spot DataFrame filter by industry (only works if 行业 col present)
     if not peers_data:
@@ -1925,7 +1944,10 @@ def _collect_sector_flow(ms: MarketSnapshot):
             return {
                 "name": str(r.get("板块", "")),
                 "change_pct": _safe_float(r.get("涨跌幅")),
-                "net_inflow": _safe_float(r.get("净流入")),
+                # MKT-2: THS 净流入 is in 亿元, but EM (the primary source) and all
+                # downstream consumers use 元. Normalize THS to 元 (×1e8) at the
+                # source so net_inflow has ONE unit and nothing has to guess.
+                "net_inflow": (_safe_float(r.get("净流入")) or 0) * 1e8,
                 "net_pct": 0,
             }
         return {
@@ -2116,10 +2138,9 @@ def _collect_breadth(ms: MarketSnapshot, watchlist: list = None):
             pct = r.get(pct_col, 0) or 0
             code = str(r.get(code_col, ""))
             name = str(r.get(name_col, ""))
-            is_st = "ST" in name
-            is_bje = code.startswith(("8", "4", "9"))
-            is_chinext_star = code.startswith("3") or code.startswith("68")
-            threshold = 4.9 if is_st else (29.9 if is_bje else (19.9 if is_chinext_star else 9.9))
+            # Single source of truth (shared.limit_threshold_pct) — keeps 涨跌停
+            # counting identical to recap_collector and fixes 900xxx B-share.
+            threshold = limit_threshold_pct(code, name)
             if pct >= threshold:
                 limit_up += 1
             elif pct <= -threshold:
@@ -2237,7 +2258,9 @@ def _build_market_markdown(ms: MarketSnapshot) -> str:
         def _fmt_sector_row(s):
             pct = s.get("change_pct", 0) or 0
             net = s.get("net_inflow", 0) or 0
-            net_str = f"{net / 1e8:+.2f}亿" if abs(net) > 1e6 else f"{net:+.0f}"
+            # net_inflow is uniformly 元 (THS normalized at collection) → always 亿.
+            # MKT-5: no more raw-元 fallback that printed unit-less numbers.
+            net_str = f"{net / 1e8:+.2f}亿" if net else "—"
             return f"| {s['name']} | {pct:+.2f}% | {net_str} |"
 
         lines.append("## 行业板块涨幅 Top 10")
@@ -2363,6 +2386,33 @@ def _last_trading_day(date_str: str) -> str:
         return date_str
 
 
+def _advance_trading_days(date_str: str, n: int) -> str:
+    """Return the date ``n`` trading days AFTER ``date_str``.
+
+    Counts only real trading days using the local CN calendar (weekends +
+    _CN_HOLIDAYS, no network), so "N个交易日" time-stops resolve to an ACCURATE
+    due date rather than a ×7/5 approximation. ``n<=0`` returns the same date.
+    Beyond _CN_HOLIDAYS_MAX_YEAR the weekday-only fallback applies (see
+    _is_cn_trading_day). Returns date_str unchanged on a parse error.
+    """
+    try:
+        dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return date_str
+    if n <= 0:
+        return dt.strftime("%Y-%m-%d")
+    counted = 0
+    # Safety cap: n trading days span at most ~n*2 calendar days, plus a buffer
+    # for a long holiday block (Spring Festival / National Day golden week).
+    for _ in range(n * 2 + 45):
+        dt += timedelta(days=1)
+        if _is_cn_trading_day(dt.strftime("%Y-%m-%d")):
+            counted += 1
+            if counted >= n:
+                break
+    return dt.strftime("%Y-%m-%d")
+
+
 def collect_market_snapshot(
     trade_date: str = "",
     watchlist: list = None,
@@ -2376,7 +2426,7 @@ def collect_market_snapshot(
     Returns:
         MarketSnapshot with market-level data + markdown report
     """
-    effective_date = trade_date or datetime.now().strftime("%Y-%m-%d")
+    effective_date = trade_date or _now_cst().strftime("%Y-%m-%d")
     if not _is_cn_trading_day(effective_date):
         rolled = _last_trading_day(effective_date)
         logger.warning(
@@ -2457,7 +2507,7 @@ def collect(ticker: str, trade_date: str = "", *, use_cache: bool = True) -> Aks
     if not re.match(r'^\d{6}$', bare):
         raise ValueError(f"Invalid A-share ticker: {bare!r}")
 
-    effective_date = trade_date or datetime.now().strftime("%Y-%m-%d")
+    effective_date = trade_date or _now_cst().strftime("%Y-%m-%d")
     if not _is_cn_trading_day(effective_date):
         rolled = _last_trading_day(effective_date)
         logger.warning(

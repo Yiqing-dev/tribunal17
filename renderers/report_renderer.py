@@ -105,20 +105,21 @@ def generate_all_tiers(run_id: str, output_dir: str = "data/reports",
 
     results = {}
     short_id = run_id.replace("run-", "")[:12]
+    shared_report_diff, shared_previous_trace = _report_diff_context_for_run(svc, run_id)
 
     # Tier 1
-    snap = SnapshotView.build(svc, run_id)
+    snap = SnapshotView.build(svc, run_id, report_diff=shared_report_diff, previous_trace=shared_previous_trace)
     if snap:
         path = out_dir / f"{_safe_filename(snap.ticker)}-run-{short_id}-snapshot.html"
-        path.write_text(render_snapshot(snap, skip_vendors=skip_vendors),
+        path.write_text(render_snapshot(snap, skip_vendors=skip_vendors, artifact_dir=out_dir),
                         encoding="utf-8")
         results["snapshot"] = str(path)
 
     # Tier 2
-    res = ResearchView.build(svc, run_id)
+    res = ResearchView.build(svc, run_id, report_diff=shared_report_diff, previous_trace=shared_previous_trace)
     if res:
         path = out_dir / f"{_safe_filename(res.ticker)}-run-{short_id}-research.html"
-        path.write_text(render_research(res, skip_vendors=skip_vendors),
+        path.write_text(render_research(res, skip_vendors=skip_vendors, artifact_dir=out_dir),
                         encoding="utf-8")
         results["research"] = str(path)
 
@@ -126,10 +127,34 @@ def generate_all_tiers(run_id: str, output_dir: str = "data/reports",
     audit = AuditView.build(svc, run_id)
     if audit:
         path = out_dir / f"{_safe_filename(audit.ticker)}-run-{short_id}-audit.html"
-        path.write_text(render_audit(audit), encoding="utf-8")
+        path.write_text(render_audit(audit, artifact_dir=out_dir), encoding="utf-8")
         results["audit"] = str(path)
 
     return results
+
+
+def _report_diff_for_run(service, run_id: str) -> dict:
+    """Compute current-vs-previous diff once for tier generation."""
+    diff, _previous_trace = _report_diff_context_for_run(service, run_id)
+    return diff
+
+
+def _report_diff_context_for_run(service, run_id: str) -> tuple[dict, object]:
+    """Compute current-vs-previous diff and keep the previous trace for reuse."""
+    try:
+        from ..report_diff import compare_reports
+        from ..report_index import group_entries_by_ticker, previous_entry_for_run, sort_run_entries
+
+        trace = service.load_run(run_id)
+        if not trace:
+            return {}, None
+        entries = sort_run_entries(service.store.list_runs(ticker=trace.ticker, limit=0), newest_first=True)
+        prev_entry = previous_entry_for_run(group_entries_by_ticker(entries).get(trace.ticker, []), run_id)
+        prev_trace = service.load_run(prev_entry.get("run_id", "")) if prev_entry else None
+        return compare_reports(prev_trace, trace).to_dict(), prev_trace
+    except Exception:
+        logger.warning("shared report diff failed for %s", run_id, exc_info=True)
+        return {}, None
 
 
 
@@ -162,6 +187,18 @@ from .pool_renderer import (  # noqa: E402 — re-export for backward compat
 from .workbench_renderer import (  # noqa: E402 — re-export for backward compat
     render_workbench,
     generate_workbench_report,
+    render_workbench_csv,
+    render_workbench_markdown,
+)
+
+from .today_changes_renderer import (  # noqa: E402
+    render_today_changes,
+    generate_today_changes_report,
+)
+
+from .calibration_renderer import (  # noqa: E402
+    render_calibration_page,
+    generate_calibration_page,
 )
 
 

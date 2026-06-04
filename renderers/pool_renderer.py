@@ -131,9 +131,10 @@ body {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.025));
   backdrop-filter: blur(16px);
 }
-.spotlight-card.buy { box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.18); }
+.spotlight-card.buy { box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.18); }
 .spotlight-card.hold { box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.18); }
-.spotlight-card.sell, .spotlight-card.veto { box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.18); }
+.spotlight-card.sell { box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.18); }
+.spotlight-card.veto { box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.18); }
 .spotlight-label {
   font-size: 0.76rem;
   letter-spacing: 0.08em;
@@ -184,8 +185,9 @@ body {
   height: 3px;
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.04));
 }
-.kpi-panel.buy::before { background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.9), transparent); }
-.kpi-panel.sell::before, .kpi-panel.veto::before { background: linear-gradient(90deg, transparent, rgba(248, 113, 113, 0.9), transparent); }
+.kpi-panel.buy::before { background: linear-gradient(90deg, transparent, rgba(248, 113, 113, 0.9), transparent); }
+.kpi-panel.sell::before { background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.9), transparent); }
+.kpi-panel.veto::before { background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.9), transparent); }
 .kpi-panel.hold::before { background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.9), transparent); }
 .kpi-panel.neutral::before { background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.9), transparent); }
 .kpi-value {
@@ -255,9 +257,10 @@ body {
   background: rgba(255, 255, 255, 0.06);
 }
 .mix-seg { height: 100%; }
-.mix-seg.buy { background: linear-gradient(90deg, rgba(52, 211, 153, 0.92), rgba(52, 211, 153, 0.58)); }
+.mix-seg.buy { background: linear-gradient(90deg, rgba(248, 113, 113, 0.92), rgba(248, 113, 113, 0.58)); }
 .mix-seg.hold { background: linear-gradient(90deg, rgba(251, 191, 36, 0.92), rgba(251, 191, 36, 0.6)); }
-.mix-seg.sell, .mix-seg.veto { background: linear-gradient(90deg, rgba(248, 113, 113, 0.92), rgba(248, 113, 113, 0.58)); }
+.mix-seg.sell { background: linear-gradient(90deg, rgba(52, 211, 153, 0.92), rgba(52, 211, 153, 0.58)); }
+.mix-seg.veto { background: linear-gradient(90deg, rgba(167, 139, 250, 0.92), rgba(167, 139, 250, 0.58)); }
 .mix-legend, .risk-list, .method-list { display: grid; gap: 0.7rem; }
 .legend-item, .risk-row, .method-item {
   display: grid;
@@ -271,9 +274,10 @@ body {
   height: 0.68rem;
   border-radius: 50%;
 }
-.legend-dot.buy { background: var(--green); }
+.legend-dot.buy { background: var(--red); }
 .legend-dot.hold { background: var(--yellow); }
-.legend-dot.sell, .legend-dot.veto { background: var(--red); }
+.legend-dot.sell { background: var(--green); }
+.legend-dot.veto { background: var(--purple); }
 .conviction-wrap { display: grid; gap: 0.75rem; }
 .chart-svg {
   width: 100%;
@@ -322,8 +326,8 @@ body {
 .heat-val { position: relative; z-index: 1; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 /* Mini bull/bear bar in divergence column */
 .mini-bb { display: flex; height: 4px; border-radius: 2px; overflow: hidden; margin-bottom: .15rem; }
-.mini-bb-bull { background: var(--green); }
-.mini-bb-bear { background: var(--red); }
+.mini-bb-bull { background: var(--red); }
+.mini-bb-bear { background: var(--green); }
 .mini-bb-label { font-size: .72rem; color: var(--muted); font-family: var(--mono); }
 .rank-pill {
   display: inline-flex;
@@ -365,9 +369,10 @@ body {
   height: 4px;
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.04));
 }
-.stock-card.buy::before { background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.92), transparent); }
+.stock-card.buy::before { background: linear-gradient(90deg, transparent, rgba(248, 113, 113, 0.92), transparent); }
 .stock-card.hold::before { background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.92), transparent); }
-.stock-card.sell::before, .stock-card.veto::before { background: linear-gradient(90deg, transparent, rgba(248, 113, 113, 0.92), transparent); }
+.stock-card.sell::before { background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.92), transparent); }
+.stock-card.veto::before { background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.92), transparent); }
 .stock-top {
   display: flex;
   align-items: flex-start;
@@ -439,8 +444,8 @@ body {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.05);
 }
-.signal-bull { background: linear-gradient(90deg, rgba(52, 211, 153, 0.94), rgba(52, 211, 153, 0.62)); }
-.signal-bear { background: linear-gradient(90deg, rgba(248, 113, 113, 0.82), rgba(248, 113, 113, 0.56)); }
+.signal-bull { background: linear-gradient(90deg, rgba(248, 113, 113, 0.94), rgba(248, 113, 113, 0.62)); }
+.signal-bear { background: linear-gradient(90deg, rgba(52, 211, 153, 0.82), rgba(52, 211, 153, 0.56)); }
 .signal-labels {
   display: flex;
   justify-content: space-between;
@@ -468,8 +473,8 @@ body {
   color: var(--muted);
   margin-bottom: 0.75rem;
 }
-.claim-panel.bull h4 { color: var(--green); }
-.claim-panel.bear h4 { color: var(--red); }
+.claim-panel.bull h4 { color: var(--red); }
+.claim-panel.bear h4 { color: var(--green); }
 .claim-stack { display: grid; gap: 0.75rem; }
 .claim-item {
   border-radius: 16px;
@@ -479,8 +484,8 @@ body {
   font-size: 0.86rem;
   line-height: 1.58;
 }
-.claim-panel.bull .claim-item { border-left: 3px solid rgba(52, 211, 153, 0.8); }
-.claim-panel.bear .claim-item { border-left: 3px solid rgba(248, 113, 113, 0.8); }
+.claim-panel.bull .claim-item { border-left: 3px solid rgba(248, 113, 113, 0.8); }
+.claim-panel.bear .claim-item { border-left: 3px solid rgba(52, 211, 153, 0.8); }
 .claim-meta {
   display: flex;
   align-items: center;
@@ -775,11 +780,12 @@ button:focus-visible, [role="button"]:focus-visible {
 
 
 def _pool_action_color(action_class: str) -> str:
+    # A-share action colors: 买入=红, 卖出=绿, VETO=紫.
     return {
-        "buy": "#34d399",
+        "buy": "#f87171",
         "hold": "#fbbf24",
-        "sell": "#f87171",
-        "veto": "#f87171",
+        "sell": "#34d399",
+        "veto": "#a78bfa",
     }.get(action_class, "#60a5fa")
 
 
@@ -1404,7 +1410,7 @@ def generate_pool_report(
                 refreshed.append({
                     "name": s.get("name", ""),
                     "flow": str(round(pct, 2)),       # use price change for color
-                    "net_inflow_yi": round(net / 1e8, 2) if abs(net) > 1e6 else 0,
+                    "net_inflow_yi": round(net / 1e8, 2) if net else 0,
                     "direction": "in" if pct > 0 else "out",
                 })
             market_context["sector_momentum"] = refreshed

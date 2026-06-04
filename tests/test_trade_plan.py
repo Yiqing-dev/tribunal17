@@ -313,7 +313,7 @@ class TestRenderTradePlanCard:
     def test_full_plan(self):
         from dashboard.report_renderer import _render_trade_plan_card
         html = _render_trade_plan_card(SAMPLE_TRADE_PLAN)
-        assert "AI 交易计划" in html
+        assert "观察计划" in html
         assert "LONG" in html
         assert "偏多" in html
         assert "突破买点" in html
@@ -332,7 +332,7 @@ class TestRenderTradePlanCard:
         html = _render_trade_plan_card({"bias": "WAIT", "entry_setups": [], "confidence": 0.3})
         assert "等待" in html
         assert "WAIT" in html
-        assert "不建议入场" in html
+        assert "不建议参与" in html
 
     def test_avoid_bias(self):
         from dashboard.report_renderer import _render_trade_plan_card
@@ -437,8 +437,8 @@ class TestSubagentResearchTradePlanCard:
         assert "不参与条件" in html
         assert "成交额萎缩" in html
         assert "重新评估触发" in html
-        assert "时间止损" in html
-        assert "情景动作" in html
+        assert "观察期限" in html
+        assert "情景应对" in html
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -480,7 +480,7 @@ class TestViewIntegration:
             trade_plan=SAMPLE_TRADE_PLAN,
         )
         html = render_research(v, skip_vendors=True)
-        assert "AI 交易计划" in html
+        assert "观察计划" in html
         assert "突破买点" in html
         assert "11.35" in html
 
@@ -499,7 +499,7 @@ class TestViewIntegration:
             confidence=0.3,
         )
         html = render_research(v, skip_vendors=True)
-        assert "AI 交易计划" not in html
+        assert "观察计划" not in html
 
 
 # ────────────────────────────────────────────────────────────────────

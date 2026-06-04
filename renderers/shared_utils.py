@@ -7,11 +7,37 @@ without circular imports.
 """
 
 import math
+import logging
+import os
 import re
+import tempfile
 from typing import Optional
 
 from .decision_labels import EVIDENCE_STRENGTH_LABELS
 from .shared_css import _BASE_CSS, _SHARED_SVG_DEFS
+# Confidence normalization is defined once in the foundation module so that
+# parsing (bridge.py) and display (renderers) share ONE implementation.
+from ..shared import _CONFIDENCE_LABELS, normalize_confidence_value  # noqa: F401
+
+logger = logging.getLogger(__name__)
+
+_CROSS_NAV_START = "<!-- cross-nav:start -->"
+_CROSS_NAV_END = "<!-- cross-nav:end -->"
+_CROSS_NAV_BLOCK_RE = re.compile(
+    re.escape(_CROSS_NAV_START) + r".*?" + re.escape(_CROSS_NAV_END),
+    re.S,
+)
+# Match only the exact ``cross-nav`` class token. Similarly named custom
+# classes such as ``my-cross-nav-foo`` are left in place and treated as
+# unrelated page markup.
+_LEGACY_CROSS_NAV_RE = re.compile(
+    r'<nav\b[^>]*\bclass=["\'][^"\']*(?<![-\w])cross-nav(?![-\w])[^"\']*["\'][^>]*>.*?</nav>',
+    re.S,
+)
+_CONTAINER_OPEN_RE = re.compile(
+    r'(<div\b[^>]*\bclass=["\'][^"\']*\bcontainer\b[^"\']*["\'][^>]*>\s*)',
+    re.S,
+)
 
 
 def _esc(text: str) -> str:
@@ -19,6 +45,13 @@ def _esc(text: str) -> str:
     return (text.replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;")
             .replace("'", "&#39;"))
+
+
+def _cross_nav_block(nav_html: str = "") -> str:
+    """Return the replaceable cross-report navigation block."""
+    if not nav_html:
+        return ""
+    return f"{_CROSS_NAV_START}\n{nav_html}\n{_CROSS_NAV_END}"
 
 
 def _render_industry_compare_card(industry_compare: dict) -> str:
@@ -367,7 +400,8 @@ def _render_calibration_card(summary: dict) -> str:
             gap = float(cell.get("calibration_gap", 0) or 0)
             val = f"{acc:.0%}"
             sub = f"n={decided} · 偏差 {gap:+.0%}"
-            cls = "buy" if acc >= 0.55 else ("hold" if acc >= 0.45 else "sell")
+            # Direction-neutral confidence-strength tiers (not buy/sell) — AQ-F1.
+            cls = "conf-strong" if acc >= 0.55 else ("conf-mid" if acc >= 0.45 else "conf-weak")
         return (
             f'<div class="kpi kpi-secondary">'
             f'<span class="kpi-val badge badge-{cls}" style="font-size:.85rem">{_esc(val)}</span>'
@@ -404,7 +438,9 @@ def _render_data_quality_flags(flags: list) -> str:
     rows = ""
     for f in flags[:6]:
         sev = str(f.get("severity", "medium")).lower()
-        cls = "sell" if sev in ("high", "critical") else ("hold" if sev == "medium" else "buy")
+        # Severity badges (direction-neutral), NOT buy/sell — else the A-share
+        # action flip would make a CRITICAL flag green and a low flag red (COLOR-006).
+        cls = "high" if sev in ("high", "critical") else ("medium" if sev == "medium" else "low")
         rows += (
             f'<li><span class="badge badge-{cls}" style="margin-right:.35rem">'
             f'{_esc(sev.upper())}</span>{_esc(str(f.get("message", "")))}</li>'
@@ -438,11 +474,14 @@ def _render_report_delta_card(view) -> str:
 
     cur_conf_f = _valid_conf(cur_conf)
     prev_conf_f = _valid_conf(prev_conf)
+    report_diff = getattr(view, "report_diff", None) or {}
+    diff_summary = list(report_diff.get("summary") or []) if isinstance(report_diff, dict) else []
+    diff_severity = str(report_diff.get("severity", "") or "") if isinstance(report_diff, dict) else ""
 
     changed = bool(prev_action and cur_action and prev_action != cur_action)
     has_delta = cur_conf_f >= 0 and prev_conf_f >= 0
     delta = cur_conf_f - prev_conf_f if has_delta else 0.0
-    if not changed and (not has_delta or abs(delta) < 0.01):
+    if not changed and (not has_delta or abs(delta) < 0.01) and not diff_summary:
         return ""
     d_cls = "buy" if delta > 0.03 else ("sell" if delta < -0.03 else "hold")
     change_cls = "sell" if changed else "hold"
@@ -459,6 +498,20 @@ def _render_report_delta_card(view) -> str:
             prev_link = f'<a href="{_esc(href)}" style="color:var(--blue);text-decoration:none">查看上一版</a>'
         except Exception:
             prev_link = ""
+    sev_label = {
+        "major": "重大变化",
+        "moderate": "明显变化",
+        "minor": "轻微变化",
+        "stable": "基本稳定",
+    }.get(diff_severity, "")
+    sev_html = f'<span class="badge badge-{change_cls}">{_esc(sev_label)}</span>' if sev_label else ""
+    summary_html = ""
+    if diff_summary:
+        summary_html = (
+            '<ul style="margin:.65rem 0 0 1.05rem;color:var(--fg);font-size:.86rem;line-height:1.65">'
+            + "".join(f"<li>{_esc(str(item))}</li>" for item in diff_summary[:5])
+            + "</ul>"
+        )
 
     return (
         f'<div class="card report-delta-card reveal">'
@@ -466,9 +519,11 @@ def _render_report_delta_card(view) -> str:
         f'<div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">'
         f'<span class="badge badge-{change_cls}">{_esc(change_text)}</span>'
         f'<span class="badge badge-{d_cls}">{_esc(delta_text)}</span>'
+        f'{sev_html}'
         f'<span style="color:var(--muted);font-size:.82rem">上一版 {_esc(prev_date or "—")}</span>'
         f'{prev_link}'
         f'</div>'
+        f'{summary_html}'
         f'</div>'
     )
 
@@ -566,50 +621,6 @@ def _format_finance_num(value, kind: str = "default") -> str:
     return s if s else "0"
 
 
-_CONFIDENCE_LABELS = {
-    "high": 0.8, "med": 0.5, "medium": 0.5, "low": 0.2,
-    "高": 0.8, "中": 0.5, "低": 0.2,
-}
-
-
-def normalize_confidence_value(val) -> float:
-    """Canonical confidence normalizer → [0.0, 1.0].
-
-    Handles numeric, percent-strings, and high/med/low labels. Returns -1.0
-    when the value is negative, None, unparseable, or explicitly sentinel.
-    Numeric scales: >10 → 0-100 (/100), >1 → 1-10 (/10). Matches CLAUDE.md rule #7.
-    """
-    if val is None:
-        return -1.0
-    if isinstance(val, bool):
-        return -1.0  # avoid treating True/False as 1.0/0.0
-    if isinstance(val, (int, float)):
-        conf = float(val)
-    elif isinstance(val, str):
-        mapped = _CONFIDENCE_LABELS.get(val.strip().lower())
-        if mapped is not None:
-            return mapped
-        raw = val.strip().rstrip("%")
-        try:
-            conf = float(raw)
-        except (ValueError, TypeError):
-            return -1.0
-        if val.strip().endswith("%"):
-            conf = conf / 100.0
-    else:
-        return -1.0
-
-    if conf < 0:
-        return -1.0
-    # CLAUDE.md rule #7: values ≥10 treated as 0-100 scale (/100);
-    # values >1 but <10 treated as 1-10 scale (/10).
-    if conf >= 10:
-        conf = conf / 100.0
-    elif conf > 1.0:
-        conf = conf / 10.0
-    return max(0.0, min(1.0, conf))
-
-
 def format_confidence_pct(val) -> str:
     """Format a confidence value as 'NN%', or empty string when missing/unparseable."""
     conf = normalize_confidence_value(val)
@@ -635,7 +646,7 @@ def _html_wrap(title: str, body: str, tier_label: str, extra_css: str = "",
 <body>
 {_SHARED_SVG_DEFS}
 <div class="container">
-{nav_html}
+{_cross_nav_block(nav_html)}
 {body}
 <div class="footer">TradingAgents {tier_label} v0.2.0</div>
 </div>
@@ -796,7 +807,8 @@ def _radar_svg(pillars, action_class, size=180):
     max_r = size * 0.38
     axes = [(-math.pi / 2 + i * math.pi / 2) for i in range(4)]  # top, right, bottom, left
     labels = ["\u6280\u672f\u9762", "\u57fa\u672c\u9762", "\u65b0\u95fb\u9762", "\u60c5\u7eea\u9762"]
-    color_map = {"buy": "#34d399", "hold": "#fbbf24", "sell": "#f87171", "veto": "#f87171"}
+    # A-share action colors: 买入=红, 卖出=绿, VETO=紫.
+    color_map = {"buy": "#f87171", "hold": "#fbbf24", "sell": "#34d399", "veto": "#a78bfa"}
     fill_color = color_map.get(action_class, "#60a5fa")
 
     def polar(angle, r):
@@ -1284,8 +1296,10 @@ def _kline_with_signals_svg(
         chips: list = []
         for s in sigs[:8]:
             act = (s.get("action") or "").upper()
-            css = "buy" if act == "BUY" else ("sell" if act in ("SELL", "VETO") else "hold")
-            ico = "▲" if act == "BUY" else ("▼" if act in ("SELL", "VETO") else "■")
+            # VETO has its own (purple) class — never lump it with SELL (which is
+            # now green): a vetoed signal must not read as a bearish sell.
+            css = "buy" if act == "BUY" else ("veto" if act == "VETO" else ("sell" if act == "SELL" else "hold"))
+            ico = "▲" if act == "BUY" else ("⊘" if act == "VETO" else ("▼" if act == "SELL" else "■"))
             d = (s.get("trade_date") or "")[-5:]   # MM-DD
             conf_pct = ""
             try:
@@ -1300,7 +1314,7 @@ def _kline_with_signals_svg(
                 f'padding:.18rem .55rem;border-radius:999px;font-family:var(--mono);'
                 f'font-size:.72rem;letter-spacing:.02em;margin-right:.35rem;'
                 f'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08)">'
-                f'<span style="color:var(--{ "red" if css=="sell" else ("green" if css=="buy" else "yellow") })">{ico}</span>'
+                f'<span style="color:var(--{ "red" if css=="buy" else ("green" if css=="sell" else ("purple" if css=="veto" else "yellow")) })">{ico}</span>'
                 f'<span style="color:var(--white)">{_esc(d)}</span>'
                 f'<span style="color:var(--muted)">{_esc(act)}{_esc(conf_pct)}</span>'
                 f'</span>'
@@ -1341,9 +1355,9 @@ def _sparkline_svg(prices: list, width: int = 200, height: int = 60) -> str:
     pts = " ".join(f"{_x(i):.1f},{_y(v):.1f}" for i, v in enumerate(prices))
     last_x, last_y = _x(n - 1), _y(prices[-1])
 
-    # Trend color
+    # Trend color — A-share convention: 红涨绿跌 (red up, green down).
     trend = prices[-1] - prices[0]
-    color = "#34d399" if trend > 0 else "#f87171" if trend < 0 else "#60a5fa"
+    color = "#f87171" if trend > 0 else "#34d399" if trend < 0 else "#60a5fa"
     fill_color = color.replace(")", ",0.15)").replace("#", "rgba(") if "#" in color else color
     # Simple hex to rgba for fill
     r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
@@ -1677,10 +1691,10 @@ def _price_ladder_svg(
 ) -> str:
     """Vertical price ladder — stop / current / entries / targets bands.
 
-    Direction-aware (added 2026-04-30): for SELL/SHORT/AVOID/VETO trades, stop
-    sits ABOVE current and the red "danger zone" must extend UPWARD from stop;
-    targets sit BELOW current. For BUY/LONG/HOLD, the original orientation is
-    kept (red below stop, targets above).
+    Direction-aware (added 2026-04-30): for SELL/SHORT trades, stop sits ABOVE
+    current and the red "danger zone" extends UPWARD from stop; targets sit BELOW
+    current. For BUY/LONG/HOLD (and AVOID/VETO non-participation), the original
+    orientation is kept (red below stop, targets above).
 
     Each entry/target is either a single float or a [low, high] tuple (price
     zone). Draws a labelled vertical axis with shaded zones. Gracefully
@@ -1689,7 +1703,10 @@ def _price_ladder_svg(
     Colour-blind safety: zones are labelled with ✖ / ● / ▲ so redundant with hue.
     """
     side_upper = (side or "BUY").upper()
-    is_short = side_upper in ("SELL", "SHORT", "AVOID", "VETO")
+    # AVOID/VETO mean "do not participate" (rule #5: AVOID≠SELL) — they are NOT
+    # short positions, so they must not draw a short-style red "loss zone" above
+    # the current price. Only genuine SELL/SHORT flips the ladder orientation.
+    is_short = side_upper in ("SELL", "SHORT")
     entries = [e for e in (entries or []) if e]
     targets = [t for t in (targets or []) if t]
     # Collect all numeric prices to determine range
@@ -1775,7 +1792,7 @@ def _price_ladder_svg(
 
     # Stop loss: red band — direction aware
     # BUY/LONG: red below stop (price drop = loss)
-    # SELL/SHORT/AVOID/VETO: red above stop (price rise = loss)
+    # SELL/SHORT: red above stop (price rise = loss). AVOID/VETO are not short.
     if stop_loss and stop_loss > 0:
         if is_short:
             _zone(float(stop_loss), hi, "var(--red)")
@@ -1941,9 +1958,10 @@ def _history_sparkline(
     area_d = path_d + f" L {pts[-1][0]:.1f},{pad + plot_h:.1f} L {pts[0][0]:.1f},{pad + plot_h:.1f} Z"
 
     _ACTION_COLORS = {
-        "BUY": "var(--green)",
-        "SELL": "var(--red)",
-        "VETO": "var(--red)",
+        # A-share action colors: 买入=红, 卖出=绿, VETO=紫.
+        "BUY": "var(--red)",
+        "SELL": "var(--green)",
+        "VETO": "var(--purple)",
         "HOLD": "var(--yellow)",
         "WAIT": "var(--yellow)",
     }
@@ -2015,32 +2033,137 @@ def _empty_state_v2(icon: str, title: str, hint: str = "", variant: str = "block
     return _empty_state(icon, title, hint)
 
 
-def _nav_bar(ticker: str, run_id: str, current_page: str) -> str:
+def _nav_bar(ticker: str, run_id: str, current_page: str, *, artifact_dir=None, artifact_exists=None) -> str:
     """Render cross-report navigation bar.
 
     Links between snapshot/research/audit/committee for the same run.
+    ``artifact_exists`` is a test hook for injecting artifact visibility.
     """
     if not run_id:
         return ""
-    from .report_renderer import _safe_filename
+    from ..report_index import safe_filename as _safe_filename
     safe_t = _safe_filename(ticker)
     short_id = run_id.replace("run-", "")[:12]
 
+    def _artifact_exists(href: str) -> bool:
+        from pathlib import Path
+
+        if artifact_exists is not None:
+            return bool(artifact_exists(href))
+        if artifact_dir:
+            return (Path(artifact_dir) / href).exists()
+        candidates = [
+            Path(href),
+            Path("data/reports").joinpath(href),
+        ]
+        return any(path.exists() for path in candidates)
+
     pages = []
     try:
-        from pathlib import Path
-        if Path("workbench.html").exists() or Path("data/reports/workbench.html").exists():
+        if _artifact_exists("workbench.html"):
             pages.append(("workbench", "工作台", "workbench.html"))
     except Exception:
         pass
-    pages.extend([
+    tier_pages = [
         ("snapshot", "结论", f"{safe_t}-run-{short_id}-snapshot.html"),
         ("research", "研究", f"{safe_t}-run-{short_id}-research.html"),
         ("audit", "审计", f"{safe_t}-run-{short_id}-audit.html"),
-        ("committee", "辩论", f"{safe_t}-{run_id}-committee.html"),
-    ])
+    ]
+    committee_href = f"{safe_t}-{run_id}-committee.html"
+    if current_page == "committee" or _artifact_exists(committee_href):
+        tier_pages.append(("committee", "辩论", committee_href))
+    pages.extend(tier_pages)
     links = []
     for key, label, href in pages:
         cls = ' class="active"' if key == current_page else ""
         links.append(f'<a href="{_esc(href)}"{cls}>{label}</a>')
     return f'<nav class="cross-nav">{"".join(links)}</nav>'
+
+
+def _replace_cross_nav_block(html: str, nav_html: str, *, path: str = "") -> str:
+    nav_block = _cross_nav_block(nav_html)
+    new_html, count = _CROSS_NAV_BLOCK_RE.subn(nav_block, html, count=1)
+    if count:
+        return new_html
+    new_html, count = _LEGACY_CROSS_NAV_RE.subn(nav_block, html, count=1)
+    if count:
+        logger.info("cross-nav legacy block upgraded in %s", path or "<html>")
+        return new_html
+    new_html, count = _CONTAINER_OPEN_RE.subn(lambda m: m.group(1) + nav_block + "\n", html, count=1)
+    if count:
+        logger.warning("cross-nav sentinel missing; inserted nav block into %s", path or "<html>")
+        return new_html
+    logger.warning("cross-nav refresh skipped; no nav anchor found in %s", path or "<html>")
+    return html
+
+
+def _atomic_write_text(path, text: str) -> None:
+    from pathlib import Path
+
+    p = Path(path)
+    mode = _replacement_file_mode(p)
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=f".{p.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, p)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            logger.debug("failed to remove temporary file %s after atomic write failure", tmp, exc_info=True)
+        raise
+
+
+def _replacement_file_mode(path) -> int:
+    """Preserve an existing file's permissions; otherwise use normal text defaults."""
+    from pathlib import Path
+    import stat
+
+    p = Path(path)
+    try:
+        return stat.S_IMODE(p.stat().st_mode)
+    except OSError:
+        current = os.umask(0)
+        os.umask(current)
+        return 0o666 & ~current
+
+
+def refresh_report_nav(ticker: str, run_id: str, artifact_dir) -> list[str]:
+    """Refresh cross-report nav in already-written run-scoped HTML files."""
+    if not run_id or not artifact_dir:
+        return []
+    from pathlib import Path
+    from ..report_index import safe_filename as _safe_filename
+
+    out = Path(artifact_dir)
+    safe_t = _safe_filename(ticker)
+    short_id = run_id.replace("run-", "")[:12]
+    targets = {
+        "snapshot": out / f"{safe_t}-run-{short_id}-snapshot.html",
+        "research": out / f"{safe_t}-run-{short_id}-research.html",
+        "audit": out / f"{safe_t}-run-{short_id}-audit.html",
+    }
+    updated: list[str] = []
+    for page, path in targets.items():
+        if not path.exists():
+            continue
+        try:
+            html = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            logger.warning("cross-nav refresh read failed for %s", path, exc_info=True)
+            continue
+        nav = _nav_bar(ticker, run_id, page, artifact_dir=out)
+        new_html = _replace_cross_nav_block(html, nav, path=str(path))
+        if new_html == html:
+            continue
+        try:
+            _atomic_write_text(path, new_html)
+        except Exception:
+            logger.warning("cross-nav refresh write failed for %s", path, exc_info=True)
+            continue
+        updated.append(str(path))
+    return updated

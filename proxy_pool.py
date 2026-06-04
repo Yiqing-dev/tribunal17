@@ -71,7 +71,7 @@ def _proxy_config() -> Optional[Dict[str, Any]]:
     auth = os.environ.get("PROXY_AUTH", "").strip()
     return {
         "api_url": url,
-        "timeout": int(os.environ.get("PROXY_TIMEOUT", "20")),
+        "timeout": int(os.environ.get("PROXY_TIMEOUT", "60")),
         "auth": auth if auth else None,
     }
 

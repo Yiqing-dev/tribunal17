@@ -369,8 +369,8 @@ _RECAP_CSS = """
   padding: .3rem .7rem; border-radius: 8px;
   font-size: .82rem; font-weight: 700;
 }
-.mkt-badge.buy  { color: var(--green); background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.2); }
-.mkt-badge.sell { color: var(--red);   background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.2); }
+.mkt-badge.buy  { color: var(--red);   background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.2); }
+.mkt-badge.sell { color: var(--green); background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.2); }
 .mkt-badge.hold { color: var(--yellow); background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.18); }
 .mkt-row-label { font-size: .78rem; color: var(--muted); text-align: right; white-space: nowrap; }
 .mkt-row-val { font-size: .85rem; }
@@ -1156,7 +1156,7 @@ def _render_recap_js(data: dict) -> str:
         var pct = node.pct_change || 0;
         var pctEl = document.getElementById('sd-pct');
         pctEl.textContent = (pct > 0 ? '+' : '') + pct.toFixed(2) + '%';
-        pctEl.style.color = pct > 0 ? 'var(--green)' : pct < 0 ? 'var(--red)' : 'var(--muted)';
+        pctEl.style.color = pct > 0 ? 'var(--red)' : pct < 0 ? 'var(--green)' : 'var(--muted)';
 
         document.getElementById('sd-turnover').textContent = (node.turnover_yi || 0).toFixed(1) + '亿';
 

@@ -23,10 +23,11 @@ _BASE_CSS = """
   --surface: rgba(14, 24, 40, 0.92);
   --accent: #f59e0b;
   --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
-  --signal-buy: var(--green);
-  --signal-sell: var(--red);
+  /* A-share action convention: 买入/看多 = 红, 卖出/看空 = 绿, VETO = 紫. */
+  --signal-buy: var(--red);
+  --signal-sell: var(--green);
   --signal-hold: var(--yellow);
-  --signal-veto: var(--red);
+  --signal-veto: var(--purple);
   --state-success: var(--green);
   --state-danger: var(--red);
   --state-warning: var(--yellow);
@@ -213,12 +214,23 @@ h3 {
   font-family: var(--mono); color: var(--white); line-height: 1;
 }
 .kpi-label { display: block; font-size: .72rem; color: var(--muted); margin-top: .35rem; letter-spacing: .04em; }
-.kpi.buy .kpi-val { color: var(--green); }
-.kpi.buy::before { background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.8), transparent); }
-.kpi.sell .kpi-val, .kpi.veto .kpi-val { color: var(--red); }
-.kpi.sell::before, .kpi.veto::before { background: linear-gradient(90deg, transparent, rgba(248, 113, 113, 0.8), transparent); }
+/* Action colors (A-share): 买入=红, 卖出=绿, VETO=紫. */
+.kpi.buy .kpi-val { color: var(--red); }
+.kpi.buy::before { background: linear-gradient(90deg, transparent, rgba(248, 113, 113, 0.8), transparent); }
+.kpi.sell .kpi-val { color: var(--green); }
+.kpi.sell::before { background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.8), transparent); }
+.kpi.veto .kpi-val { color: var(--purple); }
+.kpi.veto::before { background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.8), transparent); }
 .kpi.hold .kpi-val { color: var(--yellow); }
 .kpi.hold::before { background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.8), transparent); }
+/* Confidence STRENGTH — direction-neutral (blue/amber/grey), NOT buy/sell, so
+   the A-share action flip (买入=红) never makes a high-confidence value read as
+   bearish (AQ-F1). High=strong blue, mid=amber, weak=muted grey. */
+.kpi.conf-strong .kpi-val { color: var(--blue); }
+.kpi.conf-strong::before { background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.8), transparent); }
+.kpi.conf-mid .kpi-val { color: var(--yellow); }
+.kpi.conf-mid::before { background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.8), transparent); }
+.kpi.conf-weak .kpi-val { color: var(--muted); }
 
 /* ── Badges (pill) ── */
 .badge {
@@ -227,9 +239,14 @@ h3 {
   font-size: .74rem; font-weight: 600;
   backdrop-filter: blur(8px);
 }
-.badge-buy { background: rgba(52, 211, 153, 0.14); color: var(--green); }
+.badge-buy { background: rgba(248, 113, 113, 0.14); color: var(--red); }
 .badge-hold { background: rgba(251, 191, 36, 0.14); color: var(--yellow); }
-.badge-sell, .badge-veto { background: rgba(248, 113, 113, 0.14); color: var(--red); }
+.badge-sell { background: rgba(52, 211, 153, 0.14); color: var(--green); }
+.badge-veto { background: rgba(167, 139, 250, 0.14); color: var(--purple); }
+/* Confidence-strength badges — direction-neutral (see .kpi.conf-* above). */
+.badge-conf-strong { background: rgba(96, 165, 250, 0.14); color: var(--blue); }
+.badge-conf-mid { background: rgba(251, 191, 36, 0.14); color: var(--yellow); }
+.badge-conf-weak { background: rgba(143, 163, 184, 0.14); color: var(--muted); }
 .badge-high { background: rgba(248, 113, 113, 0.14); color: var(--red); }
 .badge-medium { background: rgba(251, 191, 36, 0.14); color: var(--yellow); }
 .badge-low { background: rgba(96, 165, 250, 0.12); color: var(--muted); }
@@ -246,8 +263,8 @@ h3 {
 
 /* ── Bull/Bear bar ── */
 .bb-bar { display: flex; height: 24px; border-radius: 999px; overflow: hidden; margin: .5rem 0; background: rgba(255,255,255,0.04); }
-.bb-bull { background: linear-gradient(90deg, rgba(52, 211, 153, 0.85), rgba(52, 211, 153, 0.55)); }
-.bb-bear { background: linear-gradient(90deg, rgba(248, 113, 113, 0.55), rgba(248, 113, 113, 0.85)); }
+.bb-bull { background: linear-gradient(90deg, rgba(248, 113, 113, 0.85), rgba(248, 113, 113, 0.55)); }
+.bb-bear { background: linear-gradient(90deg, rgba(52, 211, 153, 0.55), rgba(52, 211, 153, 0.85)); }
 .bb-label { font-size: .75rem; color: var(--muted); display: flex; justify-content: space-between; }
 
 /* ── Probability bar ── */
@@ -377,10 +394,12 @@ li { margin-bottom: .3rem; font-size: .9rem; }
 .battle-plan::before {
   content: ""; position: absolute; inset: 0 auto auto 0;
   width: 4px; height: 100%; border-radius: 20px 0 0 20px;
-  background: var(--green);
+  background: var(--red);
 }
-.battle-plan.sell-plan::before { background: var(--red); }
+.battle-plan.sell-plan::before { background: var(--green); }
 .battle-plan.hold-plan::before { background: var(--yellow); }
+/* AVOID/VETO = 不参与 → neutral grey accent, never the red sell bar (rule #5). */
+.battle-plan.veto-plan::before { background: var(--muted); }
 .bp-header { display: flex; align-items: center; gap: .6rem; margin-bottom: .75rem; flex-wrap: wrap; }
 .bp-side { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; }
 .bp-rationale { font-size: .88rem; color: var(--muted); margin-bottom: .75rem; line-height: 1.5; }
@@ -839,8 +858,8 @@ details.audit-group[open] .audit-group-head { border-radius: 14px 14px 0 0; }
   /* SVG visibility */
   svg text{fill:#333!important}
   svg polyline,svg line{stroke:#555!important}
-  .bb-bull{background:#34d399!important} .bb-bear{background:#f87171!important}
-  .strength-bull{background:#34d399!important} .strength-bear{background:#f87171!important}
+  .bb-bull{background:#f87171!important} .bb-bear{background:#34d399!important}
+  .strength-bull{background:#f87171!important} .strength-bear{background:#34d399!important}
 }
 """
 

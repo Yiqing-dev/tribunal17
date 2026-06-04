@@ -2,15 +2,19 @@
 
 Usage:
     python -m subagent_pipeline.batch_process
+    python -m subagent_pipeline.batch_process --tickers 600519,000858
+    python -m subagent_pipeline.batch_process --tickers-file watchlist.txt
+    python -m subagent_pipeline.batch_process "论衡十七司，升堂！【600519，000858】"
 """
 
+import argparse
 import json
 import logging
 import os
 import re
 import tempfile
-from datetime import date
 from pathlib import Path
+from typing import Sequence
 from .bridge import (
     generate_report,
     parse_macro_output,
@@ -18,7 +22,10 @@ from .bridge import (
     parse_sector_output,
     assemble_market_context,
     format_market_context_block,
+    StaleMarketDataError,
 )
+from .config import _today, get_env_bool
+from .watchlist import WatchlistItem, load_watchlist, normalize_watchlist_ticker, save_watchlist
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +78,7 @@ def process_one(ticker: str, name: str, text: str,
         outputs=outputs,
         ticker=ticker,
         ticker_name=name,
-        trade_date=trade_date or date.today().isoformat(),
+        trade_date=trade_date or _today(),
         output_dir=str(REPORTS_DIR),
         storage_dir=str(_REPLAYS_DIR),
         market_context_block=market_context_block,
@@ -91,8 +98,14 @@ def _load_market_agent_outputs(results_dir: Path) -> dict:
     return agents
 
 
-def _build_market_context(agent_outputs: dict, trade_date: str) -> dict:
-    """Parse market agent outputs and assemble market_context."""
+def _build_market_context(agent_outputs: dict, trade_date: str,
+                          *, strict_date_check: bool = False) -> dict:
+    """Parse market agent outputs and assemble market_context.
+
+    When ``strict_date_check`` is True, a date mismatch in the L1 outputs raises
+    ``StaleMarketDataError`` instead of silently injecting yesterday's market
+    data into today's per-stock reports (XC-03).
+    """
     macro_text = agent_outputs.get("macro_analyst", "")
     breadth_text = agent_outputs.get("market_breadth_agent", "")
     sector_text = agent_outputs.get("sector_rotation_agent", "")
@@ -101,6 +114,7 @@ def _build_market_context(agent_outputs: dict, trade_date: str) -> dict:
     sector = parse_sector_output(sector_text)
     return assemble_market_context(
         macro, breadth, sector, trade_date,
+        strict_date_check=strict_date_check,
         raw_texts={
             "macro": macro_text,
             "breadth": breadth_text,
@@ -118,14 +132,23 @@ def _build_ths_to_sw_map() -> dict:
     return _impl()
 
 
-def process_all(trade_date: str = ""):
+def process_all(
+    trade_date: str = "",
+    tickers: Sequence[WatchlistItem | tuple[str, str] | str] | None = None,
+):
     """Process all ticker output files in agent_artifacts/results/.
 
     Args:
         trade_date: Override trade date (YYYY-MM-DD). Defaults to today.
     """
-    today = trade_date or date.today().isoformat()
+    today = trade_date or _today()
+    active_tickers = _resolve_tickers(tickers)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    if tickers:
+        save_watchlist(
+            [WatchlistItem(normalize_watchlist_ticker(ticker), name) for ticker, name in active_tickers],
+            REPORTS_DIR,
+        )
     # Structured degradation tracker: {step: {status, fallback, error}}
     _degradations: list = []
 
@@ -136,7 +159,7 @@ def process_all(trade_date: str = ""):
     market_snapshot = None
     market_context = {}
     market_context_block = ""
-    watchlist = [t for t, _ in TICKERS]
+    watchlist = [t for t, _ in active_tickers]
 
     try:
         from .akshare_collector import collect_market_snapshot
@@ -191,10 +214,33 @@ def process_all(trade_date: str = ""):
     market_agent_outputs = _load_market_agent_outputs(RESULTS_DIR)
     if market_agent_outputs:
         print(f"  [MARKET] Found {len(market_agent_outputs)} market agent outputs")
-        market_context = _build_market_context(market_agent_outputs, today)
-        market_context_block = format_market_context_block(market_context)
-        print(f"  [MARKET] Context: regime={market_context.get('regime')}, "
-              f"breadth={market_context.get('breadth_state')}")
+        # XC-03: reject STALE L1 outputs (date mismatch) rather than silently
+        # injecting yesterday's market data into every stock report today.
+        _strict = get_env_bool("TA_STRICT_DATE_CHECK", True)
+        # XC-STRICT-1: compare against the effective TRADING day. On a non-trading
+        # day (weekend/holiday) the L1 market data legitimately carries the last
+        # trading day's date — collect_market_snapshot rolls likewise — so don't
+        # false-reject it. Only genuinely stale (older) data is then rejected.
+        _mkt_date = today
+        try:
+            from .akshare_collector import _is_cn_trading_day, _last_trading_day
+            if not _is_cn_trading_day(today):
+                _mkt_date = _last_trading_day(today) or today
+        except Exception:
+            pass
+        try:
+            market_context = _build_market_context(
+                market_agent_outputs, _mkt_date, strict_date_check=_strict)
+            market_context_block = format_market_context_block(market_context)
+            print(f"  [MARKET] Context: regime={market_context.get('regime')}, "
+                  f"breadth={market_context.get('breadth_state')}")
+        except StaleMarketDataError as e:
+            print(f"  [MARKET] STALE L1 data rejected ({e}); "
+                  f"skipping today's market context (no stale injection)")
+            _track_degradation("market_context", e,
+                               "stale L1 outputs rejected; no market context injected")
+            market_context = {}
+            market_context_block = ""
 
     # --- Step 3: Persist market_context ---
     if market_context is not None:
@@ -216,7 +262,7 @@ def process_all(trade_date: str = ""):
 
     # --- Step 4: Process individual tickers ---
     results = {}
-    for ticker, name in TICKERS:
+    for ticker, name in active_tickers:
         path = RESULTS_DIR / f"{ticker}_output.txt"
         if not path.exists():
             print(f"  [SKIP] {ticker} {name}: {path} not found")
@@ -287,6 +333,52 @@ def process_all(trade_date: str = ""):
         except Exception as e:
             print(f"  [WARN] Signal ledger append failed: {e}")
 
+    # --- Step 6e: Post-run health check (silent-failure detection) ---
+    # XC-01: previously this engine was written but never called in production.
+    # Runs after the ledger append (traces exist; flip detection compares vs the
+    # strictly-prior ledger signal — see check_batch_health/XC-05).
+    if run_ids:
+        try:
+            from .health_check import check_batch_health
+            health = check_batch_health(
+                today_run_ids=run_ids, storage_dir=str(_REPLAYS_DIR))
+            for w in health.get("warnings", []):
+                print(f"  [HEALTH] warning: {w}")
+            if health.get("alerts"):
+                print(f"  [HEALTH] ⚠ {len(health['alerts'])} ALERT(S):")
+                for a in health["alerts"]:
+                    print(f"           ALERT: {a}")
+                _track_degradation(
+                    "health_check", "; ".join(health["alerts"])[:200], "alerts raised")
+            elif not health.get("warnings"):
+                print("  [HEALTH] OK — no anomalies detected")
+        except Exception as e:
+            print(f"  [WARN] Health check failed: {e}")
+
+    # --- Step 6f: Analysis-process-quality audit (local, cheap) ---
+    # Wires analysis_audit (was written but never called) — evidence coverage,
+    # PM citation rate, falsifiability across today's runs.
+    if run_ids:
+        try:
+            from .analysis_audit import audit_batch
+            audit = audit_batch(run_ids, storage_dir=str(_REPLAYS_DIR))
+            ap = audit.save_json(str(REPORTS_DIR))
+            print(f"  [AUDIT] process quality: evidence {audit.evidence_coverage_pct:.0f}% · "
+                  f"PM-cites {audit.pm_evidence_pct:.0f}% · falsifiable {audit.falsifiability_pct:.0f}% → {ap}")
+        except Exception as e:
+            print(f"  [WARN] Analysis audit failed: {e}")
+
+    # --- Step 6g: Rolling drift monitor (per-run; needs network for backtest) ---
+    # Wires monitoring.compute_rolling_monitor (was written but never called) —
+    # rolling per-regime/action/pillar accuracy from the ledger. Best-effort: a
+    # network/akshare failure must not block report generation.
+    try:
+        from .monitoring import compute_rolling_monitor
+        mon = compute_rolling_monitor(today, storage_dir=str(_REPLAYS_DIR))
+        print(f"  [MONITOR] rolling drift report written ({mon.trade_date})")
+    except Exception as e:
+        print(f"  [WARN] Rolling monitor failed (non-fatal): {e}")
+
     # --- Step 6c: Generate brief report ---
     if run_ids:
         try:
@@ -306,9 +398,12 @@ def process_all(trade_date: str = ""):
     if run_ids:
         try:
             from .renderers.report_renderer import generate_workbench_report
+            names = dict(active_tickers)
             workbench_path = generate_workbench_report(
                 output_dir=str(REPORTS_DIR),
                 storage_dir=str(_REPLAYS_DIR),
+                tickers=[t for t, _ in active_tickers],
+                ticker_names=names,
             )
             print(f"  [WORKBENCH] {workbench_path}")
         except Exception as e:
@@ -330,10 +425,11 @@ def process_all(trade_date: str = ""):
             print(f"  [WARN] Market report generation failed: {e}")
 
     print(f"\n{'=' * 60}")
-    print(f"  Processed {len(results)}/{len(TICKERS)} tickers")
+    print(f"  Processed {len(results)}/{len(active_tickers)} tickers")
     print(f"{'=' * 60}")
+    name_lookup = dict(active_tickers)
     for ticker, paths in results.items():
-        name = dict(TICKERS).get(ticker, "")
+        name = name_lookup.get(ticker, "")
         print(f"  {ticker} {name}:")
         for tier, p in paths.items():
             if tier != "run_id":
@@ -349,7 +445,20 @@ def process_all(trade_date: str = ""):
     if workbench_path:
         print(f"  [WORKBENCH] {workbench_path}")
 
-    # --- Degradation summary ---
+    # --- Degradation summary (D1: persist provenance, don't only print) ---
+    # Always write a record so a degraded run's data-provenance is auditable
+    # after the fact, not just visible in transient console output.
+    try:
+        _REPLAYS_DIR.mkdir(parents=True, exist_ok=True)
+        deg_path = _REPLAYS_DIR / f"degradations_{today}.json"
+        _fd, _tmp = tempfile.mkstemp(dir=str(_REPLAYS_DIR), suffix=".tmp", prefix=".deg-")
+        with os.fdopen(_fd, "w", encoding="utf-8") as _f:
+            json.dump({"trade_date": today, "count": len(_degradations),
+                       "degradations": _degradations}, _f,
+                      ensure_ascii=False, indent=2, allow_nan=False)
+        os.replace(_tmp, str(deg_path))
+    except Exception as _e:
+        print(f"  [WARN] degradation record write failed: {_e}")
     if _degradations:
         print(f"\n⚠ 降级矩阵 ({len(_degradations)} 项):")
         for d in _degradations:
@@ -360,5 +469,59 @@ def process_all(trade_date: str = ""):
     return results
 
 
+def _resolve_tickers(
+    tickers: Sequence[WatchlistItem | tuple[str, str] | str] | None,
+) -> list[tuple[str, str]]:
+    if not tickers:
+        return list(TICKERS)
+    out: list[tuple[str, str]] = []
+    for item in tickers:
+        if isinstance(item, WatchlistItem):
+            out.append((_bare_ticker(item.ticker), item.name))
+        elif isinstance(item, tuple):
+            ticker = _bare_ticker(str(item[0] if item else "").strip())
+            name = str(item[1] if len(item) > 1 else "").strip()
+            out.append((ticker, name))
+        else:
+            out.append((_bare_ticker(str(item).strip()), ""))
+    return [(t, n) for t, n in out if t]
+
+
+def _bare_ticker(ticker: str) -> str:
+    normalized = normalize_watchlist_ticker(ticker)
+    return normalized.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Build HTML reports from existing agent outputs.")
+    parser.add_argument("--trade-date", default="", help="Override trade date (YYYY-MM-DD).")
+    parser.add_argument(
+        "--tickers",
+        nargs="+",
+        help="Daily ticker list, separated by commas or spaces. Example: --tickers 600519,000858",
+    )
+    parser.add_argument(
+        "--tickers-file",
+        help="Path to a daily watchlist file. Lines may be '600519' or '600519 贵州茅台'.",
+    )
+    parser.add_argument(
+        "command_text",
+        nargs="*",
+        help="Optional launch phrase, e.g. 论衡十七司，升堂！【600519，000858】",
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    watchlist = load_watchlist(
+        tickers=args.tickers,
+        tickers_file=args.tickers_file,
+        command_text=" ".join(args.command_text),
+    )
+    process_all(trade_date=args.trade_date, tickers=watchlist or None)
+    return 0
+
+
 if __name__ == "__main__":
-    process_all()
+    raise SystemExit(main())

@@ -31,6 +31,7 @@ from .shared_utils import (
     _trend_arrow, _sparkline_svg, _nav_bar,
     _price_ladder_svg, _pillar_bar, _history_sparkline,
     _confidence_ring_svg, _priority_chip, _score_pill,
+    normalize_confidence_value,
     _delta_arrow, _section_divider, _format_finance_num,
     _kline_with_signals_svg, _pe_label_html,
     _render_industry_compare_card, _render_hero_industry_kpis,
@@ -247,7 +248,7 @@ def _render_checklist(view: SnapshotView) -> str:
 
     return f"""
     <div class="card">
-      <h3>\u5206\u6790\u7ef4\u5ea6\u6838\u67e5</h3>
+      <h3>四个维度怎么看</h3>
       <div style="display:flex;gap:1.2rem;align-items:flex-start;flex-wrap:wrap">
         <div style="flex:1;min-width:200px"><div class="checklist">{items}</div></div>
         {radar_html}
@@ -271,7 +272,7 @@ def _render_risk_debate_summary(view: SnapshotView) -> str:
     for rd in view.risk_debate_summary:
         stance = _esc(rd.get("stance", ""))
         rec = rd.get("recommendation", "").upper()
-        rec_class = "buy" if rec == "BUY" else ("sell" if rec in ("SELL", "VETO") else "hold")
+        rec_class = "buy" if rec == "BUY" else ("veto" if rec == "VETO" else ("sell" if rec == "SELL" else "hold"))
         view_label = _esc(_VIEW_LABEL.get(rec, rec or "\u2014"))
         risk = _esc(str(rd.get("key_risk", "") or "\u2014"))
         cols += (
@@ -283,7 +284,7 @@ def _render_risk_debate_summary(view: SnapshotView) -> str:
         )
     return f"""
     <div class="card">
-      <h3>\u98ce\u63a7\u59d4\u5458\u4f1a \u00b7 \u4e09\u6d3e\u89c6\u89d2 <span style="font-size:.65rem;color:var(--muted);font-weight:500;margin-left:.4rem">\u89c2\u70b9\u5bf9\u7167\uff0c\u975e\u4ed3\u4f4d\u6307\u4ee4</span></h3>
+      <h3>风险视角对照 <span style="font-size:.65rem;color:var(--muted);font-weight:500;margin-left:.4rem">不同假设下的观点差异</span></h3>
       <div class="risk-debate-row">{cols}</div>
     </div>"""
 
@@ -298,18 +299,22 @@ def _render_battle_plan(view: SnapshotView) -> str:
         return ""
 
     side = (tc.get("side") or tc.get("action") or tp.get("bias", "")).upper()
-    confidence = tc.get("confidence", tp.get("confidence", 0))
-    if isinstance(confidence, str):
-        _CONF_MAP = {"high": 0.8, "med": 0.5, "medium": 0.5, "low": 0.2,
-                     "高": 0.8, "中": 0.5, "低": 0.2}
-        mapped = _CONF_MAP.get(confidence.strip().lower())
-        if mapped is not None:
-            confidence = mapped
-        else:
-            try:
-                confidence = float(confidence)
-            except (ValueError, TypeError):
-                confidence = 0
+    # Reconcile with the aggregated, authoritative trace direction: a risk VETO
+    # dominates a stale/contradictory trade-card side, and the trace-level action
+    # wins over a conflicting card side — so the card can never show a bullish
+    # plan for a vetoed/sold signal (SIG-004; AVOID≠SELL rule #5).
+    if view.was_vetoed or view.research_action == "VETO":
+        side = "VETO"
+    elif view.research_action in ("BUY", "SELL", "HOLD") and view.research_action != side:
+        side = view.research_action
+    # Canonical normalizer: prevents un-clamped values (e.g. "72" → 7200%) and
+    # keeps display in sync with parsed confidence. Missing → -1.0 → "—" badge.
+    confidence = normalize_confidence_value(
+        tc.get("confidence", tp.get("confidence"))
+    )
+    # VETO-02: don't show the (bullish) trade-card confidence on a vetoed card.
+    if side in ("AVOID", "VETO"):
+        confidence = -1.0
     rationale = tc.get("rationale", "")
     risk_score = tc.get("risk_score", 0)
     if isinstance(risk_score, str):
@@ -318,23 +323,31 @@ def _render_battle_plan(view: SnapshotView) -> str:
         except (ValueError, TypeError):
             risk_score = 0
 
-    # Determine border color class
-    plan_class = "sell-plan" if side in ("SHORT", "SELL", "AVOID", "VETO") else (
-        "hold-plan" if side in ("WAIT", "HOLD") else ""
-    )
+    # Border color class. AVOID/VETO = "do not participate" \u2192 neutral styling,
+    # NOT the red sell-plan (rule #5: AVOID\u2260SELL).
+    if side in ("SHORT", "SELL"):
+        plan_class = "sell-plan"
+    elif side in ("AVOID", "VETO"):
+        plan_class = "veto-plan"
+    elif side in ("WAIT", "HOLD"):
+        plan_class = "hold-plan"
+    else:
+        plan_class = ""
     emoji = get_signal_emoji(
-        "VETO" if side == "VETO" else (
-        "SELL" if side in ("SHORT", "SELL", "AVOID") else (
+        "VETO" if side in ("VETO", "AVOID") else (
+        "SELL" if side in ("SHORT", "SELL") else (
         "HOLD" if side in ("WAIT", "HOLD") else "BUY"
     )))
 
     # Research-tier language (NOT trading instruction). These describe the
     # weight of evidence for downstream decision-makers, not orders.
+    # AVOID/VETO are non-participation, NOT bearish (\u504f\u7a7a) \u2014 rule #5.
     side_label = {"LONG": "\u504f\u591a", "SHORT": "\u504f\u7a7a", "WAIT": "\u4e2d\u6027\u89c2\u5bdf",
-                  "BUY": "\u504f\u591a", "SELL": "\u504f\u7a7a", "AVOID": "\u504f\u7a7a",
-                  "HOLD": "\u4e2d\u6027\u89c2\u5bdf", "VETO": "\u8bc1\u636e\u4e0d\u8db3"}.get(side, side)
+                  "BUY": "\u504f\u591a", "SELL": "\u504f\u7a7a", "AVOID": "\u56de\u907f\u00b7\u4e0d\u53c2\u4e0e",
+                  "HOLD": "\u4e2d\u6027\u89c2\u5bdf", "VETO": "\u98ce\u63a7\u5426\u51b3\u00b7\u4e0d\u53c2\u4e0e"}.get(side, side)
     if confidence >= 0:
-        conf_cls = "buy" if confidence >= 0.7 else ("hold" if confidence >= 0.4 else "sell")
+        # Direction-neutral confidence tiers (not buy/sell) \u2014 AQ-F1.
+        conf_cls = "conf-strong" if confidence >= 0.7 else ("conf-mid" if confidence >= 0.4 else "conf-weak")
         conf_badge = f'<span class="badge badge-{conf_cls}">\u7f6e\u4fe1\u5ea6 {confidence:.0%}</span>'
     else:
         conf_badge = '<span class="badge">\u7f6e\u4fe1\u5ea6 \u2014</span>'
@@ -371,11 +384,19 @@ def _render_battle_plan(view: SnapshotView) -> str:
         else:
             rationale_html = f'<div class="bp-rationale">{_esc(rationale_clean)}</div>'
 
+    # VETO-01: AVOID/VETO means "do not participate" — the card must NOT show any
+    # participation price levels (entry / stop / target), only a neutral note.
+    _no_levels = side in ("AVOID", "VETO")
+
     # Entry setups table
-    setups = tp.get("entry_setups", [])
+    setups = [] if _no_levels else tp.get("entry_setups", [])
     if not isinstance(setups, list):
         setups = []
     setup_html = ""
+    if _no_levels:
+        setup_html = ('<div class="tp-section-title">参与价位</div>'
+                      '<div style="font-size:.85rem;color:var(--muted);">'
+                      '因风控否决 / 回避，本研究不提供参与价位（不参与）。</div>')
     if setups:
         rows = ""
         for s in setups[:3]:
@@ -389,14 +410,14 @@ def _render_battle_plan(view: SnapshotView) -> str:
             condition = _esc(s.get("condition", ""))
             rows += f"<tr><td>{label}</td><td class='mono num'>{zone_str}</td><td>{condition}</td></tr>"
         setup_html = f"""
-        <div class="tp-section-title">\u4e70\u5165\u8bbe\u7f6e</div>
+        <div class="tp-section-title">关注区间</div>
         <table class="tp-table">
-          <thead><tr><th>\u7c7b\u578b</th><th>\u4ef7\u683c\u533a\u95f4</th><th>\u89e6\u53d1\u6761\u4ef6</th></tr></thead>
+          <thead><tr><th>情形</th><th>价格区间</th><th>需要看到的条件</th></tr></thead>
           <tbody>{rows}</tbody>
         </table>"""
 
-    # Stop loss (may be dict or scalar)
-    stop_raw = tp.get("stop_loss") or {}
+    # Stop loss (may be dict or scalar) — suppressed for AVOID/VETO (VETO-01).
+    stop_raw = {} if _no_levels else (tp.get("stop_loss") or {})
     if isinstance(stop_raw, (int, float)):
         stop = {"price": float(stop_raw)}
     elif isinstance(stop_raw, dict):
@@ -412,12 +433,12 @@ def _render_battle_plan(view: SnapshotView) -> str:
     if sl_price > 0:
         sl_html = (
             f'<div class="tp-row tp-stop"><span class="tp-label">'
-            f'<span title="\u4ef7\u683c\u7a81\u7834\u6b64\u6c34\u5e73\u65f6\uff0c\u672c\u7814\u7a76\u7684\u6838\u5fc3\u8bba\u636e\u5931\u6548">\u4e0b\u884c\u8b66\u6212\u6c34\u5e73</span></span>'
+            f'<span title="跌破此水平时，需要重新检查本报告的核心假设">下行警戒位</span></span>'
             f'<span class="mono num" style="color:var(--red)">{sl_price:.2f}</span></div>'
         )
 
-    # Take profit (may be list of dicts, list of strings, float, or scalar)
-    targets_raw = tp.get("take_profit", [])
+    # Take profit — suppressed for AVOID/VETO (VETO-01).
+    targets_raw = [] if _no_levels else tp.get("take_profit", [])
     if isinstance(targets_raw, (int, float)):
         targets_raw = [{"label": "\u76ee\u6807", "price_zone": [targets_raw]}]
     elif not isinstance(targets_raw, list):
@@ -472,7 +493,7 @@ def _render_battle_plan(view: SnapshotView) -> str:
     review_html = _compact_list("重新评估触发", tp.get("review_triggers", []), "var(--blue)")
     time_stop = tp.get("time_stop", "")
     time_stop_html = (
-        f'<div class="tp-row"><span class="tp-label">时间止损</span>'
+        f'<div class="tp-row"><span class="tp-label">观察期限</span>'
         f'<span class="tp-detail">{_esc(str(time_stop))}</span></div>'
         if time_stop else ""
     )
@@ -485,7 +506,7 @@ def _render_battle_plan(view: SnapshotView) -> str:
         risk_lbl = "\u9ad8" if risk_score >= 7 else ("\u4e2d" if risk_score >= 4 else "\u4f4e")
         gauge_html = f"""
         <div style="margin-top:.5rem;">
-          <div style="font-size:.8rem;color:var(--muted)">\u8bba\u636e\u8b66\u793a\u7b49\u7ea7 \u00b7 {risk_lbl} ({risk_score}/10)</div>
+          <div style="font-size:.8rem;color:var(--muted)">风险提示等级 · {risk_lbl} ({risk_score}/10)</div>
           <div class="bp-gauge"><div class="bp-gauge-fill" style="width:{gauge_pct}%;background:{gauge_color}"></div></div>
         </div>"""
 
@@ -497,13 +518,17 @@ def _render_battle_plan(view: SnapshotView) -> str:
         current_price = 0.0
     ladder_entries = [s.get("price_zone") for s in setups if isinstance(s, dict)]
     ladder_targets = [t.get("price_zone") for t in targets_raw if isinstance(t, dict)]
-    ladder_svg_raw = _price_ladder_svg(
-        stop_loss=sl_price,
-        entries=ladder_entries,
-        targets=ladder_targets,
-        current=current_price,
-        side=side,
-    )
+    if side in ("AVOID", "VETO"):
+        # Non-participation (rule #5): no directional entry/stop/target ladder.
+        ladder_svg_raw = ""
+    else:
+        ladder_svg_raw = _price_ladder_svg(
+            stop_loss=sl_price,
+            entries=ladder_entries,
+            targets=ladder_targets,
+            current=current_price,
+            side=side,
+        )
     if ladder_svg_raw:
         ladder_svg = (
             f'<div class="bp-ladder" style="margin-top:.6rem;display:flex;justify-content:center">'
@@ -513,7 +538,7 @@ def _render_battle_plan(view: SnapshotView) -> str:
 
     return f"""
     <div class="card battle-plan {plan_class}">
-      <h3>\u7814\u7a76\u8981\u70b9 \u00b7 \u5173\u952e\u76d1\u6d4b\u6c34\u5e73 <span style="font-size:.65rem;color:var(--muted);font-weight:500;margin-left:.4rem">\u4ec5\u4f9b\u5206\u6790\u53c2\u8003\uff0c\u975e\u4ea4\u6613\u6307\u4ee4</span></h3>
+      <h3>观察计划 · 关键价格与事件 <span style="font-size:.65rem;color:var(--muted);font-weight:500;margin-left:.4rem">仅供分析参考</span></h3>
       {header}
       {rationale_html}
       <div class="bp-body" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1.2rem;align-items:start">
@@ -589,7 +614,7 @@ def _render_signal_history(view: SnapshotView) -> str:
 
 # ── Tier 1: Snapshot ─────────────────────────────────────────────────────
 
-def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
+def render_snapshot(view: SnapshotView, skip_vendors: bool = False, *, artifact_dir=None) -> str:
     """Render Tier 1 Snapshot — single screen, conclusion-first, zero LLM leakage.
 
     When is_degraded=True, prepends a warning banner but continues with the
@@ -597,7 +622,8 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     data, so healthy sections (bull/bear debate, risk debate, catalysts,
     etc.) still appear when their underlying nodes parsed cleanly.
     """
-    color_var = 'green' if view.action_class == 'buy' else ('red' if view.action_class in ('sell', 'veto') else 'yellow')
+    # A-share action colors: 买入=红, 卖出=绿, VETO=紫.
+    color_var = 'red' if view.action_class == 'buy' else ('green' if view.action_class == 'sell' else ('purple' if view.action_class == 'veto' else 'yellow'))
 
     # Degradation banner — prepended to normal content when parse issues exist.
     degradation_banner_html = ""
@@ -669,7 +695,14 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     {risks_html}
     <div class="banner banner-footer">{AI_DISCLAIMER_BANNER}</div>"""
 
-        return _html_wrap(f"{_ticker_display(view)} \u7814\u7a76\u5feb\u7167 \u2014 {view.trade_date}", body, "\u7814\u7a76\u5feb\u7167", extra_head=_COUNTUP_JS)
+        nav = _nav_bar(view.ticker, view.run_id, "snapshot", artifact_dir=artifact_dir)
+        return _html_wrap(
+            f"{_ticker_display(view)} \u7814\u7a76\u5feb\u7167 \u2014 {view.trade_date}",
+            body,
+            "\u7814\u7a76\u5feb\u7167",
+            extra_head=_COUNTUP_JS,
+            nav_html=nav,
+        )
 
     # ── Normal Mode ──
     _sig_emoji = get_signal_emoji(view.research_action)
@@ -747,14 +780,13 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     <div class="hero reveal">
       <div class="hero-grid">
         <div class="hero-left">
-          <div class="eyebrow">AI \u7814\u7a76\u5feb\u7167 &middot; {_esc(view.trade_date)}</div>
+          <div class="eyebrow">个股研究摘要 &middot; {_esc(view.trade_date)}</div>
           <div class="hero-action" style="color:var(--{color_var});">
             {_sig_emoji} {_esc(view.action_label)}
           </div>
           <div class="hero-summary">{_esc(view.one_line_summary)}</div>
           <div style="font-size:.88rem;color:var(--muted);">{_esc(view.action_explanation)}</div>
           {_lean_html}
-          <div style="font-size:.65rem;color:var(--muted);margin-top:.3rem;">\u4fe1\u53f7\u8272: <span style="color:var(--red)">\u25cf</span> \u6da8/\u79ef\u6781 <span style="color:var(--green)">\u25cf</span> \u8dcc/\u6d88\u6781</div>
         </div>
         <div class="hero-right">
           {hero_kpi_grid}
@@ -849,10 +881,10 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     # Evidence strength + Bull/Bear bar
     evidence_html = f"""
     <div class="card reveal reveal-d4">
-      <h3>\u8bc1\u636e\u5f3a\u5ea6</h3>
+      <h3>依据强度</h3>
       <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;margin-bottom:.5rem;">
         <span class="badge badge-{view.evidence_strength_class}">{_esc(ev_label)}</span>
-        <span style="font-size:.85rem;color:var(--muted);">{view.total_evidence} \u6761\u8bc1\u636e &middot; {view.attributed_rate:.0%} \u8bba\u636e-\u8bc1\u636e\u7ed1\u5b9a\u7387</span>
+        <span style="font-size:.85rem;color:var(--muted);">{view.total_evidence} 条依据 &middot; {view.attributed_rate:.0%} 引用覆盖</span>
       </div>
       {_bull_bear_bar(view.bull_strength, view.bear_strength)}
     </div>"""
@@ -915,7 +947,7 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
         f'<span>\u00b7</span>'
         f'<span>\u6570\u636e\u622a\u6b62 \u00b7 {_esc(view.trade_date)}</span>'
         f'<span>\u00b7</span>'
-        f'<span>17 \u53f8\u534f\u4f5c\u751f\u6210</span>'
+        f'<span>系统生成</span>'
         f'</div>'
     )
 
@@ -928,7 +960,7 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     )
     body = f"""
     <h1>{_esc(_ticker_display(view))}</h1>
-    <p class="subtitle">{_esc(view.trade_date)} &middot; \u7814\u7a76\u5feb\u7167</p>
+    <p class="subtitle">{_esc(view.trade_date)} &middot; 个股研究摘要</p>
     {watermark_html}
     {research_banner_html}
     {cover_html}
@@ -939,17 +971,17 @@ def render_snapshot(view: SnapshotView, skip_vendors: bool = False) -> str:
     {pillar_consensus_html}
     {lights_html}
     {battle_plan_html}
-    {_mc("\u4e2a\u80a1\u7c7b\u578b / \u5386\u53f2\u6821\u51c6", context_html)}
+    {_mc("标的特征 / 历史表现", context_html)}
     {_mc("\u57fa\u672c\u9762\u901f\u89c8", chart_html)}
     {_mc("\u884c\u4e1a\u5bf9\u6bd4", industry_card_html)}
-    {_mc("\u6570\u636e\u53e3\u5f84\u98ce\u9669", data_quality_html, default_open=False)}
-    {_mc("\u6838\u5fc3\u9a71\u52a8 / \u98ce\u9669", f'<div class="cols"><div>{drivers_html}</div><div>{risks_html}</div></div>')}
-    {_mc("\u8bc1\u636e\u5f3a\u5ea6", evidence_html)}
-    {_mc("\u4fe1\u53f7\u6838\u9a8c", checklist_html)}
-    {_mc("\u98ce\u63a7\u8fa9\u8bba", risk_debate_html, default_open=False)}
+    {_mc("数据提示", data_quality_html, default_open=False)}
+    {_mc("核心驱动 / 主要风险", f'<div class="cols"><div>{drivers_html}</div><div>{risks_html}</div></div>')}
+    {_mc("依据强度", evidence_html)}
+    {_mc("四维观察", checklist_html)}
+    {_mc("风险视角", risk_debate_html, default_open=False)}
     {_mc("\u50ac\u5316\u5242", catalyst_html)}
-    {_mc("\u4fe1\u53f7\u5386\u53f2", signal_history_html, default_open=False)}
+    {_mc("观点历史", signal_history_html, default_open=False)}
     <div class="banner banner-footer">{AI_DISCLAIMER_BANNER}</div>"""
 
-    nav = _nav_bar(view.ticker, view.run_id, "snapshot")
+    nav = _nav_bar(view.ticker, view.run_id, "snapshot", artifact_dir=artifact_dir)
     return _html_wrap(f"{_ticker_display(view)} \u7814\u7a76\u5feb\u7167 \u2014 {view.trade_date}", body, "\u7814\u7a76\u5feb\u7167", nav_html=nav)

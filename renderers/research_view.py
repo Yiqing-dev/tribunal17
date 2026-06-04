@@ -44,6 +44,7 @@ class ResearchView:
 
     # Bull case
     bull_excerpt: str = ""
+    debate_crosstalk: List[Dict] = field(default_factory=list)
     bull_claims: List[Dict] = field(default_factory=list)
     bull_evidence_ids: List[str] = field(default_factory=list)
 
@@ -94,6 +95,7 @@ class ResearchView:
     data_quality_flags: List[Dict] = field(default_factory=list)
     price_history: List[float] = field(default_factory=list)
     signal_history: List[Dict] = field(default_factory=list)
+    report_diff: Dict = field(default_factory=dict)
     current_price: float = 0.0
     pct_change_5d: float = 0.0
     period_high: float = 0.0
@@ -112,7 +114,14 @@ class ResearchView:
     banner: Optional[BannerView] = None
 
     @classmethod
-    def build(cls, service: ReplayService, run_id: str) -> Optional["ResearchView"]:
+    def build(
+        cls,
+        service: ReplayService,
+        run_id: str,
+        *,
+        report_diff: Optional[Dict] = None,
+        previous_trace: Optional[RunTrace] = None,
+    ) -> Optional["ResearchView"]:
         from .decision_labels import (
             get_action_label, get_action_class, get_action_explanation,
             get_risk_label, SEVERITY_LABELS, SEVERITY_CSS,
@@ -211,6 +220,34 @@ class ResearchView:
                 "bear_case": pm_sd.get("bear_case", ""),
             }
 
+        # ── Debate crosstalk (AQ-01/AQ-03): the bear's strongest rebuttals and
+        #    how the PM ruled on the challenged bull claim. Surfaces REAL clash
+        #    to the reader instead of a single opaque quality grade. ──
+        _bull_text_by_id = {
+            c.get("claim_id"): c.get("text", "")
+            for c in (bull_sd.get("supporting_claims") or [])
+        }
+        _adj_by_id = {
+            a.get("claim_id"): a for a in (pm_sd.get("adjudications") or [])
+        }
+        _rebuttals = sorted(
+            (bear_sd.get("opposing_claims") or []),
+            key=lambda r: (r.get("confidence") or 0),
+            reverse=True,
+        )
+        debate_crosstalk = []
+        for r in _rebuttals[:3]:
+            tid = r.get("target_claim_id", "")
+            adj = _adj_by_id.get(tid) or {}
+            debate_crosstalk.append({
+                "target_claim_id": tid,
+                "target_claim_text": _bull_text_by_id.get(tid, ""),
+                "rebuttal_text": r.get("text", ""),
+                "rebuttal_confidence": r.get("confidence", -1.0),
+                "pm_verdict": adj.get("verdict", ""),
+                "pm_reason": adj.get("reason", ""),
+            })
+
         # ── Scenario: prefer structured data ──
         scn_sd = scenario_out.get("structured_data") or {}
         scenario_probs = {}
@@ -277,8 +314,14 @@ class ResearchView:
         price_history_data: List[float] = [float(p) for p in raw_prices if p is not None][:30]
 
         signal_history_data: List[Dict] = []
+        previous_trace_for_diff = previous_trace
         try:
-            past_runs = service.store.list_runs(ticker=trace.ticker, limit=10)
+            from ..report_index import sort_run_entries
+
+            past_runs = sort_run_entries(
+                service.store.list_runs(ticker=trace.ticker, limit=0),
+                newest_first=True,
+            )
             count = 0
             for pr in past_runs:
                 pr_rid = pr.get("run_id", "")
@@ -287,14 +330,25 @@ class ResearchView:
                 pr_conf = -1.0
                 if pr_rid:
                     try:
-                        pr_trace = service.load_run(pr_rid)
+                        if previous_trace_for_diff and pr_rid == previous_trace_for_diff.run_id:
+                            pr_trace = previous_trace_for_diff
+                        else:
+                            pr_trace = service.load_run(pr_rid)
                         if pr_trace and pr_trace.final_confidence >= 0:
                             pr_conf = float(pr_trace.final_confidence)
+                        if pr_trace and previous_trace_for_diff is None:
+                            previous_trace_for_diff = pr_trace
+                        pr_action = (
+                            "VETO" if pr_trace and pr_trace.was_vetoed
+                            else (pr_trace.research_action if pr_trace else pr.get("research_action", ""))
+                        )
                     except Exception:
-                        pass
+                        pr_action = pr.get("research_action", "")
+                else:
+                    pr_action = pr.get("research_action", "")
                 signal_history_data.append({
                     "trade_date": pr.get("trade_date", ""),
-                    "action": pr.get("research_action", ""),
+                    "action": pr_action,
                     "confidence": pr_conf,
                     "run_id": pr_rid,
                 })
@@ -303,6 +357,15 @@ class ResearchView:
                     break
         except Exception:
             pass
+
+        report_diff_data: Dict = dict(report_diff or {})
+        if not report_diff_data:
+            try:
+                from ..report_diff import compare_reports
+
+                report_diff_data = compare_reports(previous_trace_for_diff, trace).to_dict()
+            except Exception:
+                report_diff_data = {}
 
         # Cover-card derivations from price history
         cur_price_data = 0.0
@@ -351,6 +414,7 @@ class ResearchView:
             risk_score=risk_out.get("risk_score"),
             risk_cleared=risk_out.get("risk_cleared"),
             bull_excerpt=bull_out.get("output_excerpt", ""),
+            debate_crosstalk=debate_crosstalk,
             bull_claims=bull_claims,
             bull_evidence_ids=bull_ev_ids,
             bear_excerpt=bear_out.get("output_excerpt", ""),
@@ -380,6 +444,7 @@ class ResearchView:
             data_quality_flags=data_quality_flags,
             price_history=price_history_data,
             signal_history=signal_history_data,
+            report_diff=report_diff_data,
             current_price=cur_price_data,
             pct_change_5d=pct_5d_data,
             period_high=hi_data,

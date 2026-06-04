@@ -13,6 +13,8 @@ __all__ = [
     "generate_brief_report",
     "generate_brief_report_file",
     "generate_workbench_report",
+    "generate_today_changes_report",
+    "generate_calibration_page",
     # Pool / market / debate / recap
     "generate_pool_report",
     "generate_market_report",

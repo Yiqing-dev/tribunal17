@@ -18,11 +18,15 @@
 """
 from __future__ import annotations
 
+import contextlib
+
+import pandas as pd
 import pytest
 
 from subagent_pipeline.akshare_collector import (
     AkshareBundle,
     _fmt_num,
+    _collect_top10_shareholders,
     _normalize_industry_peers,
 )
 from subagent_pipeline.bridge import (
@@ -98,6 +102,12 @@ class TestExtractFinancialMetrics:
         text = "- 归母净利润：9630.78万元，同比增长181.27%"
         m = _extract_financial_metrics(text)
         assert m.get("net_profit") == "9630.78"
+
+    def test_market_cap_wanyi_normalized_to_yi(self):
+        """RENDER-03: 万亿 market cap must normalize to 亿 (×10000), not shrink 10000×."""
+        assert _extract_financial_metrics("总市值：1.5万亿")["market_cap"] == "15000"
+        assert _extract_financial_metrics("总市值：34.86亿")["market_cap"] == "34.86"
+        assert _extract_financial_metrics("| 总市值 | 2万亿 |")["market_cap"] == "20000"
 
     def test_net_profit_requires_explicit_unit(self):
         """A bare number without 万/亿 must not enter the fallback."""
@@ -375,6 +385,48 @@ pillar_score = 2
         assert any("PE不得作为主估值锚" in m for m in messages)
         assert any("forecast" in m for m in messages)
         assert any("行业对比数据不足" in m for m in messages)
+
+
+class TestAkshareCurrentCompatibility:
+    def test_top10_shareholders_uses_prefixed_symbol_and_current_columns(self, monkeypatch):
+        import subagent_pipeline.akshare_collector as ac
+
+        calls = []
+
+        class FakeAk:
+            def stock_gdfx_free_top_10_em(self, *, symbol, date):
+                calls.append((symbol, date))
+                return pd.DataFrame([
+                    {
+                        "名次": 1,
+                        "股东名称": "测试股东",
+                        "股东性质": "机构",
+                        "持股数": 123456,
+                        "占总流通股本持股比例": 3.21,
+                        "增减": "不变",
+                        "变动比率": 0.0,
+                    }
+                ])
+
+        monkeypatch.setattr(ac, "_get_ak", lambda: FakeAk())
+        monkeypatch.setattr(ac, "em_proxy_session", lambda: contextlib.nullcontext())
+
+        bundle = AkshareBundle(ticker="603065", trade_date="2026-05-07")
+        _collect_top10_shareholders(bundle)
+
+        assert calls
+        assert calls[0][0] == "SH603065"
+        assert bundle.top10_shareholders == [
+            {
+                "rank": 1.0,
+                "name": "测试股东",
+                "type": "机构",
+                "shares": 123456.0,
+                "pct": 3.21,
+                "change": "不变",
+                "change_pct": 0.0,
+            }
+        ]
 
 
 # ── Fix 4 — collect_limit_board fallback (smoke; needs network) ──────────

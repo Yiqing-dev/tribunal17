@@ -10,24 +10,25 @@ from typing import Dict, Tuple
 
 # ── Signal Emoji ────────────────────────────────────────────────────────
 
+# A-share convention: \u4e70\u5165/\u770b\u591a = \u7ea2, \u5356\u51fa/\u770b\u7a7a = \u7eff (matches the action color tokens).
 SIGNAL_EMOJI: Dict[str, str] = {
-    "BUY": "\U0001f7e2",
-    "HOLD": "\U0001f7e1",
-    "SELL": "\U0001f534",
-    "VETO": "\u26d4",
+    "BUY": "\U0001f534",   # \ud83d\udd34 red = bullish/buy (A-share)
+    "HOLD": "\U0001f7e1",  # \ud83d\udfe1
+    "SELL": "\U0001f7e2",  # \ud83d\udfe2 green = bearish/sell (A-share)
+    "VETO": "\u26d4",      # \u26d4 blocked / do-not-participate
 }
 
 PILLAR_EMOJI: Dict[int, str] = {
-    4: "\U0001f7e2",
+    4: "\U0001f534",   # \ud83d\udd34 strongly bullish (A-share: red)
     3: "\U0001f535",
     2: "\U0001f7e1",
     1: "\U0001f7e0",
-    0: "\U0001f534",
+    0: "\U0001f7e2",   # \ud83d\udfe2 strongly bearish (A-share: green)
 }
 
 
 def get_signal_emoji(action: str) -> str:
-    """Return emoji for a signal action (e.g. BUY -> green circle)."""
+    """Return emoji for a signal action (e.g. BUY -> red circle, A-share)."""
     return SIGNAL_EMOJI.get(action.upper(), "\u26aa")
 
 
@@ -37,9 +38,9 @@ def get_signal_emoji(action: str) -> str:
 # instruction. Decision-makers (quant signals / human PMs) interpret these
 # views and decide on actual positions; this report is analysis only.
 ACTION_MAP: Dict[str, Tuple[str, str, str]] = {
-    "BUY":  ("研究观点 · 偏多",   "buy",  "多维度论据偏向积极，供决策者参考；具体进出场点位由量化信号或人工判断"),
-    "HOLD": ("研究观点 · 中性",   "hold", "论据正反混合或信号不明，建议持续跟踪关键变量；不构成持仓建议"),
-    "SELL": ("研究观点 · 偏空",   "sell", "多维度论据偏向谨慎；具体仓位与止损由决策者根据自身框架确定"),
+    "BUY":  ("研究观点 · 偏多",   "buy",  "多项依据偏向积极，后续重点看价格、业绩和行业催化能否继续确认"),
+    "HOLD": ("研究观点 · 中性",   "hold", "正反因素交织或信号不明，建议持续跟踪关键变量；不构成持仓建议"),
+    "SELL": ("研究观点 · 偏空",   "sell", "多项依据偏向谨慎，需重点关注下行风险与观点失效条件"),
     "VETO": ("证据链不足 · 暂缓", "veto", "证据链不完整或触发硬规则，本研究无法形成有效观点"),
 }
 
@@ -50,7 +51,7 @@ SOFT_ACTION_MAP: Dict[str, str] = {
     "BUY":  "偏积极",
     "HOLD": "中性",
     "SELL": "偏谨慎",
-    "VETO": "风控否决",
+    "VETO": "暂缓",
 }
 
 
@@ -374,17 +375,17 @@ NO_COMPLIANCE_LABEL = "未捕获独立合规轨迹，建议结合总状态判断
 # ── AI Disclaimer Banner ──────────────────────────────────────────────
 
 AI_DISCLAIMER_BANNER = (
-    "本报告由 AI 多智能体系统自动生成，定位为<strong>研究报告工厂</strong>"
-    "（信息综合 · 多视角论证 · 风险列举），<strong>不构成任何买卖、仓位或择时建议</strong>。"
-    "具体交易决策应由量化信号或人工决策者基于自身框架独立判断。"
+    "本报告由系统自动整理公开及结构化信息生成，定位为<strong>个股研究参考</strong>"
+    "（信息综合 · 多角度推演 · 风险提示），<strong>不构成任何买卖、仓位或择时建议</strong>。"
+    "具体交易决策应结合个人风险承受能力与独立判断。"
 )
 
 # Prominent header banner — sits at top of every report to set expectations
 # before any "action label" is read.
 RESEARCH_HEADER_BANNER = (
-    "📋 <strong>研究报告 · 仅供分析参考</strong> "
-    "&middot; 多视角论证 / 风险列举 / 不构成投资建议 "
-    "&middot; 仓位与进出场点位由决策者独立判断"
+    "📋 <strong>个股研究 · 仅供参考</strong> "
+    "&middot; 结论、依据、风险与后续观察点 "
+    "&middot; 不构成投资建议"
 )
 
 

@@ -113,6 +113,7 @@ class SnapshotView:
 
     # Historical signal tracking
     signal_history: List[Dict] = field(default_factory=list)
+    report_diff: Dict = field(default_factory=dict)
 
     # Visual enhancement fields
     price_history: List[float] = field(default_factory=list)
@@ -134,7 +135,14 @@ class SnapshotView:
     banner: Optional[BannerView] = None
 
     @classmethod
-    def build(cls, service: ReplayService, run_id: str) -> Optional["SnapshotView"]:
+    def build(
+        cls,
+        service: ReplayService,
+        run_id: str,
+        *,
+        report_diff: Optional[Dict] = None,
+        previous_trace: Optional[RunTrace] = None,
+    ) -> Optional["SnapshotView"]:
         from .decision_labels import (
             get_action_label, get_action_class, get_action_explanation,
             get_risk_label, SEVERITY_LABELS, SEVERITY_CSS,
@@ -481,8 +489,14 @@ class SnapshotView:
         # action string, so we dereference each trace — capped at 5 entries
         # to bound load time.
         signal_history: List[Dict] = []
+        _previous_trace_for_diff = previous_trace
         try:
-            past_runs = service.store.list_runs(ticker=trace.ticker, limit=10)
+            from ..report_index import sort_run_entries
+
+            past_runs = sort_run_entries(
+                service.store.list_runs(ticker=trace.ticker, limit=0),
+                newest_first=True,
+            )
             count = 0
             for pr in past_runs:
                 pr_rid = pr.get("run_id", "")
@@ -491,14 +505,25 @@ class SnapshotView:
                 pr_conf = -1.0
                 if pr_rid:
                     try:
-                        pr_trace = service.load_run(pr_rid)
+                        if _previous_trace_for_diff and pr_rid == _previous_trace_for_diff.run_id:
+                            pr_trace = _previous_trace_for_diff
+                        else:
+                            pr_trace = service.load_run(pr_rid)
                         if pr_trace and pr_trace.final_confidence >= 0:
                             pr_conf = float(pr_trace.final_confidence)
+                        if pr_trace and _previous_trace_for_diff is None:
+                            _previous_trace_for_diff = pr_trace
+                        pr_action = (
+                            "VETO" if pr_trace and pr_trace.was_vetoed
+                            else (pr_trace.research_action if pr_trace else pr.get("research_action", ""))
+                        )
                     except Exception:
-                        pass
+                        pr_action = pr.get("research_action", "")
+                else:
+                    pr_action = pr.get("research_action", "")
                 signal_history.append({
                     "trade_date": pr.get("trade_date", ""),
-                    "action": pr.get("research_action", ""),
+                    "action": pr_action,
                     "confidence": pr_conf,
                     "run_id": pr_rid,
                 })
@@ -547,16 +572,17 @@ class SnapshotView:
 
         # ── Previous confidence (for trend arrow) ──
         _prev_conf = -1.0
-        if signal_history:
-            # manifest doesn't store confidence; load trace if available
-            _prev_rid = signal_history[0].get("run_id", "")
-            if _prev_rid:
-                try:
-                    _pt = service.load_run(_prev_rid)
-                    if _pt:
-                        _prev_conf = _pt.final_confidence
-                except Exception:
-                    pass
+        if _previous_trace_for_diff:
+            _prev_conf = _previous_trace_for_diff.final_confidence
+
+        _report_diff = dict(report_diff or {})
+        if not _report_diff:
+            try:
+                from ..report_diff import compare_reports
+
+                _report_diff = compare_reports(_previous_trace_for_diff, trace).to_dict()
+            except Exception:
+                _report_diff = {}
 
         return cls(
             run_id=run_id,
@@ -603,6 +629,7 @@ class SnapshotView:
             tradecard=tradecard_data,
             trade_plan=trade_plan_data,
             signal_history=signal_history,
+            report_diff=_report_diff,
             price_history=_price_history,
             previous_confidence=_prev_conf,
             current_price=_current_price,

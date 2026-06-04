@@ -71,8 +71,8 @@ _REVIEW_CSS = """
   border-radius: 18px;
   padding: 1.1rem;
 }
-.side-bull { border-left: 3px solid var(--green); }
-.side-bear { border-left: 3px solid var(--red); }
+.side-bull { border-left: 3px solid var(--red); }
+.side-bear { border-left: 3px solid var(--green); }
 .side-title {
   font-size: .88rem; font-weight: 700;
   margin-bottom: .6rem;
@@ -408,12 +408,12 @@ def _render_bull_bear(review) -> str:
       <h2>Bull vs Bear 对比</h2>
       <div class="comparison-grid">
         <div class="side-card side-bull">
-          <div class="side-title" style="color:var(--green)">多方 (Bull)</div>
+          <div class="side-title" style="color:var(--red)">多方 (Bull)</div>
           <div class="side-stat"><span class="stat-label">论据数量</span><span class="stat-value">{bull_claims}</span></div>
           <div class="side-stat"><span class="stat-label">整体置信度</span><span class="stat-value">{bull_conf:.0%}</span></div>
         </div>
         <div class="side-card side-bear">
-          <div class="side-title" style="color:var(--red)">空方 (Bear)</div>
+          <div class="side-title" style="color:var(--green)">空方 (Bear)</div>
           <div class="side-stat"><span class="stat-label">论据数量</span><span class="stat-value">{bear_claims}</span></div>
           <div class="side-stat"><span class="stat-label">整体置信度</span><span class="stat-value">{bear_conf:.0%}</span></div>
         </div>

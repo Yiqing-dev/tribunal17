@@ -37,9 +37,10 @@ from .snapshot_renderer import _render_cover_card, _render_kline_card
 
 # ── Tier 2 Degraded Mode ───────────────────────────────────────────────
 
-def _render_research_degraded(view: ResearchView) -> str:
+def _render_research_degraded(view: ResearchView, *, artifact_dir=None) -> str:
     """Render degraded Tier 2 -- warning banner + synthesis + risk only."""
-    color_var = 'green' if view.action_class == 'buy' else ('red' if view.action_class in ('sell', 'veto') else 'yellow')
+    # A-share action colors: 买入=红, 卖出=绿, VETO=紫.
+    color_var = 'red' if view.action_class == 'buy' else ('green' if view.action_class == 'sell' else ('purple' if view.action_class == 'veto' else 'yellow'))
 
     _sig_emoji_rd = get_signal_emoji(view.research_action)
     exec_summary = f"""
@@ -101,11 +102,11 @@ def _render_research_degraded(view: ResearchView) -> str:
         f'{_grade_badge}{"<span>\u00b7</span>" if _grade_badge else ""}'
         f'<span>\u62a5\u544a ID \u00b7 {_esc(_short_run)}</span><span>\u00b7</span>'
         f'<span>\u6570\u636e\u622a\u6b62 \u00b7 {_esc(view.trade_date)}</span><span>\u00b7</span>'
-        f'<span>17 \u53f8\u534f\u4f5c\u751f\u6210</span></div>'
+        f'<span>系统生成</span></div>'
     )
     body = f"""
     <h1>{_esc(_ticker_display(view))}</h1>
-    <p class="subtitle">{_esc(view.trade_date)} &middot; \u6df1\u5ea6\u7814\u7a76\u62a5\u544a</p>
+    <p class="subtitle">{_esc(view.trade_date)} &middot; 个股深度研究</p>
     {_watermark}
     {_degraded_banner(view.degradation_reasons)}
     {exec_summary}
@@ -113,12 +114,12 @@ def _render_research_degraded(view: ResearchView) -> str:
     {risk_html}
     <div class="banner banner-footer" style="margin:2rem 0 0;background:rgba(255,255,255,0.03);border-color:rgba(255,255,255,0.06);color:var(--muted);font-size:.75rem">{AI_DISCLAIMER_BANNER}</div>"""
 
-    nav = _nav_bar(view.ticker, view.run_id, "research")
+    nav = _nav_bar(view.ticker, view.run_id, "research", artifact_dir=artifact_dir)
     return _html_wrap(f"{_ticker_display(view)} \u6df1\u5ea6\u7814\u7a76 \u2014 {view.trade_date}", body, "\u6df1\u5ea6\u7814\u7a76\u62a5\u544a", extra_head=_COUNTUP_JS, nav_html=nav)
 
 
 def _render_trade_plan_card(tp: dict) -> str:
-    """Render the AI Trade Plan card -- public entry/exit framework.
+    """Render the public observation-plan card.
 
     Shows 6 key lines: bias, breakout entry, pullback entry, stop loss,
     targets, and invalidation conditions.
@@ -132,7 +133,8 @@ def _render_trade_plan_card(tp: dict) -> str:
         return 0.0 if conf < 0 else conf
 
     bias = tp.get("bias", "WAIT")
-    bias_labels = {"LONG": ("\u504f\u591a", "buy"), "WAIT": ("\u7b49\u5f85", "hold"), "AVOID": ("\u56de\u907f", "sell")}
+    # AVOID = \u4e0d\u53c2\u4e0e/\u56de\u907f \u2192 neutral (hold) styling, NOT a red sell badge (rule #5).
+    bias_labels = {"LONG": ("\u504f\u591a", "buy"), "WAIT": ("\u7b49\u5f85", "hold"), "AVOID": ("\u56de\u907f", "hold")}
     bias_label, bias_class = bias_labels.get(bias, ("\u7b49\u5f85", "hold"))
 
     setups = tp.get("entry_setups", [])
@@ -193,10 +195,10 @@ def _render_trade_plan_card(tp: dict) -> str:
         sl_max_pct = 0
     sl_html = ""
     if sl_price > 0:
-        pct_badge = f' <span class="mono" style="color:var(--red);font-size:.85em">(\u6700\u5927\u4e8f\u635f {sl_max_pct:.0%})</span>' if sl_max_pct > 0 else ""
+        pct_badge = f' <span class="mono" style="color:var(--red);font-size:.85em">(下行幅度 {sl_max_pct:.0%})</span>' if sl_max_pct > 0 else ""
         sl_html = f"""
         <div class="tp-row tp-stop">
-          <span class="tp-label">\u6b62\u635f\u4f4d</span>
+          <span class="tp-label">下行警戒位</span>
           <span class="mono num" style="color:var(--red)">{sl_price:.2f}</span>{pct_badge}
           <span class="tp-detail">{sl_rule}</span>
         </div>"""
@@ -220,6 +222,7 @@ def _render_trade_plan_card(tp: dict) -> str:
             t_str = _esc(t)
         else:
             continue
+        t_label = (t_label or "参考价位").replace("目标", "参考")
         target_rows += f"""
         <div class="tp-row tp-target">
           <span class="tp-label">{t_label}</span>
@@ -234,7 +237,7 @@ def _render_trade_plan_card(tp: dict) -> str:
         items = "".join(f"<li>{_esc(str(inv))}</li>" for inv in invalidators[:5])
         inval_html = f"""
         <div style="margin-top:.75rem">
-          <div class="tp-section-title" style="color:var(--red)">\u5931\u6548\u6761\u4ef6</div>
+          <div class="tp-section-title" style="color:var(--red)">观点失效条件</div>
           <ul class="tp-inval-list">{items}</ul>
         </div>"""
 
@@ -254,7 +257,7 @@ def _render_trade_plan_card(tp: dict) -> str:
     avoid_html = _list_block("不参与条件", avoid_conditions, "var(--yellow)")
     review_html = _list_block("重新评估触发", review_triggers, "var(--blue)")
     time_stop_html = (
-        f'<div class="tp-row"><span class="tp-label">时间止损</span>'
+        f'<div class="tp-row"><span class="tp-label">观察期限</span>'
         f'<span class="tp-detail">{_esc(str(time_stop))}</span></div>'
         if time_stop else ""
     )
@@ -265,7 +268,7 @@ def _render_trade_plan_card(tp: dict) -> str:
             for k, v in list(scenario_actions.items())[:3]
         )
         scenario_html = (
-            f'<div style="margin-top:.75rem"><div class="tp-section-title">情景动作</div>'
+            f'<div style="margin-top:.75rem"><div class="tp-section-title">情景应对</div>'
             f'<table class="tp-table"><tbody>{rows}</tbody></table></div>'
         )
 
@@ -273,16 +276,16 @@ def _render_trade_plan_card(tp: dict) -> str:
     <div class="card" style="overflow:hidden;">
       <div style="position:absolute;inset:0 auto auto 0;width:4px;height:100%;background:var(--blue);border-radius:20px 0 0 20px;"></div>
       <div style="padding-left:.6rem;">
-        <h3>AI \u4ea4\u6613\u8ba1\u5212</h3>
+        <h3>观察计划</h3>
         <div style="display:flex;gap:.8rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap">
           <span class="badge badge-{bias_class}" style="font-size:.9rem;padding:5px 16px">{bias_label} ({bias})</span>
           <span style="color:var(--muted);font-size:.85rem;font-family:var(--mono)">\u7f6e\u4fe1\u5ea6 {confidence:.0%}</span>
           <span style="color:var(--muted);font-size:.85rem">{_esc(horizon_label)}</span>
         </div>
-        <div class="tp-section-title">\u4e70\u5165\u8bbe\u7f6e</div>
+        <div class="tp-section-title">关注区间</div>
         <table class="tp-table">
-          <thead><tr><th>\u7c7b\u578b</th><th>\u4ef7\u683c\u533a\u95f4</th><th>\u89e6\u53d1\u6761\u4ef6</th></tr></thead>
-          <tbody>{setup_rows if setup_rows else '<tr><td colspan="3" style="color:var(--muted)">\u5f53\u524d\u4e0d\u5efa\u8bae\u5165\u573a</td></tr>'}</tbody>
+          <thead><tr><th>情形</th><th>价格区间</th><th>需要看到的条件</th></tr></thead>
+          <tbody>{setup_rows if setup_rows else '<tr><td colspan="3" style="color:var(--muted)">当前不建议参与</td></tr>'}</tbody>
         </table>
         {sl_html}
         {target_rows}
@@ -310,7 +313,49 @@ def _format_lineage_confidence(value) -> str:
     return f"{conf:.0%}"
 
 
-def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
+def _render_debate_crosstalk(view: ResearchView) -> str:
+    """多空交锋: the bear's strongest rebuttals + the PM's verdict on each
+    challenged bull claim (AQ-01/AQ-03). Surfaces REAL clash to the reader
+    instead of an opaque quality grade. Empty when there were no rebuttals."""
+    rows = [r for r in (getattr(view, "debate_crosstalk", None) or []) if r.get("rebuttal_text")]
+    if not rows:
+        return ""
+    # AQ-F2: the PM's verdict is on the MULTI (bull) claim being challenged, so
+    # spell out the subject — ACCEPT of the bull claim means the bear's rebuttal
+    # was NOT adopted, and vice versa. Badge colors stay direction-neutral.
+    _verdict = {
+        "ACCEPT": ("PM 维持多方该论点（未采纳此质疑）", "low"),
+        "REJECT": ("PM 否定多方该论点（认可此质疑）", "medium"),
+        "DEFER": ("PM 搁置（待验证）", "hold"),
+    }
+    items = ""
+    for r in rows:
+        conf = r.get("rebuttal_confidence", -1.0)
+        conf_str = f"{conf:.0%}" if isinstance(conf, (int, float)) and conf >= 0 else "—"
+        vlabel, vcls = _verdict.get((r.get("pm_verdict") or "").upper(), ("未回应", "low"))
+        tgt = _esc(_truncate_display_text(r.get("target_claim_text") or r.get("target_claim_id") or "", max_chars=120))
+        reason = _esc(_truncate_display_text(r.get("pm_reason", ""), max_chars=160)) if r.get("pm_reason") else ""
+        items += (
+            '<div style="border-left:3px solid var(--border);padding:.4rem .7rem;margin:.55rem 0;">'
+            f'<div style="font-size:.88rem;"><strong>\U0001f43b 空方质疑</strong> '
+            f'<span class="badge">置信 {conf_str}</span></div>'
+            f'<div style="margin:.25rem 0;">{_esc(_truncate_display_text(r.get("rebuttal_text", ""), max_chars=200))}</div>'
+            f'<div style="font-size:.78rem;color:var(--muted);">↳ 针对多方观点: {tgt}</div>'
+            f'<div style="font-size:.85rem;margin-top:.3rem;">⚖️ PM 裁决: '
+            f'<span class="badge badge-{vcls}">{vlabel}</span> {reason}</div>'
+            '</div>'
+        )
+    return (
+        '<div class="card">'
+        '<h3>多空交锋 · 空方最强质疑与 PM 回应</h3>'
+        '<div style="font-size:.78rem;color:var(--muted);margin-bottom:.4rem;">'
+        '空方针对多方具体论点的反驳，及研究经理是否逐条回应（采纳/驳回/搁置）。'
+        '空缺即表示该质疑未被 PM 正面回应。</div>'
+        f'{items}</div>'
+    )
+
+
+def render_research(view: ResearchView, skip_vendors: bool = False, *, artifact_dir=None) -> str:
     """Render Tier 2 Research Report -- cards not essays, zero LLM leakage.
 
     When is_degraded=True, prepends a warning banner but continues with the
@@ -327,10 +372,12 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
 
     # Executive summary -- hero cockpit
     _sig_emoji_r = get_signal_emoji(view.research_action)
-    color_var = 'green' if view.action_class == 'buy' else ('red' if view.action_class in ('sell', 'veto') else 'yellow')
+    # A-share action colors: 买入=红, 卖出=绿, VETO=紫.
+    color_var = 'red' if view.action_class == 'buy' else ('green' if view.action_class == 'sell' else ('purple' if view.action_class == 'veto' else 'yellow'))
     conf_pct_r = int(view.confidence * 100)
     if view.confidence >= 0:
-        _conf_cls_r = "buy" if view.confidence >= 0.7 else ("hold" if view.confidence >= 0.4 else "sell")
+        # Direction-neutral confidence tiers (not buy/sell) — AQ-F1.
+        _conf_cls_r = "conf-strong" if view.confidence >= 0.7 else ("conf-mid" if view.confidence >= 0.4 else "conf-weak")
         _conf_note_r = "\u2248" if getattr(view, "confidence_defaulted", False) else ""
         _conf_sub_r = ' <span style="font-size:.6rem;color:var(--muted);">(\u9ed8\u8ba4)</span>' if getattr(view, "confidence_defaulted", False) else ""
         _conf_kpi_r = f'<div class="kpi {_conf_cls_r}"><span class="kpi-val">{_conf_note_r}{conf_pct_r}%</span><span class="kpi-label">\u7f6e\u4fe1\u5ea6{_conf_sub_r}</span></div>'
@@ -342,19 +389,18 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     <div class="hero reveal">
       <div class="hero-grid">
         <div class="hero-left">
-          <div class="eyebrow">\u6df1\u5ea6\u7814\u7a76\u62a5\u544a &middot; {_esc(view.trade_date)}</div>
+          <div class="eyebrow">个股深度研究 &middot; {_esc(view.trade_date)}</div>
           <div class="hero-action" style="color:var(--{color_var});">
             {_sig_emoji_r} {_esc(view.action_label)}
           </div>
           <div class="hero-summary">{_esc(view.action_explanation)}</div>
-          <div style="font-size:.65rem;color:var(--muted);margin-top:.3rem;">\u4fe1\u53f7\u8272: <span style="color:var(--red)">\u25cf</span> \u6da8/\u79ef\u6781 <span style="color:var(--green)">\u25cf</span> \u8dcc/\u6d88\u6781</div>
         </div>
         <div class="hero-right">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;">
             {_conf_kpi_r}
             <div class="kpi"><span class="kpi-val">{risk_display}</span><span class="kpi-label">\u98ce\u9669\u8bc4\u5206/10</span></div>
-            <div class="kpi"><span class="kpi-val">{view.total_evidence}</span><span class="kpi-label">\u8bc1\u636e</span></div>
-            <div class="kpi"><span class="kpi-val">{view.total_claims}</span><span class="kpi-label">\u8bba\u636e</span></div>
+            <div class="kpi"><span class="kpi-val">{view.total_evidence}</span><span class="kpi-label">依据</span></div>
+            <div class="kpi"><span class="kpi-val">{view.total_claims}</span><span class="kpi-label">要点</span></div>
           </div>
         </div>
       </div>
@@ -375,11 +421,14 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
                 if isinstance(conf, (int, float)) and conf < 0:
                     conf = 0
                 conf_pct = int(conf * 100)
-                conf_color = "var(--green)" if conf >= 0.7 else ("var(--yellow)" if conf >= 0.4 else "var(--red)")
+                # Bar fill = the panel's DIRECTION color (bull=红 / bear=绿); the
+                # WIDTH conveys confidence strength. Using price-direction colors
+                # (red/green) to mean "strong/weak" conflicts with 红涨绿跌.
+                conf_color = f"var(--{color})"
                 # V4: tier class drives left-border width; dots array in top-right
                 tier = _conf_tier(conf)
                 ev_count = len(c.get("evidence_ids", []))
-                ev_label = f"{ev_count}\u6761\u8bc1\u636e" if ev_count else "\u65e0\u5f15\u7528"
+                ev_label = f"{ev_count}条依据" if ev_count else "无引用"
                 cards += f"""
                 <div class="claim-card conf-{tier}">
                   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem">
@@ -404,20 +453,23 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
           <h3 style="color:var(--{color})">{title}</h3>
           {content}
           <div style="margin-top:.5rem; font-size:.85rem; color:var(--muted);">
-            {len(claims)} \u6761\u7ed3\u6784\u5316\u8bba\u636e &middot; \u8bc1\u636e: {_esc(ev_summary)}
+            {len(claims)} 条核心要点 &middot; 依据: {_esc(ev_summary)}
           </div>
         </div>"""
 
     _has_bull = view.bull_claims or view.bull_excerpt
     _has_bear = view.bear_claims or view.bear_excerpt
     if _has_bull or _has_bear:
+        # A-share convention: \u770b\u591a/bullish = \u7ea2, \u770b\u7a7a/bearish = \u7eff.
         bull_html = _case_panel("\u770b\u591a\u8bba\u70b9", view.bull_claims, view.bull_excerpt,
-                                view.bull_evidence_ids, "green")
+                                view.bull_evidence_ids, "red")
         bear_html = _case_panel("\u770b\u7a7a\u8bba\u70b9", view.bear_claims, view.bear_excerpt,
-                                view.bear_evidence_ids, "red")
+                                view.bear_evidence_ids, "green")
     else:
         bull_html = f'<div class="card">{_empty_state("\u2694\ufe0f", "\u6682\u65e0\u591a\u7a7a\u8fa9\u8bba\u6570\u636e", "\u7814\u7a76\u5458\u672a\u4ea7\u51fa\u7ed3\u6784\u5316\u8bba\u70b9")}</div>'
         bear_html = ""
+
+    crosstalk_html = _render_debate_crosstalk(view)
 
     # ── PM Synthesis -- structured conclusion + cases ──
     thesis_label = get_thesis_label(view.thesis_effect)
@@ -439,10 +491,10 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
 
     synthesis_html = f"""
     <div class="card">
-      <h3>\u7814\u7a76\u7ecf\u7406\u7efc\u5408\u5224\u65ad</h3>
+      <h3>综合判断</h3>
       <div style="margin-bottom:.5rem;">
-        \u8bba\u9898\u72b6\u6001: <span class="badge badge-{'ok' if thesis_ok else 'warn'}">{_esc(thesis_label)}</span>
-        &nbsp; \u5f15\u7528\u8bc1\u636e: {_esc(ev_summary)}
+        观点状态: <span class="badge badge-{'ok' if thesis_ok else 'warn'}">{_esc(thesis_label)}</span>
+        &nbsp; 引用依据: {_esc(ev_summary)}
       </div>
       {synth_body}
     </div>"""
@@ -495,7 +547,7 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
             sev_cls = safe_badge_class(f.get("severity_class", ""))
             sev_label = get_severity_label(f.get("severity", ""))
             ev_count = len(f.get("evidence_ids", []))
-            ev_label = f"{ev_count}\u6761\u8bc1\u636e" if ev_count else "\u65e0\u5f15\u7528"
+            ev_label = f"{ev_count}条依据" if ev_count else "无引用"
             mitigant = f.get("mitigant", "")
             mitigant_html = f'<div style="font-size:.8rem;color:var(--muted);margin-top:.25rem;">\u7f13\u91ca: {_esc(_truncate_display_text(mitigant, max_chars=120))}</div>' if mitigant else ""
             risk_content += f"""
@@ -513,12 +565,12 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
 
     risk_html = f"""
     <div class="card">
-      <h3>\u98ce\u9669\u5ba1\u67e5</h3>
+      <h3>主要风险</h3>
       <div style="margin-bottom:.5rem;">
         \u8bc4\u5206: <strong>{view.risk_score if view.risk_score is not None else '\u65e0'}</strong>/10 &middot;
-        \u98ce\u63a7\u901a\u8fc7: <span class="badge badge-{'ok' if view.risk_cleared else 'warn'}">
-        {'\u662f' if view.risk_cleared else '\u5426'}</span> &middot;
-        \u98ce\u9669\u6807\u8bb0: {view.risk_flag_count} \u9879
+        风险结论: <span class="badge badge-{'ok' if view.risk_cleared else 'warn'}">
+        {'未触发硬性风险' if view.risk_cleared else '需要谨慎复核'}</span> &middot;
+        风险提示: {view.risk_flag_count} 项
       </div>
       {risk_content}
     </div>"""
@@ -604,7 +656,7 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
         if steps:
             lineage_html = f"""
     <div class="card">
-      <h3>\u51b3\u7b56\u94fe\u8def</h3>
+      <h3>研究依据</h3>
       <div class="timeline">{"".join(steps)}</div>
     </div>"""
 
@@ -620,7 +672,7 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
         f'{_grade_badge2}{"<span>\u00b7</span>" if _grade_badge2 else ""}'
         f'<span>\u62a5\u544a ID \u00b7 {_esc(_short_run2)}</span><span>\u00b7</span>'
         f'<span>\u6570\u636e\u622a\u6b62 \u00b7 {_esc(view.trade_date)}</span><span>\u00b7</span>'
-        f'<span>17 \u53f8\u534f\u4f5c\u751f\u6210</span></div>'
+        f'<span>系统生成</span></div>'
     )
     cover_html = _render_cover_card(view)
     kline_html = _render_kline_card(view)
@@ -653,30 +705,31 @@ def render_research(view: ResearchView, skip_vendors: bool = False) -> str:
     {context_html}
     {data_quality_html}
     <nav style="font-size:.8rem;margin:.5rem 0;">
-      <a href="#bull-bear" style="color:var(--blue);text-decoration:none;">\u591a\u7a7a\u5206\u6790</a> &middot;
-      <a href="#synthesis" style="color:var(--blue);text-decoration:none;">\u7efc\u5408\u7814\u5224</a> &middot;
+      <a href="#bull-bear" style="color:var(--blue);text-decoration:none;">正反观点</a> &middot;
+      <a href="#synthesis" style="color:var(--blue);text-decoration:none;">综合判断</a> &middot;
       <a href="#industry" style="color:var(--blue);text-decoration:none;">\u884c\u4e1a\u5bf9\u6bd4</a> &middot;
-      <a href="#risk" style="color:var(--blue);text-decoration:none;">\u98ce\u9669\u8bc4\u4f30</a> &middot;
-      <a href="#trade-plan" style="color:var(--blue);text-decoration:none;">\u4ea4\u6613\u8ba1\u5212</a>
+      <a href="#risk" style="color:var(--blue);text-decoration:none;">主要风险</a> &middot;
+      <a href="#trade-plan" style="color:var(--blue);text-decoration:none;">观察计划</a>
     </nav>
-    <details open><summary><h2 id="bull-bear">\u591a\u7a7a\u5206\u6790</h2></summary>
+    <details open><summary><h2 id="bull-bear">正反观点</h2></summary>
     <div class="cols reveal reveal-d1">{bull_html}{bear_html}</div>
+    {f'<div class="reveal reveal-d2">{crosstalk_html}</div>' if crosstalk_html else ''}
     </details>
     {f'<a id="industry"></a>{industry_html}' if industry_html else ''}
-    <details open><summary><h2 id="synthesis">\u7efc\u5408\u7814\u5224</h2></summary>
+    <details open><summary><h2 id="synthesis">综合判断</h2></summary>
     <div class="reveal reveal-d2">{synthesis_html}</div>
     <div class="reveal reveal-d3">{scenario_html}</div>
     </details>
-    <details open><summary><h2 id="risk">\u98ce\u9669\u8bc4\u4f30</h2></summary>
+    <details open><summary><h2 id="risk">主要风险</h2></summary>
     <div class="reveal reveal-d4">{risk_html}</div>
     <div class="reveal reveal-d5" id="trade-plan">{trade_plan_html}</div>
     <div class="reveal reveal-d5">{catalyst_html}</div>
     </details>
-    <details><summary><h2 id="lineage">\u51b3\u7b56\u94fe\u8def</h2></summary>
+    <details><summary><h2 id="lineage">研究依据</h2></summary>
     <div class="reveal reveal-d6">{inval_html}</div>
     <div class="reveal reveal-d6">{lineage_html}</div>
     </details>
     <div class="banner banner-footer" style="margin:2rem 0 0;background:rgba(255,255,255,0.03);border-color:rgba(255,255,255,0.06);color:var(--muted);font-size:.75rem">{AI_DISCLAIMER_BANNER}</div>"""
 
-    nav = _nav_bar(view.ticker, view.run_id, "research")
+    nav = _nav_bar(view.ticker, view.run_id, "research", artifact_dir=artifact_dir)
     return _html_wrap(f"{_ticker_display(view)} \u6df1\u5ea6\u7814\u7a76 \u2014 {view.trade_date}", body, "\u6df1\u5ea6\u7814\u7a76\u62a5\u544a", extra_head=_COUNTUP_JS, nav_html=nav)

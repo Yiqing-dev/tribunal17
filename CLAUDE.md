@@ -23,7 +23,44 @@ python -m subagent_pipeline.demo_601985
 
 # Batch-generate reports from existing agent outputs in agent_artifacts/results/
 python -m subagent_pipeline.batch_process
+python -m subagent_pipeline.batch_process --tickers 600519,000858,002594
+python -m subagent_pipeline.batch_process --tickers-file watchlist.txt
+python -m subagent_pipeline.batch_process "论衡十七司，升堂！【600519，000858，002594】"
+python -m subagent_pipeline.lunheng_court "论衡十七司，升堂！【600519，000858，002594】"
+
+# Start local report workbench
+python start_workbench.py
+python start_workbench.py --tickers 600519,000858,002594
+python start_workbench.py --tickers-file watchlist.txt
+python start_workbench.py "论衡十七司，升堂！【600519，000858，002594】"
 ```
+
+When the user says "启动工作台" or asks to open the product workbench, run
+`python start_workbench.py` from this directory. If port 8765 is occupied, use
+`python start_workbench.py --port 8770`.
+
+For the daily stock-research workflow, the user provides a ticker list. Use
+`--tickers` for an inline list and `--tickers-file` for a file. The workbench
+will focus on that list and show missing reports as pending rather than hiding
+them.
+
+Primary launch phrase: when the user says
+`论衡十七司，升堂！【600519，000858，002594】`, treat the bracketed content as the
+daily ticker list. Build or serve the corresponding daily stock-research HTML
+workflow; the local scripts also accept the full phrase as a positional
+argument.
+
+Before running a multi-agent/subagent workflow, generate the local runbook with
+`python -m subagent_pipeline.lunheng_court "论衡十七司，升堂！【...】"`. It writes
+`data/reports/daily_watchlist.json` and `data/reports/lunheng_runbook.md` as the
+execution anchor for Claude Code / Codex.
+
+For this launch phrase, subagent discussion is the default language-model
+runtime behavior. The current Claude Code / Codex agent should call subagents
+for bounded roles such as bull case, bear case, risk/review, and final
+synthesis. Python scripts do not call subagents themselves. Keep internal review
+plumbing separate from the stockholder-facing HTML report unless the user asks
+to include it.
 
 ## Automated Pipeline via Commands
 
@@ -31,6 +68,7 @@ When the user sends a command matching one of the patterns below, read `tribunal
 
 | Command | Action |
 |---------|--------|
+| `论衡十七司，升堂！【ticker1，ticker2，ticker3】` | Daily multi-stock research workflow for the listed tickers |
 | `论衡十七司，升堂！{ticker} {name} {date?}` | Full L0-L7 pipeline |
 | `复盘司，点卯！{date}` | L0 daily recap only |
 | `太史令、户部司、舆图司，会同议事！{date}` | L1 market agents only |
@@ -302,10 +340,17 @@ prompts.scenario_agent(ticker, bull_history=bull_merged, bear_history=bear_merge
 prompts.research_manager(ticker, debate_input=combined_debate,
                          scenario_block=scenario_output,
                          market_context_block=market_context_block,
+                         news_report=news_text,
                          current_date=trade_date)
 ```
 
 Model=opus. `debate_input` = concatenated bull+bear+catalyst.
+
+**Pass `news_report=news_text`** (the Step 1 news analyst output): `debate_input`
+contains only bull/bear/catalyst, so the M2-bis news-downweighting needs the news
+pillar's `information_thin` flag from the news report. `research_manager()` extracts
+it (or accepts `news_information_thin=True/False` explicitly); without it the
+downweighting never fires (PROMPT-02).
 
 **Step 6 — Risk Debate (parallel, 3 debaters):**
 
@@ -579,7 +624,7 @@ Used in:
 
 ```bash
 export PROXY_API_URL="https://your-proxy-api.com/get?num=5&format=txt"
-export PROXY_TIMEOUT=20   # optional, default 20s
+export PROXY_TIMEOUT=60   # optional, default 60s
 ```
 
 Usage in collector code:

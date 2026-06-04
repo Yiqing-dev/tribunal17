@@ -371,8 +371,8 @@ class TestHistorySparkline:
         assert out
         assert '<svg' in out
         assert 'hist-spark' in out
-        # Color-coded dots per action
-        assert 'var(--green)' in out  # BUY
+        # Color-coded dots per action (A-share: 买入/看多 = 红).
+        assert 'var(--red)' in out  # BUY
         assert 'var(--yellow)' in out  # HOLD
 
     def test_single_point_returns_empty(self):

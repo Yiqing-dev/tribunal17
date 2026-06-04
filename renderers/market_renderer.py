@@ -289,9 +289,9 @@ _MARKET_CSS = """
 
 /* ── Reused heatmap/drawer/regime ── */
 .regime-badge { padding: .25rem .6rem; border-radius: 4px; font-weight: 600; font-size: .85rem; }
-.regime-badge.buy { background: rgba(52,211,153,.15); color: var(--green); }
+.regime-badge.buy { background: rgba(248,113,113,.15); color: var(--red); }
 .regime-badge.hold { background: rgba(251,191,36,.15); color: var(--yellow); }
-.regime-badge.sell { background: rgba(248,113,113,.15); color: var(--red); }
+.regime-badge.sell { background: rgba(52,211,153,.15); color: var(--green); }
 .heatmap-section { margin: 1.2rem 0; }
 .heatmap-wrap { max-width: 960px; margin: 0 auto; }
 .hm-node { cursor: pointer; transition: opacity .15s; }
@@ -559,11 +559,11 @@ def _render_sentiment_ecosystem(view: MarketView) -> str:
       </div>{"" if not view.breadth_estimated else '<div style="font-size:.7rem;color:var(--muted);margin-top:.2rem;">≈ 由涨跌比推算，非精确计数</div>'}
       <div class="breadth-stats">
         <div class="breadth-stat">
-          <div class="bs-val" style="color:var(--green)">{view.limit_up_count}</div>
+          <div class="bs-val" style="color:var(--red)">{view.limit_up_count}</div>
           <div class="bs-lab">\u6da8\u505c</div>
         </div>
         <div class="breadth-stat">
-          <div class="bs-val" style="color:var(--red)">{view.limit_down_count}</div>
+          <div class="bs-val" style="color:var(--green)">{view.limit_down_count}</div>
           <div class="bs-lab">\u8dcc\u505c</div>
         </div>
       </div>
@@ -641,17 +641,21 @@ def _render_sector_engine(view: MarketView) -> str:
                     pass
                 synth_sectors.append({
                     "sector": m.get("name", ""),
-                    "pct_change": flow,
+                    # No real \u6da8\u8dcc\u5e45 \u2014 keep pct neutral so tiles are NOT colored
+                    # \u7ea2\u6da8\u7eff\u8dcc; flow (net inflow) carried as net_flow_yi and shown
+                    # on a neutral-grey degraded treemap (rule #6/#8).
+                    "pct_change": 0.0,
+                    "net_flow_yi": flow,
                     "total_turnover_yi": abs(flow) * 10,
                 })
         if synth_sectors:
             treemap_html = (
                 '<p style="font-size:.75rem;color:#8fa3b8;margin-bottom:.3rem;">'
-                '\u26a0 \u677f\u5757\u6570\u636e\u4e0d\u53ef\u7528\uff0c'
-                '\u4ee5\u4e0b\u70ed\u529b\u56fe\u7531LLM\u8f93\u51fa\u5408\u6210'
-                '\uff0c\u74e6\u7247\u5927\u5c0f\u4e3a\u4f30\u7b97\u503c</p>'
+                '\u26a0 \u677f\u5757\u6da8\u8dcc\u5e45\u6570\u636e\u4e0d\u53ef\u7528\uff0c'
+                '\u4ee5\u4e0b\u4e3a\u8d44\u91d1\u6d41\u5411(\u975e\u6da8\u8dcc\u5e45)\uff0c'
+                '\u74e6\u7247\u4e3a\u4e2d\u6027\u7070\u3001\u4e0d\u4ee3\u8868\u7ea2\u6da8\u7eff\u8dcc\uff0c\u4ec5\u4f9b\u53c2\u8003</p>'
                 + _render_plotly_sector_treemap(
-                    synth_sectors, sector_stocks=view.sector_stocks)
+                    synth_sectors, sector_stocks=view.sector_stocks, degraded=True)
             )
 
     # Right sidebar: leaders + avoid + rotation phase + attribution
@@ -1267,7 +1271,7 @@ def generate_market_report(
                 refreshed.append({
                     "name": s.get("name", ""),
                     "flow": str(round(pct, 2)),       # use price change for color
-                    "net_inflow_yi": round(net / 1e8, 2) if abs(net) > 1e6 else 0,
+                    "net_inflow_yi": round(net / 1e8, 2) if net else 0,
                     "direction": "in" if pct > 0 else "out",
                 })
             market_context["sector_momentum"] = refreshed

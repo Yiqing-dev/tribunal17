@@ -205,3 +205,26 @@ class TestThrottle:
             result = _retry_call(mock_fn)
             assert result == "ok"
             assert len(calls) == 1
+
+
+class TestAdvanceTradingDays:
+    """_advance_trading_days: accurate CN trading-day stepping (item 4)."""
+
+    def test_skips_weekend(self):
+        from subagent_pipeline.akshare_collector import _advance_trading_days
+        # Fri 2026-06-05 + 1 trading day -> Mon 2026-06-08 (skips Sat/Sun).
+        assert _advance_trading_days("2026-06-05", 1) == "2026-06-08"
+
+    def test_five_trading_days(self):
+        from subagent_pipeline.akshare_collector import _advance_trading_days
+        assert _advance_trading_days("2026-04-08", 5) == "2026-04-15"
+
+    def test_skips_holiday_block(self):
+        from subagent_pipeline.akshare_collector import _advance_trading_days
+        # 1 trading day after 2026-09-30 jumps past the National Day golden week.
+        assert _advance_trading_days("2026-09-30", 1) == "2026-10-08"
+
+    def test_non_positive_and_bad_input(self):
+        from subagent_pipeline.akshare_collector import _advance_trading_days
+        assert _advance_trading_days("2026-04-08", 0) == "2026-04-08"
+        assert _advance_trading_days("not-a-date", 3) == "not-a-date"

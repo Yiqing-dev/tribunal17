@@ -78,6 +78,53 @@ python -m subagent_pipeline.demo_601985
 
 # 从已有智能体输出批量生成报告
 python -m subagent_pipeline.batch_process
+
+# 每日按股票清单生成已有智能体输出对应的 HTML 报告
+python -m subagent_pipeline.batch_process --tickers 600519,000858,002594
+python -m subagent_pipeline.batch_process --tickers-file watchlist.txt
+python -m subagent_pipeline.batch_process "论衡十七司，升堂！【600519，000858，002594】"
+
+# 为 Claude Code / Codex 生成每日多 agent 执行 runbook
+python -m subagent_pipeline.lunheng_court "论衡十七司，升堂！【600519，000858，002594】"
+```
+
+### 启动本地工作台
+
+在 Claude Code 或 Codex 里都可以直接让代理运行：
+
+```bash
+python start_workbench.py
+```
+
+它会自动重建 `data/reports/workbench.html`，启动本地服务，并打印：
+
+```text
+http://127.0.0.1:8765/workbench.html
+```
+
+每日有股票清单时，可以让工作台只聚焦这批标的；清单中尚未生成研报的代码会显示为“待生成”：
+
+```bash
+python start_workbench.py --tickers 600519,000858,002594
+python start_workbench.py --tickers-file watchlist.txt
+python start_workbench.py "论衡十七司，升堂！【600519，000858，002594】"
+```
+
+`watchlist.txt` 支持每行一个代码，也支持附带名称：
+
+```text
+600519 贵州茅台
+000858,五粮液
+002594
+```
+
+内置支持少量常用名称反查，例如 `贵州茅台`、`五粮液`、`比亚迪`。更多名称可放到
+`data/stock_aliases.json`，格式为 `{"股票名称": "代码"}`。
+
+端口被占用时：
+
+```bash
+python start_workbench.py --port 8770
 ```
 
 ---

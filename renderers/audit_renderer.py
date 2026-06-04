@@ -31,7 +31,7 @@ from .snapshot_renderer import _render_kline_card
 _format_decision_confidence = format_confidence_pct
 
 
-def render_audit(view: AuditView) -> str:
+def render_audit(view: AuditView, *, artifact_dir=None) -> str:
     """Render Tier 3 Trust Audit Report -- trust signals first, details below."""
 
     # ── V4: Trust signals — bigger values + score dots for scanability ──
@@ -342,5 +342,5 @@ def render_audit(view: AuditView) -> str:
     </div>
     <div class="banner banner-footer" style="margin:2rem 0 0;background:rgba(255,255,255,0.03);border-color:rgba(255,255,255,0.06);color:var(--muted);font-size:.75rem">{AI_DISCLAIMER_BANNER}</div>"""
 
-    nav = _nav_bar(view.ticker, view.run_id, "audit")
+    nav = _nav_bar(view.ticker, view.run_id, "audit", artifact_dir=artifact_dir)
     return _html_wrap(f"{_ticker_display(view)} \u4fe1\u4efb\u5ba1\u8ba1\u62a5\u544a \u2014 {view.trade_date}", body, "\u4fe1\u4efb\u5ba1\u8ba1\u62a5\u544a", nav_html=nav)

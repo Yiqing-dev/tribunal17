@@ -4,13 +4,13 @@ Tier 3 Audit view model.
 Compliance, metrics, traceability — deep-dive audit page.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from ..replay_service import ReplayService
 from ..trace_models import RunMetrics, RunTrace
-
-from .views import BannerView, NodeTraceView
 
 
 @dataclass
@@ -71,6 +71,8 @@ class AuditView:
 
     @classmethod
     def build(cls, service: ReplayService, run_id: str) -> Optional["AuditView"]:
+        from .views import BannerView, NodeTraceView
+
         trace = service.load_run(run_id)
         if not trace:
             return None
@@ -190,23 +192,31 @@ class AuditView:
         ph_data: List[float] = [float(p) for p in raw_prices if p is not None][:30]
         sh_data: List[Dict] = []
         try:
-            past_runs = service.store.list_runs(ticker=trace.ticker, limit=10)
+            from ..report_index import sort_run_entries
+
+            past_runs = sort_run_entries(
+                service.store.list_runs(ticker=trace.ticker, limit=0),
+                newest_first=True,
+            )
             count = 0
             for pr in past_runs:
                 pr_rid = pr.get("run_id", "")
                 if pr_rid == run_id:
                     continue
-                pr_conf = 0.0
+                pr_conf = -1.0
+                pr_action = pr.get("research_action", "")
                 if pr_rid:
                     try:
-                        pr_trace = service.store.load(pr_rid)
+                        pr_trace = service.load_run(pr_rid)
                         if pr_trace and pr_trace.final_confidence >= 0:
                             pr_conf = float(pr_trace.final_confidence)
+                        if pr_trace:
+                            pr_action = "VETO" if pr_trace.was_vetoed else (pr_trace.research_action or pr_action)
                     except Exception:
                         pass
                 sh_data.append({
                     "trade_date": pr.get("trade_date", ""),
-                    "action": pr.get("research_action", ""),
+                    "action": pr_action,
                     "confidence": pr_conf,
                     "run_id": pr_rid,
                 })
