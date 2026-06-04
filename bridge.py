@@ -11,7 +11,6 @@ import logging
 import math
 import re
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -20,6 +19,7 @@ from .trace_models import (
     NodeStatus,
     RunTrace,
     compute_hash,
+    _now_cst,
 )
 from .replay_store import ReplayStore
 from .shared import (
@@ -28,6 +28,7 @@ from .shared import (
     TAG_SYNTHESIS_OUTPUT, TAG_SCENARIO_OUTPUT,
     TAG_TRADECARD_JSON, TAG_TRADE_PLAN_JSON,
     TAG_ORDER_PROPOSAL_JSON,
+    normalize_confidence_value,
 )
 
 logger = logging.getLogger(__name__)
@@ -259,20 +260,30 @@ def _parse_kv_block(block: str, parse_arrays: bool = False) -> Dict[str, Any]:
             items = [x.strip().strip('"\'') for x in val[1:-1].split(',') if x.strip()]
             result[key] = items
         else:
-            # Try boolean first, then float
-            if val.upper() in ('TRUE', 'YES'):
-                result[key] = True
-            elif val.upper() in ('FALSE', 'NO'):
-                result[key] = False
-            else:
+            # BRG-01: the LAST field's multiline value can absorb a trailing
+            # prose paragraph (the value regex runs to end-of-block). For scalar
+            # coercion, also try just the FIRST line, so
+            # "confidence = 0.72\n<trailing prose>" → 0.72 instead of silently
+            # falling back to a string (and then a default). Genuine multiline
+            # string values stay strings (their first line isn't a scalar).
+            first_line = val.split('\n', 1)[0].strip()
+            coerced = None
+            for candidate in (val, first_line):
+                cu = candidate.upper()
+                if cu in ('TRUE', 'YES'):
+                    coerced = True
+                    break
+                if cu in ('FALSE', 'NO'):
+                    coerced = False
+                    break
                 try:
-                    fv = float(val)
-                    if math.isnan(fv) or math.isinf(fv):
-                        result[key] = val  # keep as string
-                    else:
-                        result[key] = fv
+                    fv = float(candidate)
                 except ValueError:
-                    result[key] = val
+                    continue
+                if not (math.isnan(fv) or math.isinf(fv)):
+                    coerced = fv
+                    break
+            result[key] = coerced if coerced is not None else val
     return result
 
 
@@ -501,9 +512,16 @@ def parse_tradecard_json(text: str) -> Dict[str, Any]:
                 return json.loads(raw)
             except (json.JSONDecodeError, ValueError):
                 pass
-    # Priority 2: first unlabeled JSON block containing "symbol"
+    # Priority 2: first unlabeled JSON block containing "symbol" — but NOT an
+    # ORDER_PROPOSAL block. Order proposals also carry "symbol"/"side"; identify
+    # them by their order-execution keys and skip, so an (unlabeled) order
+    # proposal is never mis-read as a trade card (BRG-06).
+    _ORDER_MARKERS = ('"order_type"', '"qty"', '"quantity"',
+                      '"limit_price"', '"time_in_force"')
     for label, body in _iter_json_code_blocks(text):
         if not label and body.startswith('{') and '"symbol"' in body:
+            if any(mk in body for mk in _ORDER_MARKERS):
+                continue
             try:
                 raw = re.sub(r',\s*}', '}', body)
                 return json.loads(raw)
@@ -613,7 +631,8 @@ def parse_claims(text: str, direction: str = "bullish") -> List[Dict]:
                 claim["confidence"] = claim["confidence"] / 10.0
             claim["confidence"] = max(0.0, min(1.0, claim["confidence"]))
         else:
-            # Sentinel: agent did not provide confidence. Matches _confidence_to_float.
+            # Sentinel: agent did not provide confidence. Matches
+            # normalize_confidence_value's -1.0 sentinel.
             # Downstream aggregators must filter `>= 0` to avoid polluting averages.
             claim["confidence"] = -1.0
 
@@ -1166,6 +1185,19 @@ def _extract_financial_metrics(text: str) -> Dict[str, str]:
                         unit = ""
                     if not unit:
                         continue
+                    # RENDER-03: normalize market_cap to 亿 (the unit the renderer
+                    # hard-codes via kind="mktcap_yi"). Without this, "总市值 1.5
+                    # 万亿" was stored as 1.5 and shown as 1.5亿 — a 10000× shrink
+                    # (工行 → micro-cap). net_profit is rendered unit-less (kind=
+                    # "default"), so it is intentionally left in its raw unit.
+                    _scale = ({"万亿": 10000.0, "亿": 1.0, "万": 0.0001}.get(unit.strip(), 1.0)
+                              if key == "market_cap" else 1.0)
+                    if _scale != 1.0:
+                        try:
+                            _scaled = float(val) * _scale
+                            val = f"{_scaled:.4f}".rstrip("0").rstrip(".")
+                        except (ValueError, TypeError):
+                            pass
                 if allow_loss_prefix and not val.startswith("-"):
                     sentence_start = max(0, m.start() - 30)
                     for i in range(m.start(), sentence_start, -1):
@@ -1213,7 +1245,7 @@ def build_node_trace(
         run_id=run_id,
         node_name=node_name,
         seq=seq,
-        timestamp=datetime.now(),
+        timestamp=_now_cst(),
         input_hash=compute_hash(prompt_text) if prompt_text else "",
         output_hash=compute_hash(text),
         output_excerpt=text[:150000] if text else "",
@@ -1336,10 +1368,49 @@ def _parse_catalyst(agent_key: str, text: str, nt: NodeTrace) -> None:
         nt.status = NodeStatus.WARN
 
 
+def parse_rebuttals(text: str) -> List[Dict[str, Any]]:
+    """Parse REBUT blocks that target the OTHER side's claim IDs → opposing_claims.
+
+    Format (REBUTTAL_PROTOCOL):
+        REBUT [clm-uNNN]: <rebuttal text>
+        REBUT_CONFIDENCE: <0.0-1.0>
+
+    Returns [{target_claim_id, text, confidence}]. This is how the system
+    measures whether the debate is a REAL clash (each side rebutting the
+    other's specific claims) versus two monologues (AQ-01)."""
+    rebuttals: List[Dict[str, Any]] = []
+    seen = set()
+    for blk in re.split(r'(?=^\s*REBUT\s*\[)', text, flags=re.MULTILINE):
+        hm = re.match(
+            r'\s*REBUT\s*\[?\s*(clm-[ur]\d+)\s*\]?\s*[:：]\s*(.*)',
+            blk, re.IGNORECASE | re.DOTALL,
+        )
+        if not hm:
+            continue
+        cid = hm.group(1).lower()
+        body = re.split(
+            r'\n\s*(?:REBUT_CONFIDENCE|CLAIM\s*\[|CITED_EVIDENCE|REBUT\s*\[)',
+            hm.group(2), 1,
+        )[0].strip()
+        if not body:
+            continue
+        conf = -1.0
+        cm = re.search(r'REBUT_CONFIDENCE\s*[:：=]\s*([^\n]+)', blk, re.IGNORECASE)
+        if cm:
+            conf = normalize_confidence_value(cm.group(1).strip())
+        key = (cid, body[:40])
+        if key in seen:
+            continue
+        seen.add(key)
+        rebuttals.append({"target_claim_id": cid, "text": body[:400], "confidence": conf})
+    return rebuttals
+
+
 def _parse_researcher(agent_key: str, text: str, nt: NodeTrace) -> None:
     """Parse Stage 3 bull_researcher / bear_researcher."""
     direction = "bullish" if agent_key == "bull_researcher" else "bearish"
     claims = parse_claims(text, direction)
+    rebuttals = parse_rebuttals(text)
     evidence = parse_evidence_citations(text)
     dim_scores = _extract_dimension_scores(text)
     overall_conf = _extract_overall_confidence(text, direction)
@@ -1397,7 +1468,9 @@ def _parse_researcher(agent_key: str, text: str, nt: NodeTrace) -> None:
         "overall_confidence": overall_conf,
         "dimension_scores": dim_scores,
         "supporting_claims": supporting_claims,
-        "opposing_claims": [],
+        # AQ-01: rebuttals targeting the other side's claim IDs — populated from
+        # REBUT blocks so debate-quality metrics can measure real clash.
+        "opposing_claims": rebuttals,
         "unresolved_conflicts": [],
         "missing_evidence": [],
     }
@@ -1418,9 +1491,19 @@ def _parse_scenario(agent_key: str, text: str, nt: NodeTrace) -> None:
             or "bull_prob" not in scenario
             or "bear_prob" not in scenario
         )
-        _bp = float(scenario.get("base_prob", 0.5))
-        _blp = float(scenario.get("bull_prob", 0.25))
-        _brp = float(scenario.get("bear_prob", 0.25))
+        # BRG-03: probabilities may arrive as "50%", "0.5 (base case)", "25" —
+        # extract the number robustly (no raw float() that would crash the whole
+        # scenario node), then treat >1 / "%" values as percentages. The sum is
+        # renormalized below, so 50/25/25 and 0.5/0.25/0.25 both work.
+        def _prob(key, default):
+            raw = scenario.get(key, default)
+            v = _safe_float(raw, default)
+            if v > 1.0 or (isinstance(raw, str) and "%" in raw):
+                v = v / 100.0
+            return v if v >= 0 else default
+        _bp = _prob("base_prob", 0.5)
+        _blp = _prob("bull_prob", 0.25)
+        _brp = _prob("bear_prob", 0.25)
         _ptotal = _bp + _blp + _brp
         if _ptotal > 0 and abs(_ptotal - 1.0) > 0.01:
             _bp, _blp, _brp = _bp / _ptotal, _blp / _ptotal, _brp / _ptotal
@@ -1444,6 +1527,33 @@ def _parse_scenario(agent_key: str, text: str, nt: NodeTrace) -> None:
         nt.status = NodeStatus.WARN
 
 
+def parse_adjudications(text: str) -> List[Dict[str, Any]]:
+    """Parse the PM's claim-by-claim verdicts (M2a): the strict format is
+    ``[clm-xNNN] ACCEPT|REJECT|DEFER — reason``.
+
+    Returns [{claim_id, verdict, reason}], one per claim (first verdict wins).
+    A REJECT IS engagement (the PM considered and dismissed it) — so all three
+    verdicts count as "adjudicated", but accepted/rejected/deferred are tracked
+    separately so a wall of REJECTs doesn't read as a high digestion rate."""
+    adj: List[Dict[str, Any]] = []
+    seen = set()
+    for m in re.finditer(
+        r'\[?\s*(clm-[ur]\d+)\s*\]?\s*[:：\-—\s]*?\b(ACCEPT|REJECT|DEFER)\b'
+        r'\s*[—\-:：]*\s*([^\n]*)',
+        text, re.IGNORECASE,
+    ):
+        cid = m.group(1).lower()
+        if cid in seen:
+            continue
+        seen.add(cid)
+        adj.append({
+            "claim_id": cid,
+            "verdict": m.group(2).upper(),
+            "reason": m.group(3).strip()[:300],
+        })
+    return adj
+
+
 def _parse_research_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
     """Parse Stage 5 research_manager (PM)."""
     synth = parse_synthesis_output(text)
@@ -1451,9 +1561,9 @@ def _parse_research_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
         action = str(synth.get("research_action", "HOLD")).upper()
         nt.research_action = action
         _conf_defaulted = "confidence" not in synth
-        try:
-            nt.confidence = float(synth.get("confidence", 0.5))
-        except (ValueError, TypeError):
+        nt.confidence = normalize_confidence_value(synth.get("confidence", 0.5))
+        if nt.confidence < 0:
+            # Present but unparseable → fall back to neutral default + warn.
             nt.confidence = 0.5
             _conf_defaulted = True
         if _conf_defaulted:
@@ -1475,6 +1585,9 @@ def _parse_research_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
             re.findall(r'\bclm-[ur]\d+\b', text)
         ))
         nt.claim_ids_referenced = claim_refs
+        # AQ-03: parse the PM's per-claim verdicts (ACCEPT/REJECT/DEFER) so
+        # "digestion" can mean "actually adjudicated" — not just "ID mentioned".
+        adjudications = parse_adjudications(text)
 
         # Directional lean (research improvement #2): when action=HOLD, captures
         # which way PM would lean if forced to pick, with reason. For BUY/SELL,
@@ -1508,6 +1621,7 @@ def _parse_research_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
             "opposing_evidence_ids": opposing if isinstance(opposing, list) else [],
             "directional_lean": _lean,
             "lean_reason": _lean_reason,
+            "adjudications": adjudications,
         }
     else:
         nt.parse_status = "fallback_used"
@@ -1573,8 +1687,10 @@ def _parse_risk_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
         # Manager's confidence (see trace_models.py finalize(): "if
         # nt.confidence >= 0" guard).  Do NOT change to None — 7+ files
         # compare against this value numerically.
+        # Canonical normalizer also returns the -1.0 sentinel for a missing
+        # value, so finalize() can prefer the Research Manager's confidence.
         raw_conf = risk.get("confidence")
-        nt.confidence = _safe_float(raw_conf) if raw_conf is not None else -1.0
+        nt.confidence = normalize_confidence_value(raw_conf)
         # Veto only on an explicit agent VETO or an explicit risk_cleared=False.
         nt.vetoed = action == "VETO" or (risk_cleared_explicit and not nt.risk_cleared)
         if action == "VETO":
@@ -1599,8 +1715,10 @@ def _parse_risk_manager(agent_key: str, text: str, nt: NodeTrace) -> None:
             risk.get("invalidation_conditions", [])
         )
 
+        # BRG-05: render a missing score as "—/10", never "None/10".
+        _rs_disp = nt.risk_score if nt.risk_score is not None else "—"
         nt.structured_data = {
-            "conclusion": f"风险评分 {nt.risk_score}/10，"
+            "conclusion": f"风险评分 {_rs_disp}/10，"
                           + ("审查通过" if nt.risk_cleared else "审查未通过"),
             "invalidation_conditions": invalidation_conditions,
             "risk_flags": [
@@ -1649,7 +1767,7 @@ def _parse_research_output(agent_key: str, text: str, nt: NodeTrace) -> None:
         tc_conf = tradecard.get("confidence")
         if tc_conf is not None:
             sd["confidence_raw"] = tc_conf  # preserve pre-normalization value
-            nt.confidence = _confidence_to_float(tc_conf)
+            nt.confidence = normalize_confidence_value(tc_conf)
     if trade_plan:
         sd["trade_plan"] = trade_plan
         # If TRADECARD didn't provide action/confidence, try TRADE_PLAN
@@ -1667,7 +1785,7 @@ def _parse_research_output(agent_key: str, text: str, nt: NodeTrace) -> None:
         if nt.confidence < 0:
             tp_conf = trade_plan.get("confidence")
             if tp_conf is not None:
-                nt.confidence = _confidence_to_float(tp_conf)
+                nt.confidence = normalize_confidence_value(tp_conf)
     if sd:
         nt.structured_data = sd
     # Both JSON blocks missing → mark as degraded output
@@ -1718,48 +1836,35 @@ def _split_if_string(val) -> list:
     return []
 
 
-_CONFIDENCE_MAP = {
-    "high": 0.8, "med": 0.5, "medium": 0.5, "low": 0.2,
-    "高": 0.8, "中": 0.5, "低": 0.2,
-}
-
-
-def _confidence_to_float(val, default: float = -1.0) -> float:
-    """Convert confidence value to float.
-
-    Handles numeric values, numeric strings, AND word labels
-    ("High"/"Med"/"Low") that the TRADECARD_JSON prompt spec uses.
-    """
-    if val is None:
+def _safe_int(val, default=None):
+    """Lenient int parse: pulls the LEADING number out of strings like "5/10",
+    "5分", "75%" → 5 / 5 / 75. A placeholder like "N/10" has no leading number
+    → returns default (NOT the denominator 10). BRG-05."""
+    if val is None or isinstance(val, bool):
         return default
     if isinstance(val, (int, float)):
-        v = float(val)
-        if v > 1.0:
-            v = v / 100.0 if v > 10 else v / 10.0
-        return max(0.0, min(1.0, v))
-    if isinstance(val, str):
-        mapped = _CONFIDENCE_MAP.get(val.strip().lower())
-        if mapped is not None:
-            return mapped
-        try:
-            return float(val)
-        except (ValueError, TypeError):
-            return default
-    return default
-
-
-def _safe_int(val, default=None):
-    if val is None:
+        return int(val)
+    m = re.match(r'\s*(-?\d+)', str(val))
+    if not m:
         return default
     try:
-        return int(val)
+        return int(m.group(1))
     except (ValueError, TypeError):
         return default
 
 
 def _safe_float(val, default=0.0):
-    try:
+    """Lenient float parse: pulls the LEADING number out of strings, stripping a
+    trailing "/10", "%", or prose (e.g. "0.5 (base case)" → 0.5)."""
+    if val is None or isinstance(val, bool):
+        return default
+    if isinstance(val, (int, float)):
         return float(val)
+    m = re.match(r'\s*(-?\d+(?:\.\d+)?)', str(val))
+    if not m:
+        return default
+    try:
+        return float(m.group(1))
     except (ValueError, TypeError):
         return default
 
@@ -1814,9 +1919,9 @@ def build_run_trace(
         run_id=run_id,
         ticker=normalized,
         ticker_name=ticker_name,
-        trade_date=trade_date or datetime.now().strftime("%Y-%m-%d"),
-        as_of=datetime.now().strftime("%Y-%m-%d"),
-        started_at=datetime.now(),
+        trade_date=trade_date or _now_cst().strftime("%Y-%m-%d"),
+        as_of=_now_cst().strftime("%Y-%m-%d"),
+        started_at=_now_cst(),
         market="cn",
         language="zh",
         llm_provider="subagent",
@@ -1858,9 +1963,37 @@ def build_run_trace(
             rm_action = nt.research_action or ""
             was_vetoed = nt.vetoed
     rules_fired.append("P5_veto_consistency")
-    if was_vetoed and rm_action == "BUY":
-        compliance_reasons.append("P5: VETO后仍为BUY，方向不一致")
+    # SIG-003: when the risk gate vetoes but RISK_OUTPUT omits research_action,
+    # the Risk Judge node's action is "" — fall back to the PM's direction so a
+    # vetoed BUY is still detected (previously this case slipped through).
+    effective_pre_veto = rm_action or pm_action
+    if was_vetoed and effective_pre_veto == "BUY":
+        compliance_reasons.append("P5: BUY方向被风控否决，发布方向应为VETO")
         compliance_status = "flag"
+
+    # P6 (AQ-06): evidence↔conclusion consistency. pillar_score is directional
+    # (4=bullish … 0=bearish). If the 4 analyst pillars lean clearly bearish
+    # (mean < 1.5) yet the published action is BUY — or lean clearly bullish
+    # (mean > 2.5) yet SELL — that's optimistic/contrarian drift the LLM made
+    # without the evidence supporting it. Surface it (a flag, not a block).
+    rules_fired.append("P6_pillar_direction")
+    _pillars = [
+        nt.structured_data["pillar_score"]
+        for nt in trace.node_traces
+        if isinstance(getattr(nt, "structured_data", None), dict)
+        and isinstance(nt.structured_data.get("pillar_score"), (int, float))
+    ]
+    _final_action = "VETO" if was_vetoed else (rm_action or pm_action)
+    if len(_pillars) >= 3:
+        _pmean = sum(_pillars) / len(_pillars)
+        if _final_action == "BUY" and _pmean < 1.5:
+            compliance_reasons.append(
+                f"P6: 支柱均值 {_pmean:.1f}/4 偏空但结论 BUY，证据-结论方向背离")
+            compliance_status = "flag"
+        elif _final_action == "SELL" and _pmean > 2.5:
+            compliance_reasons.append(
+                f"P6: 支柱均值 {_pmean:.1f}/4 偏多但结论 SELL，证据-结论方向背离")
+            compliance_status = "flag"
 
     if compliance_reasons:
         compliance_status = "flag"
@@ -1869,7 +2002,7 @@ def build_run_trace(
         run_id=run_id,
         node_name="Publishing Compliance",
         seq=18,  # after research_output (seq=17), no conflicts
-        timestamp=datetime.now(),
+        timestamp=_now_cst(),
         compliance_status=compliance_status,
         compliance_reasons=compliance_reasons,
         compliance_rules_fired=rules_fired,
@@ -1910,10 +2043,10 @@ def _try_fetch_prices(ticker: str, days: int = 30) -> List[float]:
     """
     try:
         import akshare as ak  # noqa: delayed import — optional dependency
-        from datetime import date, timedelta
+        from datetime import timedelta
 
         bare = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
-        end = date.today()
+        end = _now_cst().date()  # CST so the range includes today's bar in UTC containers
         start = end - timedelta(days=days + 10)
         df = ak.stock_zh_a_hist(
             symbol=bare, period="daily", adjust="qfq",
@@ -2056,7 +2189,7 @@ def _extract_industry_compare_from_text(text: str, ticker: str = "") -> Dict[str
 def _load_cached_industry_data(ticker: str, trade_date: str) -> Dict[str, Any]:
     """Load industry comparison from local collect_bundle cache, no network."""
     bare = ticker.replace(".SS", "").replace(".SZ", "").replace(".BJ", "")
-    dates = [trade_date or datetime.now().strftime("%Y-%m-%d")]
+    dates = [trade_date or _now_cst().strftime("%Y-%m-%d")]
     try:
         from .akshare_collector import _is_cn_trading_day, _last_trading_day
         if not _is_cn_trading_day(dates[0]):
@@ -2099,7 +2232,7 @@ def _augment_metric_metadata(metrics: Dict[str, Any], text: str, trade_date: str
     if not metrics:
         return metrics
     out = dict(metrics)
-    out.setdefault("data_as_of", trade_date or datetime.now().strftime("%Y-%m-%d"))
+    out.setdefault("data_as_of", trade_date or _now_cst().strftime("%Y-%m-%d"))
     t = text or ""
     if re.search(r"(一季报|Q1|一季度)", t, re.IGNORECASE):
         out.setdefault("metric_period", "quarterly")

@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 
 from .akshare_collector import _retry_call, _last_trading_day, _is_cn_trading_day
 from .proxy_pool import em_proxy_session
+from .trace_models import _now_cst  # CST 'now' so date defaults don't roll back in UTC containers
 
 logger = logging.getLogger(__name__)
 
@@ -550,7 +551,7 @@ def collect_limit_board(trade_date: str = "", spot_df=None) -> LimitBoardSummary
     # bulk spot endpoint is down. These return the limit-up / limit-down
     # rosters even on days where stock_zh_a_spot_em fails.
     if spot_df is None or "涨跌幅" not in (spot_df.columns if spot_df is not None else []):
-        date_str = (trade_date or datetime.now().strftime("%Y-%m-%d")).replace("-", "")
+        date_str = (trade_date or _now_cst().strftime("%Y-%m-%d")).replace("-", "")
         try:
             with em_proxy_session():
                 up_df = ak.stock_zt_pool_em(date=date_str)
@@ -639,7 +640,7 @@ def collect_limit_board(trade_date: str = "", spot_df=None) -> LimitBoardSummary
 
     # Try to get consecutive board data from akshare
     try:
-        date_str = (trade_date or datetime.now().strftime("%Y-%m-%d")).replace("-", "")
+        date_str = (trade_date or _now_cst().strftime("%Y-%m-%d")).replace("-", "")
         with em_proxy_session():
             zt_df = ak.stock_zt_pool_em(date=date_str)
         if zt_df is not None and not zt_df.empty:
@@ -893,7 +894,7 @@ def _derive_market_weather(idx_summary: IndexSummary) -> tuple:
 
 def collect_daily_recap(trade_date: str = "") -> DailyRecapData:
     """Collect all daily recap data. Main entry point."""
-    effective_date = trade_date or datetime.now().strftime("%Y-%m-%d")
+    effective_date = trade_date or _now_cst().strftime("%Y-%m-%d")
     if not _is_cn_trading_day(effective_date):
         rolled = _last_trading_day(effective_date)
         logger.warning(

@@ -70,7 +70,10 @@ class TestEvaluateSignal:
             run_id="test-001", ticker="601985.SS", ticker_name="中国中冶",
             trade_date="2026-03-10", action=action, confidence=0.75,
             was_vetoed=False, stop_loss=stop_loss, take_profit=take_profit,
-            config=config or BacktestConfig(neutral_band_pct=2.0),
+            # eval_window_days=1 so these small synthetic bar sets count as a
+            # filled window (these tests verify metric computation, not the
+            # immature/maturity gate — see TestImmatureWindow for that).
+            config=config or BacktestConfig(neutral_band_pct=2.0, eval_window_days=1),
             forward_bars=bars, signal_close=signal_close,
         )
 
@@ -541,7 +544,7 @@ class TestEdgeCases:
             run_id="z", ticker="601985.SS", ticker_name="T",
             trade_date="2026-03-10", action="BUY", confidence=0.5,
             was_vetoed=False, signal_close=10.0, forward_bars=bars,
-            config=BacktestConfig(),
+            config=BacktestConfig(eval_window_days=1),
         )
         assert r.eval_status == "completed"
         assert r.end_close == 11.0  # last valid close
@@ -560,6 +563,60 @@ class TestEdgeCases:
         assert r.hit_stop_loss is False
         assert r.hit_take_profit is False
         assert r.first_hit == "neither"
+
+
+class TestImmatureWindow:
+    """BT-001/BT-002: half-window signals are 'immature' and excluded from stats;
+    SELL per-action avg_return is inverted to match its win-rate sign."""
+
+    def test_unfilled_window_is_immature_and_excluded(self):
+        from subagent_pipeline.backtest import compute_summary
+        # 3 forward bars under a 10-day window → not yet mature.
+        bars = [{"close": c, "high": c + 0.2, "low": c - 0.2} for c in (10.5, 11.0, 11.5)]
+        r = evaluate_signal(
+            run_id="im", ticker="601985.SS", ticker_name="T",
+            trade_date="2026-03-10", action="BUY", confidence=0.7,
+            was_vetoed=False, signal_close=10.0, forward_bars=bars,
+            config=BacktestConfig(eval_window_days=10),
+        )
+        assert r.eval_status == "immature"
+        # metrics are still computed for display...
+        assert r.stock_return_pct == 15.0
+        # ...but the signal is excluded from win-rate / accuracy / averages.
+        s = compute_summary([r], config=BacktestConfig(eval_window_days=10))
+        assert s.completed == 0
+        assert s.immature == 1
+        assert s.win_count == 0
+        assert s.avg_stock_return_pct == 0.0
+
+    def test_full_window_is_completed(self):
+        bars = [{"close": 10.0, "high": 10.2, "low": 9.8} for _ in range(10)]
+        r = evaluate_signal(
+            run_id="ok", ticker="601985.SS", ticker_name="T",
+            trade_date="2026-03-10", action="HOLD", confidence=0.5,
+            was_vetoed=False, signal_close=10.0, forward_bars=bars,
+            config=BacktestConfig(eval_window_days=10),
+        )
+        assert r.eval_status == "completed"
+
+    def test_sell_breakdown_return_inverted(self):
+        from subagent_pipeline.backtest import compute_summary
+        # Correct SELL: price falls 10% → win, and the per-action avg_return
+        # must be POSITIVE (inverted), not -10%, to match the 100% win-rate.
+        bars = [{"close": 9.0, "high": 9.5, "low": 8.5}]
+        r = evaluate_signal(
+            run_id="se", ticker="601985.SS", ticker_name="T",
+            trade_date="2026-03-10", action="SELL", confidence=0.7,
+            was_vetoed=False, signal_close=10.0, forward_bars=bars,
+            config=BacktestConfig(neutral_band_pct=2.0, eval_window_days=1),
+        )
+        assert r.eval_status == "completed"
+        assert r.outcome == "win"
+        s = compute_summary([r], config=BacktestConfig(eval_window_days=1))
+        sell = s.action_breakdown["SELL"]
+        assert sell["win_rate_pct"] == 100.0
+        assert sell["avg_return_pct"] == 10.0   # inverted: + = correct sell
+        assert s.avg_sell_return_pct == 10.0     # consistent with top-level
 
 
 # ── Phase 1 Bug Fixes: direction-aware SL/TP + HOLD outcome ─────────────

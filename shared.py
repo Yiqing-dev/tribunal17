@@ -25,6 +25,51 @@ ROUND_1_HEADER = "=== Round 1 ==="
 ROUND_2_HEADER = "=== Round 2 ==="
 
 
+# ── Confidence normalization (single source of truth) ───────────────────
+# ONE implementation, shared by bridge.py (parsing) AND the renderers
+# (display), so confidence can never diverge by scale across code paths.
+# CLAUDE.md rule #7: values >=10 are on a 0-100 scale (/100); values >1 but
+# <10 are on a 1-10 scale (/10). Returns the -1.0 "not set" sentinel for
+# None / boolean / negative / unparseable input (RunTrace.finalize() and
+# downstream aggregators skip confidence < 0). Result is clamped to [0, 1].
+_CONFIDENCE_LABELS = {
+    "high": 0.8, "med": 0.5, "medium": 0.5, "low": 0.2,
+    "高": 0.8, "中": 0.5, "低": 0.2,
+}
+
+
+def normalize_confidence_value(val) -> float:
+    """Canonical confidence normalizer → [0.0, 1.0], or -1.0 sentinel."""
+    if val is None:
+        return -1.0
+    if isinstance(val, bool):
+        return -1.0  # avoid treating True/False as 1.0/0.0
+    if isinstance(val, (int, float)):
+        conf = float(val)
+    elif isinstance(val, str):
+        mapped = _CONFIDENCE_LABELS.get(val.strip().lower())
+        if mapped is not None:
+            return mapped
+        raw = val.strip().rstrip("%")
+        try:
+            conf = float(raw)
+        except (ValueError, TypeError):
+            return -1.0
+        if val.strip().endswith("%"):
+            conf = conf / 100.0
+    else:
+        return -1.0
+
+    if conf < 0:
+        return -1.0
+    # values >=10 → 0-100 scale (/100); values >1 but <10 → 1-10 scale (/10).
+    if conf >= 10:
+        conf = conf / 100.0
+    elif conf > 1.0:
+        conf = conf / 10.0
+    return max(0.0, min(1.0, conf))
+
+
 # ── Risk flag canonicalization ──────────────────────────────────────────
 # Maps many synonyms (中/英变体) to a small set of canonical categories.
 # Used by bridge._parse_risk_manager() to de-duplicate 200+ raw labels into
@@ -231,7 +276,16 @@ def dedupe_and_cap_flags(flags, cap=6):
         return []
     by_category = {}
     for f in flags:
-        if not isinstance(f, dict):
+        if isinstance(f, str):
+            # BRG-02: LLMs often emit a flat list of category strings
+            # (e.g. ["liquidity_risk", "valuation_risk"]) instead of dicts.
+            # Wrap each so it is canonicalized rather than silently dropped,
+            # which would zero out the risk flags and make a risky stock look clean.
+            f = f.strip()
+            if not f:
+                continue
+            f = {"category": f}
+        elif not isinstance(f, dict):
             continue
         raw_cat = f.get("category", "")
         canonical, default_sev = canonicalize_risk_flag(raw_cat)
@@ -285,7 +339,7 @@ def common_input_block(
 
 ASTOCK_RULES = """
 【A 股交易规则（必须纳入分析）】
-1. **涨跌停制度**：主板 ±10%，创业板/科创板 ±20%。涨停/跌停时 RSI/MACD 信号需特殊解读。
+1. **涨跌停制度**：主板 ±10%，创业板/科创板 ±20%，北交所 ±30%，ST/*ST ±5%。涨停/跌停时 RSI/MACD 信号需特殊解读。
 2. **T+1 交易**：当日买入次日方可卖出，不适合给出日内交易建议。
 3. **ST/*ST 风险警示**：ST 股涨跌幅 ±5%，*ST 有退市风险，必须特别标注。
 4. **融资融券**：并非所有股票可做空，建议卖出时需说明是否为融券标的。
@@ -329,6 +383,7 @@ EVIDENCE_PROTOCOL = """
 - If an Evidence Bundle with [E#] items is provided below, cite by [E#] reference.
 - If NO Evidence Bundle is available, cite by report section, e.g. [基本面报告-ROE数据, 技术面报告-MACD].
 - Every claim MUST be traceable to at least one source. If none exists, state "NO EVIDENCE AVAILABLE".
+- **禁止编造数字 (NO FABRICATED NUMBERS)**：只能引用可溯源的数据（Evidence Bundle / 报告）。若某维度无可靠数据，必须写明"数据缺失"并保守（偏中性）打分；绝不可虚构具体数值（PE / ROE / 目标价 / 增速 / 资金流等）来支撑论点。提示与范例中的数字仅示意格式，不可照搬到结论。
 - At the end list all cited sources: CITED_EVIDENCE: [E1, E3, E5] or CITED_EVIDENCE: [基本面报告, 技术面报告]
 
 **STRUCTURED CLAIMS (append at end of response):**
@@ -350,14 +405,31 @@ CLAIM [clm-u002]: <next claim…>
 """
 
 
+REBUTTAL_PROTOCOL = """
+**REBUTTAL PROTOCOL — 针对对方具体 claim 的真交锋（第二轮必做）：**
+- 在掌握对方论据后，针对对方【最强的 2-4 条 claim】逐条反驳，必须引用对方的 claim ID。
+- 格式（parser 依赖，严格遵守每条两行）：
+  REBUT [clm-xNNN]: <为何这条对方论据站不住脚 / 被高估，引用 [E#] 或报告段落>
+  REBUT_CONFIDENCE: <0.0-1.0>
+  （bull 反驳 bear 的 clm-rNNN；bear 反驳 bull 的 clm-uNNN）
+- 只反驳对方【真实提出过】的 claim ID；若未提供对方 claim ID 或找不到，跳过 REBUT，**不要编造 ID 或数字**。
+- 这些 REBUT 会被解析为 opposing_claims，用于衡量辩论是否真正交锋（而非各说各话）。
+"""
+
+
 # --- Market-level input block (no ticker) ---
 
 def market_input_block(
     current_date: str,
     market: str = "CN_A",
     language: str = "Chinese",
+    **_ignored,
 ) -> str:
-    """Input header for market-level agents (no ticker parameter)."""
+    """Input header for market-level agents (no ticker parameter).
+
+    Accepts and ignores extra kwargs (**_ignored): the 3 market agents forward
+    their own **kw here, so any extra keyword (e.g. market_snapshot_md) must not
+    raise a TypeError (PROMPT-01)."""
     return (
         f"**COMMON INPUT BLOCK**:\n"
         f"【Scope】 全市场 (Market-Level)\n"

@@ -18,6 +18,7 @@ from .shared import (
     GLOBAL_CONSTRAINTS,
     GLOBAL_CONSTRAINTS_SHORT,
     EVIDENCE_PROTOCOL,
+    REBUTTAL_PROTOCOL,
     SUBAGENT_DATA_INSTRUCTION,
     SUBAGENT_DATA_INSTRUCTION_WITH_AKSHARE,
 )
@@ -46,7 +47,7 @@ A 股小盘股 / ST / 北交所 / 科创板小票常出现游资主导的非线�
 
 **HM2. K 线异动模式**
 - 涨停板：一字板 / T 字板 / 反包板 / 连板 / 加速板 (各代表不同游资介入阶段)
-- 单日涨幅 ≥ 7% (主板) 或 ≥ 10% (科创/创业) 或 ≥ 20% (北交所)
+- 单日涨幅 ≥ 7% (主板, 涨跌停±10%) 或 ≥ 10% (科创/创业, ±20%) 或 ≥ 20% (北交所, ±30%)
 - 5 日累计涨幅 ≥ 20% 但基本面无支撑
 - 大阴线后立即反包 (V 形反转) → 游资接力典型
 - 长上影/长下影后封板 → 游资博弈痕迹
@@ -678,6 +679,7 @@ def bull_researcher(
 - End with a confidence score for BUY (0.0-1.0) and your bull thesis in one sentence.
 
 {EVIDENCE_PROTOCOL}
+{REBUTTAL_PROTOCOL}
 
 {evidence_block}
 
@@ -725,6 +727,7 @@ def bear_researcher(
 - End with a confidence score for SELL (0.0-1.0) and your bear thesis in one sentence.
 
 {EVIDENCE_PROTOCOL}
+{REBUTTAL_PROTOCOL}
 
 {evidence_block}
 
@@ -808,11 +811,33 @@ def research_manager(
     market_context_block: str = "",
     feedback_block: str = "",
     current_date: str = "",
+    news_information_thin=None,
+    news_report: str = "",
     **kw,
 ) -> str:
     """Research Manager / Investment Committee CIRO (Pro v2) — final synthesis."""
     _date_line = f"\n【Date】 {current_date}\n" if current_date else ""
     _fb = f"\n{feedback_block}\n" if feedback_block else ""
+
+    # PROMPT-02: M2-bis news-downweighting needs the news pillar's
+    # `information_thin` flag, which is NOT present in debate_input (that holds
+    # only bull/bear/catalyst). Take it explicitly, or extract it from the
+    # news_report text when provided, so the feature actually fires instead of
+    # always hitting the "flag not found" branch.
+    if news_information_thin is None and news_report:
+        _low = news_report.lower()
+        if "information_thin = true" in _low or "information_thin=true" in _low:
+            news_information_thin = True
+        elif "information_thin = false" in _low or "information_thin=false" in _low:
+            news_information_thin = False
+    if news_information_thin is True:
+        _news_thin = ("\n**【编排层注入】news_information_thin = TRUE**（来自 news_analyst 节点，"
+                      "以此为准，无需在 debate_input 中搜索）：按下方 M2-bis 对 true 的规则处理。\n")
+    elif news_information_thin is False:
+        _news_thin = ("\n**【编排层注入】news_information_thin = FALSE**（来自 news_analyst 节点，"
+                      "以此为准）：news pillar 正常参与仲裁。\n")
+    else:
+        _news_thin = ""
     _mkt_ctx = ""
     if market_context_block:
         _mkt_ctx = f"""
@@ -876,8 +901,8 @@ M2. Arbitration (Crucial)
 - Explain WHY one side is credible, citing specific claim IDs.
 
 **M2-bis. News Pillar Information Density 处理**
-
-在 debate_input / 输入材料中查找 news_analyst 输出的 `information_thin = true|false` 标志：
+{_news_thin}
+优先使用上方【编排层注入】的 news_information_thin 值；若未注入，再在 debate_input / 输入材料中查找 news_analyst 输出的 `information_thin = true|false` 标志：
 
 - 若 **information_thin = true**：
   * news pillar 的 claims 在 M2 仲裁中按"**未提供论据**"处理（**不计入"中性投票"**，避免被误读为"news pillar 平衡了多空"）

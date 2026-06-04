@@ -195,6 +195,7 @@ class RunTrace:
 
         all_evidence = set()
         all_claims = set()
+        _pm_action = ""  # SIG-003: remembered to record pre-veto intent
         for nt in self.node_traces:
             all_evidence.update(nt.evidence_ids_referenced)
             all_claims.update(nt.claim_ids_referenced)
@@ -205,20 +206,21 @@ class RunTrace:
             # in that case, preserve the Research Manager's direction.
             if nt.node_name == "Research Manager" and nt.research_action:
                 self.research_action = nt.research_action
+                _pm_action = nt.research_action
                 if nt.confidence >= 0:
-                    self._pm_confidence = nt.confidence
+                    self._pm_confidence = min(1.0, nt.confidence)
             elif nt.node_name == "Risk Judge" and nt.research_action:
                 self.research_action = nt.research_action
                 # Only overwrite confidence if the node provides a meaningful value
                 # (Risk Judge may not have its own confidence — use -1 sentinel to skip)
                 if nt.confidence >= 0:
-                    self.final_confidence = nt.confidence
+                    self.final_confidence = min(1.0, nt.confidence)
             # Fallback: if ResearchOutput has action/confidence and upstream didn't set them
             if nt.node_name == "ResearchOutput":
                 if not self.research_action and nt.research_action:
                     self.research_action = nt.research_action
                 if self.final_confidence < 0 and nt.confidence >= 0:
-                    self.final_confidence = nt.confidence
+                    self.final_confidence = min(1.0, nt.confidence)
             if nt.vetoed:
                 self.was_vetoed = True
                 if nt.veto_source:
@@ -233,6 +235,17 @@ class RunTrace:
                             break
             if nt.compliance_status:
                 self.compliance_status = nt.compliance_status
+
+        # SIG-003: a risk veto is the DOMINANT conclusion — it must override the
+        # headline direction. When the risk gate rejects (risk_cleared=False) but
+        # RISK_OUTPUT omitted research_action, the loop above left research_action
+        # at the PM's BUY/SELL. Force VETO and keep the pre-veto intent separately
+        # so the report can still show "原判 → 否决" instead of a green BUY card.
+        if self.was_vetoed:
+            if not self.pre_veto_action:
+                self.pre_veto_action = _pm_action or (
+                    self.research_action if self.research_action != "VETO" else "")
+            self.research_action = "VETO"
 
         # PM confidence as third-priority fallback: if neither Risk Judge
         # nor ResearchOutput provided a valid confidence, use PM's.

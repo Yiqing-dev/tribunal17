@@ -133,11 +133,23 @@ def _score_debate_engagement(trace: dict) -> float:
         0.5 if (bull_claims + bear_claims) >= 4 else 0.0
     )
 
+    # AQ-01: real clash is now measurable via opposing_claims (REBUT blocks
+    # targeting the other side's specific claims). No rebuttals AND no flagged
+    # conflicts = two monologues → a genuine low score, not the old undeserved
+    # 0.5 soft default that gave hollow debates half credit.
+    n_rebuttals = len(bull_sd.get("opposing_claims") or []) + len(
+        bear_sd.get("opposing_claims") or []
+    )
     has_conflicts = bool(
         (bull_sd.get("unresolved_conflicts") or [])
         or (bear_sd.get("unresolved_conflicts") or [])
     )
-    conflict_score = 1.0 if has_conflicts else 0.5  # missing field is soft penalty
+    if has_conflicts or n_rebuttals >= 2:
+        conflict_score = 1.0
+    elif n_rebuttals == 1:
+        conflict_score = 0.5
+    else:
+        conflict_score = 0.2
 
     # Both sides scored dimensions = real engagement
     has_dim_scores = bool(

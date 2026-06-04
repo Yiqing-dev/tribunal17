@@ -82,7 +82,7 @@ class BacktestResult:
     # Evaluation
     direction_correct: Optional[bool] = None
     outcome: str = ""                  # win / loss / neutral
-    eval_status: str = "pending"       # completed / insufficient / error
+    eval_status: str = "pending"       # completed / immature / insufficient / skipped_veto / error
 
     # Trade plan targets (if available)
     stop_loss: float = 0.0
@@ -112,7 +112,8 @@ class BacktestSummary:
 
     # Counts
     total_signals: int = 0
-    completed: int = 0
+    completed: int = 0          # full-window signals counted in all stats below
+    immature: int = 0           # window not yet filled — excluded from stats (BT-001)
     insufficient: int = 0
 
     # By action
@@ -504,7 +505,18 @@ def evaluate_signal(
     else:
         result.first_hit = "neither"
 
-    result.eval_status = "shadow_veto" if shadow_direction else "completed"
+    if shadow_direction:
+        result.eval_status = "shadow_veto"
+    elif result.bars_available < config.eval_window_days:
+        # BT-001: the evaluation window is not yet filled (e.g. a signal from
+        # 2 days ago has only 2 forward bars). The metrics above are kept for
+        # display, but this signal is "immature" and must be EXCLUDED from
+        # win-rate / direction-accuracy / average-return stats so half-window
+        # signals don't inflate them. compute_summary / calibration / the
+        # cumulative curve all count only "completed".
+        result.eval_status = "immature"
+    else:
+        result.eval_status = "completed"
     return result
 
 
@@ -518,6 +530,7 @@ def compute_summary(
     """Aggregate BacktestResult list into summary metrics."""
     config = config or BacktestConfig()
     completed = [r for r in results if r.eval_status == "completed"]
+    immature = [r for r in results if r.eval_status == "immature"]
     insufficient = [r for r in results if r.eval_status == "insufficient"]
 
     summary = BacktestSummary(
@@ -527,6 +540,7 @@ def compute_summary(
         computed_at=datetime.now().isoformat(),
         total_signals=len(results),
         completed=len(completed),
+        immature=len(immature),
         insufficient=len(insufficient),
     )
 
@@ -593,7 +607,14 @@ def compute_summary(
         action_results = [r for r in completed if r.action.upper() == action]
         if not action_results:
             continue
-        returns = [r.stock_return_pct for r in action_results]
+        # BT-002: SELL is a bet on a DROP, so invert its returns (positive =
+        # correct sell) to match the win_rate direction and the top-level
+        # avg_sell_return_pct. Otherwise a 100%-win-rate SELL row could show a
+        # negative avg_return, contradicting itself.
+        if action == "SELL":
+            returns = [-r.stock_return_pct for r in action_results]
+        else:
+            returns = [r.stock_return_pct for r in action_results]
         # For BUY/SELL use directional win/loss; for HOLD use band-test outcomes.
         if action == "HOLD":
             action_wins = [r for r in action_results if r.outcome == "hold_success"]
@@ -1021,10 +1042,13 @@ def _fetch_benchmark_return(signal_date: str, window_days: int) -> Optional[floa
         return None
 
     forward_bars = [d for d in data if d.get("day", "") > signal_date]
+    # BT-003: only a full-window benchmark is comparable to the (full-window)
+    # stock returns in Alpha. If the window isn't filled, return None so this
+    # signal is excluded from the benchmark average rather than contributing a
+    # half-window return.
     if len(forward_bars) < window_days:
-        forward_close = float(forward_bars[-1]["close"]) if forward_bars else None
-    else:
-        forward_close = float(forward_bars[window_days - 1]["close"])
+        return None
+    forward_close = float(forward_bars[window_days - 1]["close"])
 
     if not forward_close:
         return None
@@ -1230,7 +1254,8 @@ def generate_multi_window_report(
             html.append(
                 f'<tr><td>{emoji} {_esc(label)}</td>'
                 f'<td class="num">{bd["count"]}</td>'
-                f'<td class="num">{bd["avg_return_pct"]:+.2f}%</td>'
+                f'<td class="num">{bd["avg_return_pct"]:+.2f}%'
+                f'{" (反向)" if action == "SELL" else ""}</td>'
                 f'<td class="num">{bd["win_rate_pct"]:.1f}%</td></tr>'
             )
         html.append('</tbody></table>')
@@ -1381,7 +1406,9 @@ def generate_backtest_report(
         f'</div><div>'
         f'<div class="summary-row">'
         + _card("总信号数", str(s.total_signals), "kpi-secondary")
-        + _card("已评估", str(s.completed), "kpi-secondary")
+        + _card("纳入统计 (满窗口)", str(s.completed), "kpi-secondary")
+        + (_card("未成熟 (窗口未满)", str(s.immature), "kpi-secondary")
+           if s.immature else "")
         + _card("平均收益",
                 f"{s.avg_stock_return_pct:+.2f}%" if s.completed else "—",
                 "kpi-primary")
@@ -1448,7 +1475,8 @@ def generate_backtest_report(
             html_parts.append(
                 f'<tr><td>{emoji} {_esc(label)}</td>'
                 f'<td class="num">{bd["count"]}</td>'
-                f'<td class="num">{bd["avg_return_pct"]:+.2f}%</td>'
+                f'<td class="num">{bd["avg_return_pct"]:+.2f}%'
+                f'{" (反向)" if action == "SELL" else ""}</td>'
                 f'<td class="num">{bd["win_rate_pct"]:.1f}%</td></tr>'
             )
         html_parts.append('</tbody></table>')
@@ -1613,7 +1641,8 @@ def _donut_gauge(value_pct: float, label: str, color: str = "var(--green)",
 
 def _cumulative_return_svg(results: list, benchmark_returns: dict = None,
                            w: int = 660, h: int = 180) -> str:
-    """SVG cumulative return curve with optional benchmark + drawdown shading."""
+    """SVG cumulative-sum curve with optional benchmark (no drawdown shading —
+    overlapping signal windows are not a tradable equity curve; BT-004)."""
     sorted_r = sorted(results, key=lambda r: r.trade_date)
     if not sorted_r:
         return ""
@@ -1657,28 +1686,12 @@ def _cumulative_return_svg(results: list, benchmark_returns: dict = None,
     zero_y = sy(0)
     pts = " ".join(f"{sx(i):.1f},{sy(v):.1f}" for i, (_, v) in enumerate(cum))
     area = pts + f" {sx(len(cum) - 1):.1f},{zero_y:.1f} {sx(0):.1f},{zero_y:.1f}"
-    final_color = "#34d399" if cum[-1][1] >= 0 else "#f87171"
-
-    # Drawdown shading: area between running peak and cumulative line
-    dd_path = ""
-    peak = 0.0
-    dd_points = []
-    for i, (_, v) in enumerate(cum):
-        peak = max(peak, v)
-        if peak > v:  # in drawdown
-            dd_points.append((i, peak, v))
-        else:
-            if dd_points:
-                # Close the drawdown polygon
-                poly = " ".join(f"{sx(j):.1f},{sy(pv):.1f}" for j, pv, _ in dd_points)
-                poly += " " + " ".join(f"{sx(j):.1f},{sy(cv):.1f}" for j, _, cv in reversed(dd_points))
-                dd_path += f'<polygon points="{poly}" fill="#f87171" opacity="0.08"/>'
-                dd_points = []
-            dd_points = []
-    if dd_points:
-        poly = " ".join(f"{sx(j):.1f},{sy(pv):.1f}" for j, pv, _ in dd_points)
-        poly += " " + " ".join(f"{sx(j):.1f},{sy(cv):.1f}" for j, _, cv in reversed(dd_points))
-        dd_path += f'<polygon points="{poly}" fill="#f87171" opacity="0.08"/>'
+    # A-share convention: a positive cumulative return is "up" → red; negative → green.
+    final_color = "#f87171" if cum[-1][1] >= 0 else "#34d399"
+    # BT-004: NO drawdown shading. Signal windows overlap (e.g. 10-day windows on
+    # consecutive days), so this is a running SUM of independent per-signal window
+    # returns — NOT a tradable equity curve — and "drawdown" of such a sum is not a
+    # real drawdown. Shading it as one implied portfolio semantics it doesn't have.
 
     # Benchmark polyline
     bench_svg = ""
@@ -1703,9 +1716,11 @@ def _cumulative_return_svg(results: list, benchmark_returns: dict = None,
 
     return (
         f'<div class="cum-chart card">'
-        f'<h3>\u7d2f\u8ba1\u6536\u76ca\u66f2\u7ebf</h3>'
+        f'<h3>\u4fe1\u53f7\u7a97\u53e3\u6536\u76ca\u7d2f\u52a0</h3>'
         f'<p style="margin:-0.3rem 0 0.4rem;font-size:0.75rem;color:#8fa3b8;">'
-        f'\u7b80\u5355\u7d2f\u52a0\u53e3\u5f84\uff0c\u4ec5\u4f9b\u8d8b\u52bf\u53c2\u8003</p>'
+        f'\u5404\u4fe1\u53f7\u7a97\u53e3\u6536\u76ca\u7684\u7b80\u5355\u7d2f\u52a0'
+        f'\uff08\u8bc4\u4f30\u7a97\u53e3\u91cd\u53e0\uff0c\u975e\u53ef\u4ea4\u6613\u51c0\u503c\u66f2\u7ebf\uff09'
+        f'\uff0c\u4ec5\u4f9b\u8d8b\u52bf\u53c2\u8003</p>'
         f'<svg viewBox="0 0 {w} {h}" width="100%" height="auto" '
         f'style="max-height:{h}px">'
         f'<defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">'
@@ -1715,7 +1730,6 @@ def _cumulative_return_svg(results: list, benchmark_returns: dict = None,
         f'{legend_svg}'
         f'<line x1="{pad_x}" y1="{zero_y:.1f}" x2="{w - 10}" y2="{zero_y:.1f}" '
         f'stroke="rgba(255,255,255,0.1)" stroke-dasharray="4 3"/>'
-        f'{dd_path}'
         f'<polygon points="{area}" fill="url(#cg)"/>'
         f'{bench_svg}'
         f'<polyline points="{pts}" fill="none" stroke="{final_color}" '

@@ -2,13 +2,18 @@
 
 import os
 from dataclasses import dataclass
-from datetime import date
+
+from .trace_models import _now_cst
 
 
 def _today() -> str:
-    """Return today's date as YYYY-MM-DD string."""
-    # Naming: underscore prefix indicates internal utility; CLAUDE.md references it for caller convenience.
-    return date.today().isoformat()
+    """Return today's trade date (YYYY-MM-DD) in CST (UTC+8).
+
+    Canonical 'today' helper (CLAUDE.md references it). Uses CST — never naive
+    local/UTC time — so a UTC container after 16:00 CST does not roll the report
+    back to the previous calendar day (XC-02).
+    """
+    return _now_cst().strftime("%Y-%m-%d")
 
 
 @dataclass(frozen=True)

@@ -92,6 +92,12 @@ class DebateQualityScore:
     # PM consumption
     pm_consumption_rate: float = 0.0
     pm_missed_strong_claims: int = 0
+    # AQ-03: adjudication breakdown (real verdicts, not bare ID mentions).
+    pm_adjudicated_count: int = 0      # claims with an ACCEPT/REJECT/DEFER verdict
+    pm_accepted_count: int = 0
+    pm_rejected_count: int = 0
+    pm_deferred_count: int = 0
+    pm_consumption_basis: str = "none"  # "adjudication" | "mention" | "semantic" | "none"
 
     # Risk debate quality
     risk_challenge_rate: float = 0.0
@@ -559,15 +565,40 @@ def _assess_debate_quality(trace: RunTrace) -> DebateQualityScore:
     if pm_node:
         pm_claim_ids.update(pm_node.claim_ids_referenced)
 
-    if total_claim_ids and pm_claim_ids:
-        # Both sides have structured claim IDs — use precise intersection
+    # AQ-03: prefer REAL adjudications (ACCEPT/REJECT/DEFER) over bare ID mentions.
+    # "Digestion" should mean the PM actually ruled on the claim — and a wall of
+    # REJECTs is engagement, not avoidance, so all three verdicts count, but the
+    # accept/reject/defer split is exposed so it can't be gamed.
+    adjudications = []
+    if pm_node and isinstance(getattr(pm_node, "structured_data", None), dict):
+        adjudications = pm_node.structured_data.get("adjudications") or []
+    adj_ids = {a.get("claim_id") for a in adjudications if a.get("claim_id")}
+    dq.pm_adjudicated_count = len(adj_ids & total_claim_ids) if total_claim_ids else len(adj_ids)
+    dq.pm_accepted_count = sum(1 for a in adjudications if a.get("verdict") == "ACCEPT")
+    dq.pm_rejected_count = sum(1 for a in adjudications if a.get("verdict") == "REJECT")
+    dq.pm_deferred_count = sum(1 for a in adjudications if a.get("verdict") == "DEFER")
+
+    # Focus the rate on high-confidence claims (M2a requires adjudicating conf≥0.6).
+    strong_total = {
+        c.get("claim_id")
+        for c in all_claims
+        if c.get("claim_id") and (c.get("confidence") or 0) >= 0.6
+    }
+    rate_denom = strong_total or total_claim_ids
+    if adj_ids and rate_denom:
+        dq.pm_consumption_rate = len(adj_ids & rate_denom) / len(rate_denom)
+        dq.pm_consumption_basis = "adjudication"
+    elif total_claim_ids and pm_claim_ids:
+        # No structured verdicts — fall back to ID-mention intersection.
         dq.pm_consumption_rate = len(pm_claim_ids & total_claim_ids) / len(total_claim_ids)
+        dq.pm_consumption_basis = "mention"
     elif pm_node and (dq.bull_claims_count + dq.bear_claims_count > 0
                       or bull_excerpt or bear_excerpt):
-        # Fall back to semantic matching (works with claims OR raw excerpts)
+        # Last resort: semantic matching (works with claims OR raw excerpts).
         dq.pm_consumption_rate = _estimate_pm_consumption_semantic(
             pm_node, bull_claims, bear_claims, bull_excerpt, bear_excerpt,
         )
+        dq.pm_consumption_basis = "semantic"
 
     # ── PM missed strong claims ──
     strong_claim_ids = set()

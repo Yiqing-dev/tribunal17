@@ -101,16 +101,6 @@ def confidence_bucket(confidence: float) -> str:
     return "low"
 
 
-def _actual_direction_from_return(return_pct: float, neutral_band_pct: float = 2.0) -> str:
-    if return_pct is None:
-        return "flat"
-    if return_pct > neutral_band_pct:
-        return "up"
-    if return_pct < -neutral_band_pct:
-        return "down"
-    return "flat"
-
-
 def _cell_from_results(key: str, rows: List[Any]) -> CalibrationCell:
     decided = [
         r for r in rows

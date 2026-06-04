@@ -137,20 +137,30 @@ def check_batch_health(
     # 4. Action flips vs previous day
     ledger = SignalLedger(path=signal_path)
     flip_count = 0
+
+    def _fmt_conf(c) -> str:
+        # -1.0 sentinel ("not set") must not render as "-100%".
+        return f"{c:.0%}" if isinstance(c, (int, float)) and c >= 0 else "—"
+
     for t in traces:
-        prev_signals = ledger.read(ticker=t.ticker, limit=2)
-        if len(prev_signals) >= 2:
-            prev = prev_signals[1]  # [0] is today, [1] is previous
-            if prev.action != t.research_action:
+        # XC-05: find the most recent signal STRICTLY BEFORE today's trade_date.
+        # `before=` is inclusive, so filter out any same-day record — this works
+        # whether or not today's signal has already been appended to the ledger,
+        # removing the previous fragile [0]/[1] positional assumption.
+        prev_signals = ledger.read(ticker=t.ticker, before=t.trade_date, limit=5)
+        prev = next(
+            (s for s in prev_signals if s.trade_date and s.trade_date < t.trade_date),
+            None,
+        )
+        if prev and prev.action != t.research_action:
+            if (prev.action in ("BUY", "SELL") and
+                    t.research_action in ("BUY", "SELL")):
                 direction = f"{prev.action}→{t.research_action}"
-                if (prev.action in ("BUY", "SELL") and
-                        t.research_action in ("BUY", "SELL") and
-                        prev.action != t.research_action):
-                    alerts.append(
-                        f"{t.ticker}: Action flip {direction} "
-                        f"(confidence {prev.confidence:.0%}→{t.final_confidence:.0%})"
-                    )
-                    flip_count += 1
+                alerts.append(
+                    f"{t.ticker}: Action flip {direction} "
+                    f"(confidence {_fmt_conf(prev.confidence)}→{_fmt_conf(t.final_confidence)})"
+                )
+                flip_count += 1
 
     summary = {
         "total_runs": len(today_run_ids),

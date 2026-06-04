@@ -1076,3 +1076,95 @@ class TestAvoidMapsToHold:
         # Defensive: ensure no stray AVOID→SELL mapping exists
         assert '"AVOID": "SELL"' not in src
         assert "'AVOID': 'SELL'" not in src
+
+
+class TestParserTolerance:
+    """#6: bridge parsers degrade gracefully instead of dropping/crashing."""
+
+    def test_string_risk_flags_not_dropped(self):
+        # BRG-02: a flat list of category strings must be canonicalized, not
+        # silently dropped (which would zero out the risk flags).
+        from subagent_pipeline.shared import dedupe_and_cap_flags
+        flags = dedupe_and_cap_flags(["liquidity_risk", "valuation_risk", "  ", 42])
+        assert len(flags) == 2
+        assert all(isinstance(f, dict) and f["category"] for f in flags)
+
+    def test_safe_int_ratio_and_percent(self):
+        # BRG-05: "5/10" → 5 (numerator), "N/10" → None (not the denominator).
+        from subagent_pipeline.bridge import _safe_int
+        assert _safe_int("5/10") == 5
+        assert _safe_int("N/10") is None
+        assert _safe_int("75%") == 75
+        assert _safe_int(7) == 7
+
+    def test_scenario_percent_probs_do_not_crash(self):
+        # BRG-03: percent / prose probabilities must parse, not raise.
+        from subagent_pipeline.bridge import _parse_scenario
+        from subagent_pipeline.trace_models import NodeTrace
+        text = (
+            "SCENARIO_OUTPUT:\n"
+            "base_prob = 50%\n"
+            "bull_prob = 25%\n"
+            "bear_prob = 25%\n"
+        )
+        nt = NodeTrace(run_id="t", node_name="Scenario", seq=4)
+        _parse_scenario("scenario_agent", text, nt)  # must not raise
+        sd = nt.structured_data or {}
+        if sd.get("base_prob") is not None:
+            total = sd["base_prob"] + sd["bull_prob"] + sd["bear_prob"]
+            assert abs(total - 1.0) < 0.01
+            assert abs(sd["base_prob"] - 0.5) < 0.01
+
+
+class TestDebateClashAndAdjudication:
+    """Analytical quality (AQ-01/AQ-03/AQ-06): real clash + verdicts + guard."""
+
+    def test_parse_rebuttals(self):
+        from subagent_pipeline.bridge import parse_rebuttals
+        reb = parse_rebuttals(
+            "REBUT [clm-u002]: 北向实为做市商对冲 [E3]\nREBUT_CONFIDENCE: 0.7\n"
+            "REBUT [clm-u005]: 毛利改善是一次性补贴\nREBUT_CONFIDENCE: 0.6\n"
+        )
+        assert [r["target_claim_id"] for r in reb] == ["clm-u002", "clm-u005"]
+        assert abs(reb[0]["confidence"] - 0.7) < 1e-9
+
+    def test_parse_adjudications(self):
+        from subagent_pipeline.bridge import parse_adjudications
+        adj = parse_adjudications(
+            "[clm-u001] ACCEPT — 可溯源\n[clm-u002] REJECT — 口径存疑\n[clm-r001] DEFER — 等中报\n"
+        )
+        assert {a["claim_id"]: a["verdict"] for a in adj} == {
+            "clm-u001": "ACCEPT", "clm-u002": "REJECT", "clm-r001": "DEFER"}
+
+    def test_no_rebuttals_is_low_engagement(self):
+        # AQ-01: two monologues (no opposing_claims, no conflicts) → low, not 0.5.
+        from subagent_pipeline.research_quality import _score_debate_engagement
+        trace = {"node_traces": [
+            {"node_name": "Bull Researcher", "structured_data": {
+                "supporting_claims": [{"claim_id": "u001"}], "opposing_claims": [],
+                "unresolved_conflicts": [], "dimension_scores": {}}},
+            {"node_name": "Bear Researcher", "structured_data": {
+                "supporting_claims": [{"claim_id": "r001"}], "opposing_claims": [],
+                "unresolved_conflicts": [], "dimension_scores": {}}},
+        ]}
+        # conflict component = 0.2 (was 0.5) → total = 0 + 0.2*0.25 + 0.5*0.25 = 0.175
+        assert _score_debate_engagement(trace) == pytest.approx(0.175)
+
+    def test_p6_pillar_direction_divergence_flags(self):
+        # AQ-06: bearish pillars (mean<1.5) but BUY → compliance flag.
+        from subagent_pipeline.bridge import generate_report
+        from subagent_pipeline.replay_store import ReplayStore
+        import tempfile
+        d = tempfile.mkdtemp()
+        outputs = {
+            "market_analyst": "技术面\npillar_score = 1",
+            "fundamentals_analyst": "基本面\npillar_score = 1",
+            "news_analyst": "新闻\npillar_score = 0",
+            "sentiment_analyst": "情绪\npillar_score = 1",
+            "research_manager": "SYNTHESIS_OUTPUT:\nresearch_action = BUY\nconfidence = 0.7\nconclusion = x",
+        }
+        p = generate_report(outputs=outputs, ticker="601985", ticker_name="T",
+                            trade_date="2026-06-04", output_dir=d, storage_dir=d)
+        trace = ReplayStore(storage_dir=d).load(p["run_id"])
+        comp = [n for n in trace.node_traces if n.node_name == "Publishing Compliance"][0]
+        assert any("P6" in r for r in comp.compliance_reasons), comp.compliance_reasons

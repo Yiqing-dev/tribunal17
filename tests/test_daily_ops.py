@@ -235,3 +235,42 @@ class TestHealthCheck:
         result = check_batch_health(rids, str(tmp_path),
                                     signal_path=str(tmp_path / "signals.jsonl"))
         assert any("spread" in w.lower() for w in result["warnings"])
+
+    # ── XC-05: action-flip detection vs the strictly-prior ledger signal ──
+
+    def test_action_flip_detected_vs_prior_day(self, tmp_path):
+        store = ReplayStore(storage_dir=str(tmp_path))
+        sig_path = tmp_path / "signals.jsonl"
+        SignalLedger(path=str(sig_path)).append(SignalRecord(
+            run_id="prev", trade_date="2026-04-03", ticker="601985.SS",
+            ticker_name="T", action="BUY", confidence=0.80))
+        rid = self._make_trace(store, ticker="601985.SS", date="2026-04-04",
+                               action="SELL", confidence=0.70)
+        result = check_batch_health([rid], str(tmp_path), signal_path=str(sig_path))
+        assert any("BUY→SELL" in a for a in result["alerts"])
+        assert result["summary"]["action_flips"] == 1
+
+    def test_action_flip_sentinel_confidence_renders_dash(self, tmp_path):
+        # Prior confidence is the -1.0 "not set" sentinel — must show "—", never "-100%".
+        store = ReplayStore(storage_dir=str(tmp_path))
+        sig_path = tmp_path / "signals.jsonl"
+        SignalLedger(path=str(sig_path)).append(SignalRecord(
+            run_id="prev", trade_date="2026-04-03", ticker="601985.SS",
+            ticker_name="T", action="BUY", confidence=-1.0))
+        rid = self._make_trace(store, ticker="601985.SS", date="2026-04-04",
+                               action="SELL", confidence=0.70)
+        result = check_batch_health([rid], str(tmp_path), signal_path=str(sig_path))
+        flips = [a for a in result["alerts"] if "BUY→SELL" in a]
+        assert flips and "-100%" not in flips[0] and "—" in flips[0]
+
+    def test_no_self_flip_when_only_todays_signal_in_ledger(self, tmp_path):
+        # Today's signal already appended, no prior → must NOT compare vs itself.
+        store = ReplayStore(storage_dir=str(tmp_path))
+        sig_path = tmp_path / "signals.jsonl"
+        rid = self._make_trace(store, ticker="601985.SS", date="2026-04-04",
+                               action="SELL", confidence=0.70)
+        SignalLedger(path=str(sig_path)).append(SignalRecord(
+            run_id=rid, trade_date="2026-04-04", ticker="601985.SS",
+            ticker_name="T", action="SELL", confidence=0.70))
+        result = check_batch_health([rid], str(tmp_path), signal_path=str(sig_path))
+        assert result["summary"]["action_flips"] == 0

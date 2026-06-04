@@ -261,6 +261,11 @@ def _build_research_manager(r: AgentRequest) -> str:
         market_context_block=r.market_context_block,
         feedback_block=_feedback_block(r),
         current_date=r.trade_date,
+        # PROMPT-02: debate_input lacks the news pillar's information_thin flag;
+        # pass the news report so research_manager() can extract it and apply the
+        # M2-bis news-downweighting (else the feature never fires on this path).
+        news_report=rp.get("news_report", ""),
+        news_information_thin=_extra_value(r, "news_information_thin", None),
         **_common_kwargs(r),
     )
 
