@@ -1168,3 +1168,33 @@ class TestDebateClashAndAdjudication:
         trace = ReplayStore(storage_dir=d).load(p["run_id"])
         comp = [n for n in trace.node_traces if n.node_name == "Publishing Compliance"][0]
         assert any("P6" in r for r in comp.compliance_reasons), comp.compliance_reasons
+
+
+def test_parse_claims_preserves_llm_id_on_skip():
+    """AQ-F6: a skipped LLM number (clm-u001, clm-u003) is preserved, not
+    renumbered to positional clm-u001/clm-u002 — so rebuttal/PM references match."""
+    from subagent_pipeline.bridge import parse_claims
+    text = "\nCLAIM [clm-u001]: A [E1]\nCONFIDENCE: 0.8\nCLAIM [clm-u003]: B [E2]\nCONFIDENCE: 0.7\n"
+    assert [c["claim_id"] for c in parse_claims(text, "bullish")] == ["clm-u001", "clm-u003"]
+
+
+def test_parse_claims_dedupes_r1r2_collision():
+    """AQ-04: R1/R2 merge restating the same id yields unique ids, not a clash."""
+    from subagent_pipeline.bridge import parse_claims
+    text = ("\n=== Round 1 ===\nCLAIM [clm-u001]: A [E1]\nCONFIDENCE: 0.8\n"
+            "=== Round 2 ===\nCLAIM [clm-u001]: A refined [E1]\nCONFIDENCE: 0.85\n")
+    assert [c["claim_id"] for c in parse_claims(text, "bullish")] == ["clm-u001", "clm-u001-2"]
+
+
+def test_parse_claims_positional_fallback_still_sequential():
+    """Backward compat: CLAIM N: form (no bracket id) still gets positional ids."""
+    from subagent_pipeline.bridge import parse_claims
+    text = "\nCLAIM 1: A\nCONFIDENCE: 0.8\nCLAIM 2: B\nCONFIDENCE: 0.7\n"
+    assert [c["claim_id"] for c in parse_claims(text, "bearish")] == ["clm-r001", "clm-r002"]
+
+
+def test_rebuttal_confidence_accepts_ratio_form():
+    """CONF-01: REBUT_CONFIDENCE 'N/10' parses like a CLAIM confidence (numerator)."""
+    from subagent_pipeline.bridge import parse_rebuttals
+    r = parse_rebuttals("REBUT [clm-u003]: x [E2]\nREBUT_CONFIDENCE: 7/10\n")
+    assert abs(r[0]["confidence"] - 0.7) < 1e-9

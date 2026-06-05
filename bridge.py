@@ -577,10 +577,33 @@ def parse_claims(text: str, direction: str = "bullish") -> List[Dict]:
     # Split on CLAIM markers — handles:
     #   "CLAIM: ...", "### CLAIM 1: ...", "## CLAIM 2: ..."
     #   "CLAIM [clm-bull-1]：..."  (bracket ID + Chinese colon)
-    parts = re.split(r'\n(?:#{1,4}\s*)?CLAIM(?:\s*\d+|\s*\[[\w-]+\])?[：:]\s*', text)
-    for i, part in enumerate(parts[1:], start=1):  # skip text before first CLAIM
+    # Capture the LLM's own [clm-xNNN] id (group 1) alongside each block; with the
+    # capturing group re.split yields [pre, id1, block1, id2, block2, ...] where
+    # idN is None when no bracket id was given.
+    parts = re.split(r'\n(?:#{1,4}\s*)?CLAIM(?:\s*\d+)?(?:\s*\[([\w-]+)\])?[：:]\s*', text)
+    prefix = 'u' if direction == 'bullish' else 'r'
+    _seen_ids: set = set()
+    for k in range(1, len(parts), 2):  # (id, block) pairs after the leading pre-text
+        cap_id = (parts[k] or "").strip()
+        part = parts[k + 1] if k + 1 < len(parts) else ""
+        pos = (k + 1) // 2  # 1-based positional index
+        # AQ-04/AQ-F6: preserve the LLM's own clm-uNNN / clm-rNNN id (what
+        # parse_rebuttals / parse_adjudications reference) when it is well-formed;
+        # fall back to a positional id only when it is absent or malformed.
+        if re.fullmatch(rf'clm-{prefix}\d+', cap_id, re.IGNORECASE):
+            cid = cap_id.lower()
+        else:
+            cid = f"clm-{prefix}{pos:03d}"
+        # R1/R2 merge can restate the SAME id for a different claim — keep unique
+        # so downstream references resolve to one claim, not double-count.
+        if cid in _seen_ids:
+            _n = 2
+            while f"{cid}-{_n}" in _seen_ids:
+                _n += 1
+            cid = f"{cid}-{_n}"
+        _seen_ids.add(cid)
         claim = {
-            "claim_id": f"clm-{'u' if direction == 'bullish' else 'r'}{i:03d}",
+            "claim_id": cid,
             "direction": direction,
         }
         # Extract claim text (first line)
@@ -607,7 +630,7 @@ def parse_claims(text: str, direction: str = "bullish") -> List[Dict]:
                 if ids:
                     claim["supports"] = list(dict.fromkeys(ids))
                 elif len(prose_text) >= 10:
-                    claim["supports"] = [f"prose-{'u' if direction == 'bullish' else 'r'}{i:03d}"]
+                    claim["supports"] = [f"prose-{prefix}{pos:03d}"]
                     claim["evidence_prose"] = prose_text[:300]
                 else:
                     claim["supports"] = []
@@ -1397,7 +1420,10 @@ def parse_rebuttals(text: str) -> List[Dict[str, Any]]:
         conf = -1.0
         cm = re.search(r'REBUT_CONFIDENCE\s*[:：=]\s*([^\n]+)', blk, re.IGNORECASE)
         if cm:
-            conf = normalize_confidence_value(cm.group(1).strip())
+            # CONF-01: tolerate an "N/10" ratio form (take the numerator) so a
+            # rebuttal confidence parses the same as a CLAIM confidence does.
+            _raw = re.sub(r'\s*/\s*\d+\s*$', '', cm.group(1).strip())
+            conf = normalize_confidence_value(_raw)
         key = (cid, body[:40])
         if key in seen:
             continue
