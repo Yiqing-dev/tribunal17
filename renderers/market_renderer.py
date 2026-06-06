@@ -59,10 +59,10 @@ _MARKET_CSS = """
   border-color: rgba(100, 150, 180, 0.32);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255,255,255,0.04);
 }
-.mkt-glass.glow-gold  { box-shadow: 0 0 24px rgba(245,158,11,.12), inset 0 1px 0 rgba(245,158,11,.06); }
-.mkt-glass.glow-green { box-shadow: 0 0 20px rgba(52,211,153,.12), inset 0 1px 0 rgba(52,211,153,.06); }
-.mkt-glass.glow-red   { box-shadow: 0 0 20px rgba(248,113,113,.12), inset 0 1px 0 rgba(248,113,113,.06); }
-.mkt-glass.glow-blue  { box-shadow: 0 0 20px rgba(96,165,250,.12), inset 0 1px 0 rgba(96,165,250,.06); }
+.mkt-glass.glow-gold  { box-shadow: 0 0 12px rgba(245,158,11,.06), inset 0 1px 0 rgba(245,158,11,.06); }
+.mkt-glass.glow-green { box-shadow: 0 0 12px rgba(52,211,153,.06), inset 0 1px 0 rgba(52,211,153,.06); }
+.mkt-glass.glow-red   { box-shadow: 0 0 12px rgba(248,113,113,.06), inset 0 1px 0 rgba(248,113,113,.06); }
+.mkt-glass.glow-blue  { box-shadow: 0 0 12px rgba(96,165,250,.06), inset 0 1px 0 rgba(96,165,250,.06); }
 .mono { font-family: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Consolas, monospace; }
 
 /* ── 1. Hero ── */
@@ -109,7 +109,7 @@ _MARKET_CSS = """
   padding: .3rem .75rem; border-radius: 20px;
   font-size: .78rem; font-weight: 600;
   background: rgba(255,255,255,.04);
-  border: 1px solid rgba(255,255,255,.08);
+  border: 1px solid var(--hairline-strong);
 }
 .mkt-hero-chip.up   { color: var(--red);   border-color: rgba(248,113,113,.25); }
 .mkt-hero-chip.down { color: var(--green); border-color: rgba(52,211,153,.25); }
@@ -120,7 +120,7 @@ _MARKET_CSS = """
 }
 .mkt-kpi {
   text-align: center; padding: .7rem .5rem;
-  background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06);
+  background: rgba(255,255,255,.03); border: 1px solid var(--hairline);
   border-radius: 10px; transition: border-color .2s;
 }
 .mkt-kpi:hover { border-color: rgba(96,165,250,.2); }
@@ -131,7 +131,7 @@ _MARKET_CSS = """
 .mkt-kpi .val.up   { color: var(--red); }
 .mkt-kpi .val.down { color: var(--green); }
 .mkt-kpi .val.neu  { color: var(--yellow); }
-.mkt-kpi .val.gold { color: var(--accent); }
+.mkt-kpi .val.gold { color: var(--gold); }
 .mkt-kpi .lab { font-size: .7rem; color: var(--muted); margin-top: .15rem; }
 
 /* Section head */
@@ -194,7 +194,7 @@ _MARKET_CSS = """
 }
 .thermo-needle {
   position: absolute; top: -4px; width: 3px; height: 24px;
-  background: #fff; border-radius: 2px; box-shadow: 0 0 6px rgba(255,255,255,.5);
+  background: #fff; border-radius: 2px; box-shadow: 0 0 3px rgba(255,255,255,.3);
   transform: translateX(-50%);
 }
 .thermo-labels { display: flex; justify-content: space-between; font-size: .7rem; color: var(--muted); }
@@ -213,7 +213,7 @@ _MARKET_CSS = """
 .sector-list-title { font-size: .85rem; font-weight: 600; margin-bottom: .5rem; display: flex; align-items: center; gap: .4rem; }
 .sector-item {
   display: flex; justify-content: space-between; align-items: center;
-  padding: .3rem .4rem; border-bottom: 1px solid rgba(255,255,255,.04); font-size: .82rem;
+  padding: .3rem .4rem; border-bottom: 1px solid var(--hairline); font-size: .82rem;
   border-radius: 6px; transition: background 150ms ease;
 }
 .sector-item:hover { background: rgba(255,255,255,.02); }
@@ -245,7 +245,7 @@ _MARKET_CSS = """
 .limit-col-header .lch-label { font-size: .85rem; color: var(--muted); }
 .limit-stock-row {
   display: flex; align-items: center; gap: .4rem;
-  padding: .35rem .4rem; border-bottom: 1px solid rgba(255,255,255,.04); font-size: .82rem;
+  padding: .35rem .4rem; border-bottom: 1px solid var(--hairline); font-size: .82rem;
   border-radius: 6px; transition: background 150ms ease;
 }
 .limit-stock-row:hover { background: rgba(255,255,255,.02);
@@ -258,7 +258,7 @@ _MARKET_CSS = """
 .limit-stock-row .ls-boards {
   font-size: .7rem; padding: .1rem .35rem; border-radius: 4px; font-weight: 700; font-family: monospace;
 }
-.limit-stock-row .ls-boards.hot { background: rgba(245,158,11,.12); color: var(--accent); }
+.limit-stock-row .ls-boards.hot { background: rgba(245,158,11,.12); color: var(--gold); }
 .limit-stock-row .ls-boards.normal { background: rgba(248,113,113,.1); color: var(--red); }
 .limit-stock-row .ls-seal { font-size: .75rem; color: var(--muted); font-family: monospace; min-width: 48px; text-align: right; }
 .limit-stock-row .ls-pct { font-size: .78rem; font-family: monospace; font-weight: 600; min-width: 52px; text-align: right; }

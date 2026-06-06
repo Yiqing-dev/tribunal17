@@ -40,7 +40,7 @@ _REVIEW_CSS = """
 .review-hero {
   position: relative; overflow: hidden;
   border-radius: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--hairline-strong);
   background:
     linear-gradient(135deg, rgba(12, 29, 45, 0.96) 0%, rgba(12, 21, 31, 0.88) 45%, rgba(24, 34, 28, 0.9) 100%);
   box-shadow: 0 22px 54px rgba(0, 0, 0, 0.26);
@@ -67,7 +67,7 @@ _REVIEW_CSS = """
 }
 .side-card {
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--hairline);
   border-radius: 18px;
   padding: 1.1rem;
 }
@@ -80,7 +80,7 @@ _REVIEW_CSS = """
 .side-stat {
   display: flex; justify-content: space-between;
   font-size: .84rem; padding: .25rem 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--hairline);
 }
 .side-stat:last-child { border-bottom: none; }
 .stat-label { color: var(--muted); }
@@ -101,7 +101,7 @@ _REVIEW_CSS = """
   letter-spacing: .04em; text-transform: uppercase;
 }
 .heatmap-table td { padding: .5rem .6rem; text-align: center; }
-.heatmap-table td.eid { text-align: left; font-weight: 600; font-family: var(--mono); color: var(--accent); }
+.heatmap-table td.eid { text-align: left; font-weight: 600; font-family: var(--mono); color: var(--gold); }
 .hm-yes {
   color: var(--green); font-weight: 700;
 }
@@ -140,7 +140,7 @@ _REVIEW_CSS = """
 }
 .pred-card {
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--hairline);
   border-radius: 18px;
   padding: 1.1rem; text-align: center;
 }

@@ -50,7 +50,7 @@ body {
   position: relative;
   overflow: hidden;
   border-radius: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--hairline-strong);
   background:
     linear-gradient(135deg, rgba(12, 29, 45, 0.96) 0%, rgba(12, 21, 31, 0.88) 45%, rgba(24, 34, 28, 0.9) 100%);
   box-shadow: 0 22px 54px rgba(0, 0, 0, 0.26);
@@ -107,7 +107,7 @@ body {
   gap: 0.35rem;
   padding: 0.5rem 0.85rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--hairline-strong);
   background: rgba(255, 255, 255, 0.04);
   color: var(--fg);
   font-size: 0.84rem;
@@ -127,7 +127,7 @@ body {
 .spotlight-card {
   border-radius: 20px;
   padding: 1rem 1.1rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--hairline-strong);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.025));
   backdrop-filter: blur(16px);
 }
@@ -174,7 +174,7 @@ body {
   border-radius: 22px;
   padding: 1.1rem 1.15rem;
   background: linear-gradient(180deg, rgba(10, 22, 34, 0.94), rgba(10, 18, 28, 0.88));
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--hairline);
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.16);
 }
 .kpi-panel::before {
@@ -212,7 +212,7 @@ body {
 }
 .insight-card, .board-card, .method-card {
   background: linear-gradient(180deg, rgba(12, 23, 35, 0.94), rgba(8, 16, 25, 0.92));
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--hairline);
   border-radius: 24px;
   padding: 1.2rem;
   box-shadow: 0 18px 34px rgba(0, 0, 0, 0.18);
@@ -309,11 +309,11 @@ body {
   text-transform: uppercase;
   color: var(--muted);
   padding: 0.7rem 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--hairline-strong);
 }
 .priority-table td {
   padding: 0.9rem 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--hairline);
   vertical-align: middle;
 }
 .priority-table tbody tr:hover {
@@ -355,7 +355,7 @@ body {
   overflow: hidden;
   border-radius: 24px;
   padding: 1.25rem;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--hairline);
   background:
     linear-gradient(180deg, rgba(13, 24, 36, 0.95), rgba(8, 15, 24, 0.92)),
     linear-gradient(135deg, rgba(255, 255, 255, 0.02), transparent 55%);
@@ -427,7 +427,7 @@ body {
   padding: 0.9rem 1rem;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--hairline);
 }
 .signal-head {
   display: flex;
@@ -463,7 +463,7 @@ body {
 .claim-panel, .metric-panel {
   border-radius: 20px;
   padding: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--hairline);
   background: rgba(255, 255, 255, 0.03);
 }
 .claim-panel h4, .metric-panel h4 {
@@ -480,7 +480,7 @@ body {
   border-radius: 16px;
   padding: 0.8rem 0.88rem;
   background: rgba(5, 12, 19, 0.42);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--hairline);
   font-size: 0.86rem;
   line-height: 1.58;
 }
@@ -502,7 +502,7 @@ body {
 }
 .metric-table td {
   padding: 0.46rem 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--hairline);
   font-size: 0.84rem;
 }
 .metric-table td:last-child {
@@ -520,7 +520,7 @@ body {
   grid-template-columns: auto 1fr;
   align-items: flex-start;
   padding-bottom: 0.55rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--hairline);
 }
 .method-item:last-child { border-bottom: none; padding-bottom: 0; }
 .method-index {
@@ -601,7 +601,7 @@ body {
   width: 500px;
   height: 500px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--hairline);
   pointer-events: none;
 }
 .cover-page::after {
@@ -613,7 +613,7 @@ body {
   width: 700px;
   height: 700px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--hairline);
   pointer-events: none;
 }
 .cover-content {
@@ -669,7 +669,7 @@ body {
   justify-content: space-between;
   gap: 1rem;
   padding: 1.5rem 0.5rem 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--hairline);
   margin-top: 0.5rem;
 }
 .brand-footer-left {
@@ -711,7 +711,7 @@ body {
   border-radius: 18px;
   background: rgba(8, 16, 26, 0.92);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--hairline);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
 }
 .filter-bar .filter-label {
@@ -726,7 +726,7 @@ body {
   gap: 0.3rem;
   padding: 0.45rem 0.85rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--hairline-strong);
   background: rgba(255, 255, 255, 0.04);
   color: var(--fg);
   font-size: 0.82rem;

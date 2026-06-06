@@ -11,7 +11,7 @@ _BASE_CSS = """
 :root {
   --bg: #060b15;
   --fg: #dde6f0;
-  --card: rgba(11, 20, 35, 0.85);
+  --card: rgba(13, 23, 39, 0.88);
   --border: rgba(100, 150, 180, 0.18);
   /* Premium P1: blue-tinted hairline — quieter & more refined than pure-white edges. */
   --hairline: rgba(150, 170, 195, 0.12);
@@ -23,8 +23,12 @@ _BASE_CSS = """
   --purple: #a78bfa;
   --muted: #8fa3b8;
   --white: #f1f7fd;
-  --surface: rgba(14, 24, 40, 0.92);
+  --surface: rgba(18, 30, 48, 0.94);
   --accent: #f59e0b;
+  /* Premium P2: --gold is the semantic "金额/资金/热度/连板/证据ID" color; --accent
+     is structural/interactive only. Same value now → zero visual change; lets a
+     future pass dim --accent without touching data-meaning gold. */
+  --gold: #f59e0b;
   --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
   /* A-share action convention: 买入/看多 = 红, 卖出/看空 = 绿, VETO = 紫. */
   --signal-buy: var(--red);
@@ -108,7 +112,7 @@ h3 {
 /* box-shadow set via S4 elevation system (var(--elev-1/2/3)) */
 .card {
   position: relative;
-  background: linear-gradient(180deg, rgba(12, 23, 35, 0.94), rgba(8, 16, 25, 0.92));
+  background: linear-gradient(180deg, rgba(15, 27, 44, 0.94), rgba(10, 19, 30, 0.92));
   border: 1px solid var(--hairline);
   border-radius: 20px;
   padding: 1.25rem 1.3rem;
@@ -152,7 +156,7 @@ h3 {
 .hero {
   position: relative; overflow: hidden;
   border-radius: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--hairline-strong);
   background:
     linear-gradient(135deg, rgba(12, 29, 45, 0.96) 0%, rgba(12, 21, 31, 0.88) 45%, rgba(24, 34, 28, 0.9) 100%);
   box-shadow: 0 22px 54px rgba(0, 0, 0, 0.26);
@@ -193,7 +197,7 @@ h3 {
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
 .kpi {
   position: relative; overflow: hidden;
-  background: linear-gradient(180deg, rgba(10, 22, 34, 0.94), rgba(10, 18, 28, 0.88));
+  background: linear-gradient(180deg, rgba(15, 27, 44, 0.94), rgba(11, 20, 31, 0.88));
   border: 1px solid var(--hairline);
   border-radius: 18px;
   padding: .9rem 1rem; text-align: center;
@@ -255,7 +259,7 @@ h3 {
 .badge-warn, .badge-bad { background: rgba(248, 113, 113, 0.14); color: var(--red); }
 
 /* ── Status lights ── */
-.light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 6px currentColor; }
+.light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 3px currentColor; }
 .light-green { background: var(--green); color: var(--green); }
 .light-red { background: var(--red); color: var(--red); }
 .light-yellow { background: var(--yellow); color: var(--yellow); }
@@ -295,8 +299,8 @@ h3 {
 
 /* ── Trade plan card ── */
 .tp-table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-bottom: .5rem; }
-.tp-table th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.08); padding: .45rem .4rem; font-size: .76rem; letter-spacing: .06em; text-transform: uppercase; }
-.tp-table td { padding: .45rem .4rem; border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 150ms ease; }
+.tp-table th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--hairline-strong); padding: .45rem .4rem; font-size: .76rem; letter-spacing: .06em; text-transform: uppercase; }
+.tp-table td { padding: .45rem .4rem; border-bottom: 1px solid var(--hairline); transition: background 150ms ease; }
 .tp-table tr:hover td { background: rgba(255,255,255,0.02); }
 .tp-table .mono { font-family: var(--mono); }
 .tp-row { display: flex; align-items: center; gap: .6rem; padding: .35rem 0; font-size: .85rem; }
@@ -312,7 +316,7 @@ h3 {
 .trust-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: .8rem; margin: .75rem 0; }
 .trust-card {
   position: relative; overflow: hidden;
-  background: linear-gradient(180deg, rgba(10, 22, 34, 0.94), rgba(10, 18, 28, 0.88));
+  background: linear-gradient(180deg, rgba(15, 27, 44, 0.94), rgba(11, 20, 31, 0.88));
   border: 1px solid var(--hairline);
   border-radius: 18px;
   padding: 1rem; text-align: center;
@@ -417,7 +421,7 @@ li { margin-bottom: .3rem; font-size: .9rem; }
 .timeline-item::before {
   content: ''; position: absolute; left: -27px; top: 1.1rem;
   width: 10px; height: 10px; border-radius: 50%;
-  background: var(--blue); box-shadow: 0 0 8px rgba(96, 165, 250, 0.5);
+  background: var(--blue); box-shadow: 0 0 3px rgba(96, 165, 250, 0.25);
 }
 .timeline-node { font-weight: 700; color: var(--white); min-width: 120px; display: inline-block; }
 .timeline-detail { font-size: .85rem; color: var(--muted); }
@@ -677,7 +681,7 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); }
 }
 .score-pill .sp-dot {
   display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.1); border: 1px solid var(--hairline-strong);
 }
 .score-pill .sp-dot.on { border-color: transparent; box-shadow: 0 0 4px currentColor; }
 .score-pill.conf-hi .sp-dot.on { background: var(--conf-hi); color: var(--conf-hi); }
@@ -725,7 +729,7 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); }
 
 .v-heat-cell {
   display: inline-block; position: relative;
-  border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+  border-radius: 4px; box-shadow: inset 0 0 0 1px var(--hairline);
   font-family: var(--mono); font-size: var(--t-xs); font-weight: 600;
   text-align: center; line-height: 1;
 }
@@ -756,7 +760,7 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); }
 .stacked-prob .spb-track {
   display: flex; border-radius: 8px; overflow: hidden;
   background: rgba(255,255,255,0.04);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+  box-shadow: inset 0 0 0 1px var(--hairline);
 }
 .stacked-prob .spb-seg {
   display: flex; align-items: center; justify-content: center;
@@ -841,7 +845,7 @@ details.audit-group[open] .audit-group-head { border-radius: 14px 14px 0 0; }
 /* ── Print — consolidated from all renderers ──────────────── */
 @media print {
   @page { margin: 15mm; }
-  :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666;--white:#111;--accent:#333}
+  :root{--bg:#fff;--fg:#111;--card:#fff;--border:#ddd;--muted:#666;--white:#111;--accent:#333;--gold:#333}
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   body{background:#fff!important;color:#111!important}
   body::before,.hero::after{display:none!important}

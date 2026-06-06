@@ -1872,10 +1872,11 @@ _BT_HTML_HEAD = """<!DOCTYPE html>
 <title>回测验证报告</title>
 <style>
 :root {
-  --bg: #070e1b; --fg: #dde6f0; --card: rgba(11, 20, 35, 0.85);
+  --bg: #060b15; --fg: #dde6f0; --card: rgba(13, 23, 39, 0.88);
   --border: rgba(100, 150, 180, 0.18); --green: #34d399; --red: #f87171;
+  --hairline: rgba(150, 170, 195, 0.12); --hairline-strong: rgba(150, 170, 195, 0.22);
   --yellow: #fbbf24; --blue: #60a5fa; --purple: #a78bfa; --muted: #8fa3b8; --white: #f1f7fd;
-  --surface: rgba(14, 24, 40, 0.92); --accent: #f59e0b;
+  --surface: rgba(18, 30, 48, 0.94); --accent: #f59e0b;
   --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
   --signal-buy: var(--green);
   --signal-sell: var(--red);
@@ -1917,7 +1918,7 @@ h3 { color:var(--white); margin:.6rem 0 .5rem; font-size:.92rem; font-weight:700
 
 .card {
   background: linear-gradient(180deg, rgba(12,23,35,0.94), rgba(8,16,25,0.92));
-  border: 1px solid rgba(255,255,255,0.06); border-radius:20px;
+  border: 1px solid var(--hairline); border-radius:20px;
   padding:1.25rem 1.3rem; margin-bottom:1rem;
   box-shadow: 0 14px 34px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.04);
   backdrop-filter: blur(12px);
@@ -1933,7 +1934,7 @@ h3 { color:var(--white); margin:.6rem 0 .5rem; font-size:.92rem; font-weight:700
 
 .hero {
   position:relative; overflow:hidden; border-radius:28px;
-  border:1px solid rgba(255,255,255,0.08);
+  border:1px solid var(--hairline-strong);
   background: linear-gradient(135deg, rgba(12,29,45,0.96), rgba(12,21,31,0.88), rgba(20,30,38,0.9));
   box-shadow:0 22px 54px rgba(0,0,0,0.26); padding:2rem; margin-bottom:1.2rem;
 }
@@ -1969,13 +1970,13 @@ h3 { color:var(--white); margin:.6rem 0 .5rem; font-size:.92rem; font-weight:700
 
 .bt-table { width:100%; border-collapse:collapse;
   background: linear-gradient(180deg, rgba(12,23,35,0.94), rgba(8,16,25,0.92));
-  border:1px solid rgba(255,255,255,0.06); border-radius:16px; overflow:hidden; }
+  border:1px solid var(--hairline); border-radius:16px; overflow:hidden; }
 .bt-table th {
   background:rgba(255,255,255,0.03); padding:.6rem .75rem; text-align:left;
-  font-size:.72rem; color:var(--muted); border-bottom:1px solid rgba(255,255,255,0.06);
+  font-size:.72rem; color:var(--muted); border-bottom:1px solid var(--hairline);
   text-transform:uppercase; letter-spacing:.06em; font-weight:600;
 }
-.bt-table td { padding:.55rem .75rem; border-bottom:1px solid rgba(255,255,255,0.04);
+.bt-table td { padding:.55rem .75rem; border-bottom:1px solid var(--hairline);
                font-size:.82rem; }
 .bt-table tr:last-child td { border-bottom:none; }
 .bt-table tr:hover { background:rgba(255,255,255,0.02); }
@@ -1992,7 +1993,7 @@ th.sortable[data-sort-dir="desc"]::after { content:"↓"; opacity:.7; color:var(
 .badge-sell { background:rgba(248,113,113,0.12); color:var(--red); }
 .badge-hold { background:rgba(251,191,36,0.12); color:var(--yellow); }
 
-.footer { margin-top:2rem; padding-top:1rem; border-top:1px solid rgba(255,255,255,0.06);
+.footer { margin-top:2rem; padding-top:1rem; border-top:1px solid var(--hairline);
           color:var(--muted); font-size:.72rem; text-align:center; }
 
 @keyframes card-rise { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
@@ -2014,7 +2015,7 @@ th.sortable[data-sort-dir="desc"]::after { content:"↓"; opacity:.7; color:var(
 .card:hover {
   box-shadow: 0 12px 28px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.05);
 }
-.hero { box-shadow: 0 22px 54px rgba(0,0,0,0.26), 0 0 0 1px rgba(255,255,255,0.06); }
+.hero { box-shadow: 0 22px 54px rgba(0,0,0,0.26), 0 0 0 1px var(--hairline); }
 
 /* ── V3: Numeric alignment ── */
 td.num, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
@@ -2050,7 +2051,7 @@ button:focus-visible, [role="button"]:focus-visible {
 .reveal { animation: card-rise var(--dur-med) var(--ease-out) both; }
 
 /* ── S2: KPI hierarchy ── */
-.kpi-primary .card-value { font-size: 2.4rem; text-shadow: 0 0 24px currentColor; }
+.kpi-primary .card-value { font-size: 2.4rem; }
 .kpi-secondary .card-value { font-size: 1.4rem; opacity: .85; }
 
 /* ── S6: Table readability ── */

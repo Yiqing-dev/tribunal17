@@ -33,19 +33,18 @@ from .shared_utils import (
 _DEBATE_CSS = """
 /* ── Debate-specific additions (base theme from shared_css._BASE_CSS) ── */
 :root {
-  --glow-green: rgba(52, 211, 153, 0.15);
-  --glow-red: rgba(248, 113, 113, 0.15);
-  --glow-blue: rgba(96, 165, 250, 0.12);
-  --glow-yellow: rgba(251, 191, 36, 0.12);
-  --glow-purple: rgba(167, 139, 250, 0.12);
+  --glow-green: rgba(52, 211, 153, 0.05);
+  --glow-red: rgba(248, 113, 113, 0.05);
+  --glow-blue: rgba(96, 165, 250, 0.05);
+  --glow-yellow: rgba(251, 191, 36, 0.05);
 }
 .debate-shell { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 1.5rem; display: grid; gap: 1.25rem; }
 
 /* ── Glass glow variants (debate-specific --glow-* vars) ── */
-.glass-glow-green { box-shadow: 0 0 20px var(--glow-green), inset 0 1px 0 rgba(52,211,153,.06); }
-.glass-glow-red   { box-shadow: 0 0 20px var(--glow-red),   inset 0 1px 0 rgba(248,113,113,.06); }
-.glass-glow-blue  { box-shadow: 0 0 20px var(--glow-blue),  inset 0 1px 0 rgba(96,165,250,.06); }
-.glass-glow-yellow { box-shadow: 0 0 20px var(--glow-yellow), inset 0 1px 0 rgba(251,191,36,.06); }
+.glass-glow-green { box-shadow: 0 0 12px var(--glow-green), inset 0 1px 0 rgba(52,211,153,.06); }
+.glass-glow-red   { box-shadow: 0 0 12px var(--glow-red),   inset 0 1px 0 rgba(248,113,113,.06); }
+.glass-glow-blue  { box-shadow: 0 0 12px var(--glow-blue),  inset 0 1px 0 rgba(96,165,250,.06); }
+.glass-glow-yellow { box-shadow: 0 0 12px var(--glow-yellow), inset 0 1px 0 rgba(251,191,36,.06); }
 
 /* ─────────── Section 1: Hero + Roster ─────────── */
 .debate-hero {
@@ -92,7 +91,7 @@ _DEBATE_CSS = """
 }
 .roster-card {
   background: rgba(255,255,255,.02);
-  border: 1px solid rgba(255,255,255,.06);
+  border: 1px solid var(--hairline);
   border-radius: 12px; padding: .65rem .8rem;
   text-align: center;
   transition: transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
@@ -140,7 +139,7 @@ _DEBATE_CSS = """
   position: absolute; left: 12px; top: 0; bottom: 0;
   width: 4px; background: linear-gradient(180deg, var(--blue), var(--green), var(--yellow), var(--red), var(--blue));
   border-radius: 2px;
-  box-shadow: 0 0 12px rgba(96,165,250,0.25);
+  box-shadow: 0 0 4px rgba(96,165,250,0.12);
 }
 .tl-phase {
   position: relative; margin-bottom: 1.2rem;
@@ -152,7 +151,7 @@ _DEBATE_CSS = """
   z-index: 2; transition: box-shadow 300ms ease;
 }
 .tl-phase:hover .tl-phase-dot {
-  box-shadow: 0 0 10px currentColor;
+  box-shadow: 0 0 4px currentColor;
 }
 .tl-phase.phase-initial .tl-phase-dot  { border-color: var(--blue); }
 .tl-phase.phase-debate  .tl-phase-dot  { border-color: var(--green); }
@@ -167,7 +166,7 @@ _DEBATE_CSS = """
 .tl-phase-en { color: var(--muted); font-size: .72rem; margin-left: .4rem; }
 .tl-entry {
   display: flex; gap: .7rem; padding: .5rem .4rem;
-  border-bottom: 1px solid rgba(255,255,255,.03);
+  border-bottom: 1px solid var(--hairline);
   border-radius: 8px; transition: background 200ms ease;
 }
 .tl-entry:hover { background: rgba(255,255,255,.015); }
@@ -198,7 +197,7 @@ _DEBATE_CSS = """
   display: inline-block; padding: 0 6px; border-radius: 4px;
   font-size: .62rem; font-weight: 600;
   color: var(--muted); background: rgba(255,255,255,.04);
-  border: 1px solid rgba(255,255,255,.06);
+  border: 1px solid var(--hairline);
 }
 
 /* ─────────── Section 3: Bull/Bear Arena ─────────── */
@@ -247,7 +246,7 @@ _DEBATE_CSS = """
 /* Claim cards */
 .claim-card {
   background: rgba(255,255,255,.02);
-  border: 1px solid rgba(255,255,255,.06);
+  border: 1px solid var(--hairline);
   border-radius: 10px; padding: .7rem .9rem;
   margin-bottom: .6rem; transition: border-color .2s;
 }
@@ -335,7 +334,7 @@ _DEBATE_CSS = """
 .verdict-kpi {
   text-align: center; padding: .7rem .5rem;
   background: rgba(255,255,255,.02);
-  border: 1px solid rgba(255,255,255,.06);
+  border: 1px solid var(--hairline);
   border-radius: 10px;
 }
 .verdict-kpi .vk-val {
@@ -381,7 +380,7 @@ _DEBATE_CSS = """
   font-size: .7rem; font-weight: 600;
 }
 .risk-flag.medium { color: var(--yellow); background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.15); }
-.risk-flag.low    { color: var(--muted); background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06); }
+.risk-flag.low    { color: var(--muted); background: rgba(255,255,255,.03); border: 1px solid var(--hairline); }
 .risk-flag.high   { color: var(--red); background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.15); }
 
 /* ─────────── Section 6: Audit ─────────── */
@@ -393,7 +392,7 @@ _DEBATE_CSS = """
 .audit-cell {
   text-align: center; padding: .7rem .5rem;
   background: rgba(255,255,255,.02);
-  border: 1px solid rgba(255,255,255,.06);
+  border: 1px solid var(--hairline);
   border-radius: 10px;
 }
 .audit-cell .av {
@@ -418,7 +417,7 @@ _DEBATE_CSS = """
 /* Footer */
 .debate-footer {
   text-align: center; color: var(--muted); font-size: .72rem;
-  padding: .8rem 0 .5rem; border-top: 1px solid rgba(255,255,255,.04);
+  padding: .8rem 0 .5rem; border-top: 1px solid var(--hairline);
   letter-spacing: .04em;
   background: linear-gradient(180deg, transparent, rgba(255,255,255,0.008));
 }
@@ -448,7 +447,7 @@ _DEBATE_CSS = """
 .wind-chip {
   display: inline-block; padding: 1px 8px; border-radius: 8px;
   font-size: .65rem; font-weight: 600;
-  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.04); border: 1px solid var(--hairline-strong);
   color: var(--muted);
 }
 .wind-chip.leader { color: var(--green); border-color: rgba(52,211,153,.15); }
@@ -1005,7 +1004,7 @@ def render_debate_page(view: DebateView, *, artifact_dir=None) -> str:
     _footer_banner = (
         f'<div class="banner banner-footer" style="margin:2rem 0 0;'
         f'background:rgba(255,255,255,0.03);border-color:rgba(255,255,255,0.06);'
-        f'color:var(--muted);font-size:.75rem;padding:.65rem 1rem;border:1px solid rgba(255,255,255,0.06);'
+        f'color:var(--muted);font-size:.75rem;padding:.65rem 1rem;border:1px solid var(--hairline);'
         f'border-radius:14px">{AI_DISCLAIMER_BANNER}</div>'
     )
     _research_banner_committee = (

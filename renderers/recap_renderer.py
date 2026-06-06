@@ -31,10 +31,9 @@ from .decision_labels import (
 _RECAP_CSS = """
 /* ── Recap-specific additions (base theme from shared_css._BASE_CSS) ── */
 :root {
-  --glow-green: rgba(52, 211, 153, 0.15);
-  --glow-red: rgba(248, 113, 113, 0.15);
-  --glow-blue: rgba(96, 165, 250, 0.12);
-  --glow-yellow: rgba(251, 191, 36, 0.12);
+  --glow-green: rgba(52, 211, 153, 0.05);
+  --glow-red: rgba(248, 113, 113, 0.05);
+  --glow-blue: rgba(96, 165, 250, 0.05);
 }
 .recap-shell { position: relative; z-index: 1; max-width: 1360px; margin: 0 auto; padding: 1.5rem; display: grid; gap: 1.25rem; }
 
@@ -48,9 +47,9 @@ _RECAP_CSS = """
 .glass:hover {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255,255,255,0.04);
 }
-.glass-glow-green { box-shadow: 0 0 24px var(--glow-green), inset 0 1px 0 rgba(52,211,153,.06); }
-.glass-glow-red   { box-shadow: 0 0 24px var(--glow-red),   inset 0 1px 0 rgba(248,113,113,.06); }
-.glass-glow-blue  { box-shadow: 0 0 24px var(--glow-blue),  inset 0 1px 0 rgba(96,165,250,.06); }
+.glass-glow-green { box-shadow: 0 0 12px var(--glow-green), inset 0 1px 0 rgba(52,211,153,.06); }
+.glass-glow-red   { box-shadow: 0 0 12px var(--glow-red),   inset 0 1px 0 rgba(248,113,113,.06); }
+.glass-glow-blue  { box-shadow: 0 0 12px var(--glow-blue),  inset 0 1px 0 rgba(96,165,250,.06); }
 
 /* ── Hero ── */
 .recap-hero {
@@ -84,7 +83,7 @@ _RECAP_CSS = """
   padding: .3rem .75rem; border-radius: 20px;
   font-size: .78rem; font-weight: 600;
   background: rgba(255,255,255,.04);
-  border: 1px solid rgba(255,255,255,.08);
+  border: 1px solid var(--hairline-strong);
 }
 .hero-chip.up   { color: var(--red);   border-color: rgba(248,113,113,.2); }
 .hero-chip.down { color: var(--green); border-color: rgba(52,211,153,.2); }
@@ -193,7 +192,7 @@ _RECAP_CSS = """
 .limit-card-title .cnt.dn { color: var(--green); }
 .limit-stock {
   display: flex; justify-content: space-between; align-items: center;
-  padding: .35rem .4rem; border-bottom: 1px solid rgba(255,255,255,.04);
+  padding: .35rem .4rem; border-bottom: 1px solid var(--hairline);
   font-size: .82rem; border-radius: 6px;
   transition: background 150ms ease;
 }
@@ -248,7 +247,7 @@ _RECAP_CSS = """
   text-align: left; color: var(--muted); font-weight: 600;
   border-bottom: 1px solid var(--border); padding: .5rem .4rem;
 }
-.rc-table td { padding: .4rem; border-bottom: 1px solid rgba(255,255,255,.04); }
+.rc-table td { padding: .4rem; border-bottom: 1px solid var(--hairline); }
 .rc-table .mono { font-family: monospace; }
 .csv-btn {
   display: inline-flex; align-items: center; gap: .3rem;

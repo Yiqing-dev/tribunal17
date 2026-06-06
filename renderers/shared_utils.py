@@ -169,7 +169,7 @@ def _render_industry_compare_card(industry_compare: dict) -> str:
     header_html = (
         f'<div style="display:flex;flex-wrap:wrap;gap:1.4rem;'
         f'padding:.6rem .9rem;background:rgba(255,255,255,0.025);'
-        f'border:1px solid rgba(255,255,255,0.06);border-radius:10px;'
+        f'border:1px solid var(--hairline);border-radius:10px;'
         f'margin-bottom:.7rem">{"".join(header_cells)}</div>'
     ) if header_cells else ""
 
@@ -235,7 +235,7 @@ def _render_industry_compare_card(industry_compare: dict) -> str:
             )
         table_html = (
             f'<table style="width:100%;border-collapse:collapse;font-size:.86rem">'
-            f'<thead><tr style="border-bottom:1px solid rgba(255,255,255,0.08);'
+            f'<thead><tr style="border-bottom:1px solid var(--hairline-strong);'
             f'color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">'
             f'<th style="text-align:left;padding:.4rem .5rem">代码</th>'
             f'<th style="text-align:left;padding:.4rem .5rem">名称</th>'
@@ -313,7 +313,7 @@ def _render_hero_industry_kpis(industry_compare: dict) -> str:
     return (
         f'<div style="display:grid;grid-template-columns:repeat({len(parts)},1fr);'
         f'gap:.4rem;margin-top:.5rem;padding-top:.5rem;'
-        f'border-top:1px solid rgba(255,255,255,0.05)">'
+        f'border-top:1px solid var(--hairline)">'
         f'{"".join(parts)}</div>'
     )
 
@@ -1313,7 +1313,7 @@ def _kline_with_signals_svg(
                 f'style="display:inline-flex;align-items:center;gap:.25rem;'
                 f'padding:.18rem .55rem;border-radius:999px;font-family:var(--mono);'
                 f'font-size:.72rem;letter-spacing:.02em;margin-right:.35rem;'
-                f'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08)">'
+                f'background:rgba(255,255,255,0.04);border:1px solid var(--hairline-strong)">'
                 f'<span style="color:var(--{ "red" if css=="buy" else ("green" if css=="sell" else ("purple" if css=="veto" else "yellow")) })">{ico}</span>'
                 f'<span style="color:var(--white)">{_esc(d)}</span>'
                 f'<span style="color:var(--muted)">{_esc(act)}{_esc(conf_pct)}</span>'
@@ -1323,7 +1323,7 @@ def _kline_with_signals_svg(
             signal_html = (
                 f'<div class="kline-signals" style="margin-top:.6rem;'
                 f'display:flex;align-items:center;flex-wrap:wrap;gap:.15rem;'
-                f'padding:.45rem .55rem;border-top:1px dashed rgba(255,255,255,0.08)">'
+                f'padding:.45rem .55rem;border-top:1px dashed var(--hairline-strong)">'
                 f'<span style="font-size:.72rem;color:var(--muted);'
                 f'letter-spacing:.05em;text-transform:uppercase;margin-right:.5rem">'
                 f'信号轨迹</span>'

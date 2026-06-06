@@ -124,7 +124,7 @@ def _render_cover_card(view: SnapshotView) -> str:
     # Inline minimal CSS (one-shot for cover card, doesn't pollute global)
     style = """<style>
 .cover-card{display:flex;flex-wrap:wrap;gap:1.6rem;padding:.75rem 1.05rem;margin:.4rem 0 1rem;
-  background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.06);border-radius:14px;
+  background:rgba(255,255,255,0.025);border:1px solid var(--hairline);border-radius:14px;
   font-size:.86rem}
 .cover-cell{display:flex;flex-direction:column;gap:.15rem;min-width:0}
 .cover-cell .cc-label{font-size:.7rem;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
