@@ -123,16 +123,19 @@ def _render_cover_card(view: SnapshotView) -> str:
 
     # Inline minimal CSS (one-shot for cover card, doesn't pollute global)
     style = """<style>
-.cover-card{display:flex;flex-wrap:wrap;gap:1.6rem;padding:.75rem 1.05rem;margin:.4rem 0 1rem;
-  background:rgba(255,255,255,0.025);border:1px solid var(--hairline);border-radius:14px;
-  font-size:.86rem}
-.cover-cell{display:flex;flex-direction:column;gap:.15rem;min-width:0}
+/* Premium P2c: equal-width data strip — hairline gutters form the grid (1px gap
+   over the container's hairline bg shows through between var(--card) cells). */
+.cover-card{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:1px;
+  margin:.4rem 0 1rem;background:var(--hairline);border:1px solid var(--hairline);
+  border-radius:14px;overflow:hidden;font-size:.86rem}
+.cover-cell{display:flex;flex-direction:column;gap:.2rem;min-width:0;padding:.6rem .85rem;
+  background:var(--card)}
 .cover-cell .cc-label{font-size:.7rem;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
 .cover-cell .cc-val{font-size:1.05rem;font-weight:600;color:var(--white);font-variant-numeric:tabular-nums}
 .report-watermark{display:inline-flex;align-items:center;gap:.4rem;font-family:var(--mono);
   font-size:.7rem;color:var(--muted);margin-bottom:.2rem;letter-spacing:.04em}
 .banner.banner-footer{margin:2rem 0 0;background:rgba(255,255,255,0.03);
-  border-color:rgba(255,255,255,0.06);color:var(--muted);font-size:.75rem}
+  border-color:var(--hairline);color:var(--muted);font-size:.75rem}
 </style>"""
     return f'{style}<div class="cover-card">{"".join(cells)}</div>'
 

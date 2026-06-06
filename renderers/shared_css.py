@@ -299,8 +299,8 @@ h3 {
 
 /* ── Trade plan card ── */
 .tp-table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-bottom: .5rem; }
-.tp-table th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--hairline-strong); padding: .45rem .4rem; font-size: .76rem; letter-spacing: .06em; text-transform: uppercase; }
-.tp-table td { padding: .45rem .4rem; border-bottom: 1px solid var(--hairline); transition: background 150ms ease; }
+.tp-table th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--hairline-strong); padding: .55rem .5rem; font-size: .76rem; letter-spacing: .06em; text-transform: uppercase; }
+.tp-table td { padding: .55rem .5rem; border-bottom: 1px solid var(--hairline); transition: background 150ms ease; }
 .tp-table tr:hover td { background: rgba(255,255,255,0.02); }
 .tp-table .mono { font-family: var(--mono); }
 .tp-row { display: flex; align-items: center; gap: .6rem; padding: .35rem 0; font-size: .85rem; }
@@ -412,7 +412,7 @@ li { margin-bottom: .3rem; font-size: .9rem; }
 
 /* ── Signal History ── */
 .sig-hist-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-.sig-hist-table td { padding: .45rem .5rem; border-bottom: 1px solid var(--hairline); }
+.sig-hist-table td { padding: .55rem .55rem; border-bottom: 1px solid var(--hairline); }
 
 /* ── Decision chain timeline ── */
 .timeline { border-left: 2px solid rgba(96, 165, 250, 0.3); margin-left: 10px; padding-left: 22px; }
