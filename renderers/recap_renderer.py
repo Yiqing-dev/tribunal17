@@ -75,9 +75,7 @@ _RECAP_CSS = """
 .recap-hero h1 {
   font-size: clamp(1.8rem, 3.5vw, 2.8rem);
   letter-spacing: -.03em; line-height: 1.1; margin-bottom: .5rem;
-  background: linear-gradient(135deg, #fff 30%, var(--blue));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--white);
 }
 .hero-summary { color: var(--muted); font-size: 1rem; margin-bottom: .8rem; }
 .hero-chips { display: flex; flex-wrap: wrap; gap: .5rem; }

@@ -100,9 +100,7 @@ _MARKET_CSS = """
 .mkt-hero h1 {
   font-size: clamp(1.8rem, 3.5vw, 2.6rem);
   letter-spacing: -.03em; line-height: 1.15; margin-bottom: .6rem;
-  background: linear-gradient(135deg, #fff 30%, var(--accent));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--white);
 }
 .mkt-hero-verdict { font-size: 1rem; color: var(--muted); line-height: 1.7; margin-bottom: .8rem; max-width: 600px; }
 .mkt-hero-chips { display: flex; flex-wrap: wrap; gap: .5rem; }
@@ -139,10 +137,8 @@ _MARKET_CSS = """
 /* Section head */
 .mkt-sec-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .8rem; }
 .mkt-sec-title {
-  font-size: 1.1rem; font-weight: 700;
-  background: linear-gradient(90deg, var(--blue), var(--green));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
+  font-size: 1.1rem; font-weight: 700; color: var(--white);
+  border-left: 3px solid var(--accent); padding-left: .55rem; letter-spacing: .01em;
 }
 .mkt-sec-sub { color: var(--muted); font-size: .78rem; }
 

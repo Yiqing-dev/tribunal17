@@ -9,10 +9,13 @@ _BASE_CSS = """
    Tokens aligned with pool/market/debate reports
    ═══════════════════════════════════════════════════════════════ */
 :root {
-  --bg: #070e1b;
+  --bg: #060b15;
   --fg: #dde6f0;
   --card: rgba(11, 20, 35, 0.85);
   --border: rgba(100, 150, 180, 0.18);
+  /* Premium P1: blue-tinted hairline — quieter & more refined than pure-white edges. */
+  --hairline: rgba(150, 170, 195, 0.12);
+  --hairline-strong: rgba(150, 170, 195, 0.22);
   --green: #34d399;
   --red: #f87171;
   --yellow: #fbbf24;
@@ -62,11 +65,12 @@ body {
   font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", -apple-system,
                BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
   background:
-    radial-gradient(ellipse at 15% 20%, rgba(251, 191, 36, 0.10), transparent 32%),
-    radial-gradient(ellipse at 85% 18%, rgba(96, 165, 250, 0.08), transparent 30%),
-    radial-gradient(ellipse at 50% 110%, rgba(52, 211, 153, 0.08), transparent 38%),
-    linear-gradient(180deg, #091420 0%, #070e1b 55%, #050c17 100%);
+    radial-gradient(ellipse at 15% 20%, rgba(251, 191, 36, 0.05), transparent 26%),
+    radial-gradient(ellipse at 85% 18%, rgba(96, 165, 250, 0.035), transparent 24%),
+    radial-gradient(ellipse at 50% 110%, rgba(52, 211, 153, 0.035), transparent 30%),
+    linear-gradient(180deg, #081120 0%, #060b15 55%, #04090f 100%);
   color: var(--fg); line-height: 1.75;
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -76,9 +80,7 @@ body {
 h1 {
   margin-bottom: .3rem;
   font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 800; letter-spacing: -0.03em;
-  background: linear-gradient(135deg, var(--white) 40%, var(--blue));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--white);
 }
 h2 {
   color: var(--accent); margin: 2rem 0 1rem;
@@ -107,15 +109,15 @@ h3 {
 .card {
   position: relative;
   background: linear-gradient(180deg, rgba(12, 23, 35, 0.94), rgba(8, 16, 25, 0.92));
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--hairline);
   border-radius: 20px;
   padding: 1.25rem 1.3rem;
   margin-bottom: 1rem;
   backdrop-filter: blur(12px);
 }
 .card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+  border-color: var(--hairline-strong);
 }
 .report-delta-card {
   border-color: rgba(96, 165, 250, 0.18);
@@ -141,10 +143,8 @@ h3 {
 /* ── Section Head ── */
 .sec-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .8rem; }
 .sec-title {
-  font-size: 1.15rem; font-weight: 700;
-  background: linear-gradient(90deg, var(--blue), var(--green));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
+  font-size: 1.15rem; font-weight: 700; color: var(--white);
+  border-left: 3px solid var(--accent); padding-left: .55rem; letter-spacing: .01em;
 }
 .sec-sub { color: var(--muted); font-size: .78rem; }
 
@@ -194,7 +194,7 @@ h3 {
 .kpi {
   position: relative; overflow: hidden;
   background: linear-gradient(180deg, rgba(10, 22, 34, 0.94), rgba(10, 18, 28, 0.88));
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--hairline);
   border-radius: 18px;
   padding: .9rem 1rem; text-align: center;
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255,255,255,0.03);
@@ -207,7 +207,7 @@ h3 {
 .kpi::before {
   content: ""; position: absolute; inset: 0 auto auto 0;
   width: 100%; height: 3px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04));
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03));
 }
 .kpi-val {
   display: block; font-size: 1.8rem; font-weight: 800;
@@ -282,12 +282,12 @@ h3 {
 .claim-grid { display: grid; gap: .75rem; margin: .75rem 0; }
 .claim-card {
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--hairline);
   border-radius: 14px;
   padding: .85rem 1rem; font-size: .85rem;
   transition: transform 180ms ease, box-shadow 180ms ease;
 }
-.claim-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.2); }
+.claim-card:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(0,0,0,0.2); }
 .claim-card .dim { font-size: .7rem; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-bottom: .25rem; }
 .claim-card .conf-bar { height: 4px; background: rgba(255,255,255,0.06); border-radius: 999px; margin-top: .5rem; }
 .claim-card .conf-fill { height: 100%; border-radius: 999px; }
@@ -305,7 +305,7 @@ h3 {
 .tp-section-title { font-size: .76rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; margin-bottom: .4rem; }
 .tp-inval-list { margin: .25rem 0 0 1.2rem; font-size: .82rem; color: var(--fg); }
 .tp-inval-list li { margin-bottom: .2rem; }
-.tp-stop { border-top: 1px solid rgba(255,255,255,0.06); margin-top: .35rem; padding-top: .5rem; }
+.tp-stop { border-top: 1px solid var(--hairline); margin-top: .35rem; padding-top: .5rem; }
 .tp-target { padding: .2rem 0; }
 
 /* ── Trust signal cards ── */
@@ -313,7 +313,7 @@ h3 {
 .trust-card {
   position: relative; overflow: hidden;
   background: linear-gradient(180deg, rgba(10, 22, 34, 0.94), rgba(10, 18, 28, 0.88));
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--hairline);
   border-radius: 18px;
   padding: 1rem; text-align: center;
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.14);
@@ -321,7 +321,7 @@ h3 {
 .trust-card::before {
   content: ""; position: absolute; inset: 0 auto auto 0;
   width: 100%; height: 3px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04));
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03));
 }
 .trust-card .tv { font-size: 1.8rem; font-weight: 800; font-family: var(--mono); }
 .trust-card .tl { font-size: .75rem; color: var(--muted); margin-top: .3rem; }
@@ -335,7 +335,7 @@ h3 {
 
 /* ── Tables ── */
 table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
-th, td { padding: .55rem .75rem; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); }
+th, td { padding: .55rem .75rem; text-align: left; border-bottom: 1px solid var(--hairline); }
 th { color: var(--muted); font-weight: 600; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; }
 tbody tr { transition: background 120ms ease; }
 tbody tr:hover { background: rgba(255,255,255,0.03); }
@@ -346,7 +346,7 @@ li { margin-bottom: .3rem; font-size: .9rem; }
 
 /* ── Excerpt box ── */
 .excerpt {
-  background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px;
+  background: rgba(255,255,255,0.02); border: 1px solid var(--hairline); border-radius: 14px;
   padding: 1rem; font-size: .85rem; white-space: pre-wrap; word-wrap: break-word;
   max-height: 300px; overflow-y: auto; margin: .5rem 0;
 }
@@ -366,7 +366,7 @@ li { margin-bottom: .3rem; font-size: .9rem; }
 .ck-item {
   display: flex; align-items: center; gap: .6rem;
   padding: .55rem .8rem; border-radius: 14px;
-  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.03); border: 1px solid var(--hairline);
   transition: transform 160ms ease;
 }
 .ck-item:hover { transform: translateX(4px); }
@@ -379,7 +379,7 @@ li { margin-bottom: .3rem; font-size: .9rem; }
 .risk-debate-row { display: flex; gap: .75rem; flex-wrap: wrap; }
 .rd-col {
   flex: 1; min-width: 140px;
-  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 18px;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--hairline); border-radius: 18px;
   padding: .85rem; text-align: center;
   transition: transform 160ms ease;
 }
@@ -408,11 +408,11 @@ li { margin-bottom: .3rem; font-size: .9rem; }
 
 /* ── Signal History ── */
 .sig-hist-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-.sig-hist-table td { padding: .45rem .5rem; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.sig-hist-table td { padding: .45rem .5rem; border-bottom: 1px solid var(--hairline); }
 
 /* ── Decision chain timeline ── */
 .timeline { border-left: 2px solid rgba(96, 165, 250, 0.3); margin-left: 10px; padding-left: 22px; }
-.timeline-item { position: relative; padding: .7rem 0; border-bottom: 1px dashed rgba(255,255,255,0.06); }
+.timeline-item { position: relative; padding: .7rem 0; border-bottom: 1px dashed var(--hairline); }
 .timeline-item:last-child { border-bottom: none; }
 .timeline-item::before {
   content: ''; position: absolute; left: -27px; top: 1.1rem;
@@ -427,7 +427,7 @@ li { margin-bottom: .3rem; font-size: .9rem; }
   display: flex; gap: 1.2rem; flex-wrap: wrap;
   padding: .8rem 1rem;
   background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid var(--hairline);
   border-radius: 18px;
   margin-bottom: 1rem;
 }
@@ -454,7 +454,7 @@ details:not([open])>summary h2::after{content:" \u25b8"}
 /* ── Footer ── */
 .footer {
   margin-top: 2.5rem; color: var(--muted); font-size: .78rem;
-  border-top: 1px solid rgba(255,255,255,0.06); padding-top: 1rem;
+  border-top: 1px solid var(--hairline); padding-top: 1rem;
   letter-spacing: .04em; text-align: center;
   background: linear-gradient(180deg, transparent, rgba(255,255,255,0.01));
   border-radius: 0 0 20px 20px; padding-bottom: 1rem;
@@ -514,8 +514,18 @@ td.num, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; tex
 .prob-seg:nth-child(4) { animation: bar-grow 600ms cubic-bezier(0.22,1,0.36,1) 300ms both; }
 
 /* ── V5a: Keyboard focus ── */
-.toggle-btn:focus-visible, .csv-btn:focus-visible, .filter-btn:focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 2px;
+.toggle-btn:focus-visible, .csv-btn:focus-visible, .filter-btn:focus-visible,
+.cross-nav a:focus-visible, details > summary:focus-visible, .card a:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px;
+}
+
+/* Premium P1: respect reduced-motion — disable reveal/count-up/bar animations. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important; scroll-behavior: auto !important;
+  }
 }
 
 /* ── V5: Touch feedback ── */
@@ -612,7 +622,7 @@ thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); }
 
 /* ── S2: KPI hierarchy ── */
 .kpi-primary .kpi-val, .kpi-primary .card-value {
-  font-size: 2.4rem; text-shadow: 0 0 24px currentColor;
+  font-size: 2.4rem;
 }
 .kpi-secondary .kpi-val, .kpi-secondary .card-value {
   font-size: 1.4rem; opacity: .85;
@@ -640,7 +650,7 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); }
   details.mobile-collapse > summary {
     cursor: pointer; list-style: none;
     padding: var(--sp-1) var(--sp-2); border-radius: 10px;
-    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.03); border: 1px solid var(--hairline);
     font-size: .88rem; font-weight: 600; color: var(--fg);
   }
   details.mobile-collapse > summary::-webkit-details-marker { display: none; }
@@ -811,7 +821,7 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); }
 .audit-group-head {
   display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
   padding: .6rem .85rem; border-radius: 14px;
-  background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.035); border: 1px solid var(--hairline);
   cursor: pointer; transition: background var(--dur-fast) var(--ease-out);
 }
 .audit-group-head:hover { background: rgba(255,255,255,0.055); }
