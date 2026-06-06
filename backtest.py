@@ -1878,10 +1878,11 @@ _BT_HTML_HEAD = """<!DOCTYPE html>
   --yellow: #fbbf24; --blue: #60a5fa; --purple: #a78bfa; --muted: #8fa3b8; --white: #f1f7fd;
   --surface: rgba(18, 30, 48, 0.94); --accent: #f59e0b;
   --mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
-  --signal-buy: var(--green);
-  --signal-sell: var(--red);
+  /* A-share action convention: 买入/看多=红, 卖出/看空=绿, VETO=紫. */
+  --signal-buy: var(--red);
+  --signal-sell: var(--green);
   --signal-hold: var(--yellow);
-  --signal-veto: var(--red);
+  --signal-veto: var(--purple);
   --state-success: var(--green); --state-danger: var(--red);
   --state-warning: var(--yellow); --state-info: var(--blue);
   --elev-1: 0 4px 12px rgba(0,0,0,0.15);
