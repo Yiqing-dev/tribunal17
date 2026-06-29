@@ -307,28 +307,31 @@ class SnapshotView:
         # registers as 6.8 strength while a bull case of 16 claims at 0.45
         # registers as 7.2 — much more honest than raw 8 vs 16. Falls back to
         # claim count when no per-claim confidence is available (older traces).
-        def _weighted_or_count(node_out, claims_key: str) -> float:
+        def _weighted_or_count(node_out, *claims_keys: str) -> float:
             if not node_out:
                 return 0.0
             sd = node_out.get("structured_data") or {}
-            claims_list = sd.get(claims_key) or []
             confs = []
-            for c in claims_list:
-                if not isinstance(c, dict):
-                    continue
-                v = c.get("confidence")
-                try:
-                    f = float(v) if v is not None else 0.0
-                except (TypeError, ValueError):
-                    f = 0.0
-                if f > 0:
-                    confs.append(f)
+            for claims_key in claims_keys:
+                for c in (sd.get(claims_key) or []):
+                    if not isinstance(c, dict):
+                        continue
+                    v = c.get("confidence")
+                    try:
+                        f = float(v) if v is not None else 0.0
+                    except (TypeError, ValueError):
+                        f = 0.0
+                    if f > 0:
+                        confs.append(f)
             if confs:
                 return float(sum(confs))
             return float(node_out.get("claims_produced", 0) or 0)
 
-        bull_claims = _weighted_or_count(bull_out, "supporting_claims")
-        bear_claims = _weighted_or_count(bear_out, "opposing_claims")
+        # Symmetric AND rebuttal-aware: each side's strength = its own thesis
+        # (supporting_claims) + its rebuttals (opposing_claims). Using only
+        # supporting_claims zeroes out a bear that argues purely via REBUT blocks.
+        bull_claims = _weighted_or_count(bull_out, "supporting_claims", "opposing_claims")
+        bear_claims = _weighted_or_count(bear_out, "supporting_claims", "opposing_claims")
 
         # Fallback financial metrics + industry comparison data injected via
         # bridge.generate_report(industry_data=...).

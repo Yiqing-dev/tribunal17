@@ -15,8 +15,8 @@ from subagent_pipeline.renderers.debate_renderer import generate_committee_repor
 from subagent_pipeline.replay_store import ReplayStore
 
 RESULTS_DIR = project_root / "agent_artifacts" / "results"
-REPORTS_DIR = _here / "data" / "reports"
-REPLAYS_DIR = _here / "data" / "replays"
+REPORTS_DIR = project_root / "data" / "reports"
+REPLAYS_DIR = project_root / "data" / "replays"
 TRADE_DATE = "2026-05-13"
 
 TICKERS = [

@@ -315,6 +315,15 @@ def process_all(
                 cp = generate_committee_report(trace, output_dir=str(REPORTS_DIR))
                 if cp:
                     committee_paths[ticker] = cp
+                # Discussion-quality review page (review_renderer wiring — was dead).
+                try:
+                    from .discussion_tracker import generate_discussion_review
+                    from .renderers.review_renderer import generate_review_report
+                    _review = generate_discussion_review(rid, store=_store, trace=trace)
+                    generate_review_report(_review, output_dir=str(REPORTS_DIR),
+                                           ticker_name=trace.ticker_name or "")
+                except Exception as _re:
+                    print(f"  [WARN] Review report for {ticker} failed: {_re}")
         except Exception as e:
             print(f"  [WARN] Committee report for {ticker} failed: {e}")
 

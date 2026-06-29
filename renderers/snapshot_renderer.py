@@ -31,7 +31,7 @@ from .shared_utils import (
     _trend_arrow, _sparkline_svg, _nav_bar,
     _price_ladder_svg, _pillar_bar, _history_sparkline,
     _confidence_ring_svg, _priority_chip, _score_pill,
-    normalize_confidence_value,
+    normalize_confidence_value, reconcile_side, format_confidence_pct,
     _delta_arrow, _section_divider, _format_finance_num,
     _kline_with_signals_svg, _pe_label_html,
     _render_industry_compare_card, _render_hero_industry_kpis,
@@ -301,15 +301,17 @@ def _render_battle_plan(view: SnapshotView) -> str:
     if not tc and not tp:
         return ""
 
-    side = (tc.get("side") or tc.get("action") or tp.get("bias", "")).upper()
-    # Reconcile with the aggregated, authoritative trace direction: a risk VETO
-    # dominates a stale/contradictory trade-card side, and the trace-level action
-    # wins over a conflicting card side — so the card can never show a bullish
-    # plan for a vetoed/sold signal (SIG-004; AVOID≠SELL rule #5).
-    if view.was_vetoed or view.research_action == "VETO":
-        side = "VETO"
-    elif view.research_action in ("BUY", "SELL", "HOLD") and view.research_action != side:
-        side = view.research_action
+    card_side = (tc.get("side") or tc.get("action") or tp.get("bias", "")).upper()
+    # Reconcile with the aggregated, authoritative trace direction via the single
+    # shared gate: a risk VETO dominates a stale card side, the trace action wins
+    # over a conflicting card side, and — crucially — an AVOID is never upgraded to
+    # HOLD/BUY (which previously killed the AVOID suppression below). SIG-004;
+    # AVOID≠SELL rule #5; N-RSTK-01.
+    side = reconcile_side(
+        card_side=card_side,
+        research_action=view.research_action,
+        was_vetoed=view.was_vetoed,
+    )
     # Canonical normalizer: prevents un-clamped values (e.g. "72" → 7200%) and
     # keeps display in sync with parsed confidence. Missing → -1.0 → "—" badge.
     confidence = normalize_confidence_value(
@@ -596,8 +598,8 @@ def _render_signal_history(view: SnapshotView) -> str:
         act = sh.get("action", "")
         emoji = get_signal_emoji(act)
         act_label = _esc(get_action_label(act))
-        conf = float(sh.get("confidence", 0) or 0)
-        conf_txt = f"{conf:.0%}" if conf > 0 else "\u2014"
+        # Route through the single sentinel gate: missing/-1 \u2192 "\u2014", genuine 0 \u2192 "0%".
+        conf_txt = format_confidence_pct(sh.get("confidence"))
         rows += (
             f'<tr><td>{date}</td>'
             f'<td>{emoji} {act_label}</td>'

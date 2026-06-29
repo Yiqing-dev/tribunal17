@@ -2418,8 +2418,8 @@ def generate_report(
     ticker: str,
     ticker_name: str = "",
     trade_date: str = "",
-    output_dir: str = "data/reports",
-    storage_dir: str = "data/replays",
+    output_dir: Optional[str] = None,
+    storage_dir: Optional[str] = None,
     run_id: Optional[str] = None,
     price_history: Optional[List[float]] = None,
     market_context_block: str = "",
@@ -2458,6 +2458,15 @@ def generate_report(
     Returns:
         Dict of {"snapshot": path, "research": path, "audit": path, "run_id": id}
     """
+    # Anchor unspecified output/storage to the single canonical data root
+    # (CWD-independent) so a caller that omits these never writes a CWD-relative
+    # split-brain store (N-ORC-02).
+    if output_dir is None or storage_dir is None:
+        from .signal_ledger import _data_root
+        _root = _data_root()
+        output_dir = str(_root / "data" / "reports") if output_dir is None else output_dir
+        storage_dir = str(_root / "data" / "replays") if storage_dir is None else storage_dir
+
     # 1. Build RunTrace
     trace = build_run_trace(outputs, ticker, ticker_name, trade_date, run_id, prompts=prompts)
 

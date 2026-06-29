@@ -12,7 +12,7 @@ from ..calibration import (
     load_latest_calibration_report,
     save_calibration_report,
 )
-from .shared_utils import _esc, _html_wrap
+from .shared_utils import _esc, _html_wrap, format_confidence_pct
 
 
 _CAL_CSS = """
@@ -61,7 +61,7 @@ def render_calibration_page(report: CalibrationReport | None) -> str:
     <div class="cal-grid">
       <div class="cal-kpi"><div class="v">{report.completed_results}</div><div class="l">已完成样本</div></div>
       <div class="cal-kpi"><div class="v">{overall.accuracy:.0%}</div><div class="l">整体方向准确率</div></div>
-      <div class="cal-kpi"><div class="v">{overall.avg_confidence:.0%}</div><div class="l">平均置信度</div></div>
+      <div class="cal-kpi"><div class="v">{format_confidence_pct(overall.avg_confidence)}</div><div class="l">平均置信度</div></div>
       <div class="cal-kpi"><div class="v">{overall.calibration_gap:+.0%}</div><div class="l">置信度偏差</div></div>
     </div>
     {_notes(report)}
@@ -140,6 +140,6 @@ def _row(cell: CalibrationCell) -> str:
         f'<td class="num">{cell.decided_n}</td>'
         f'<td class="num">{cell.correct_n}</td>'
         f'<td class="num">{cell.accuracy:.0%}</td>'
-        f'<td class="num">{cell.avg_confidence:.0%}</td>'
+        f'<td class="num">{format_confidence_pct(cell.avg_confidence)}</td>'
         f'<td class="num">{cell.calibration_gap:+.0%}</td></tr>'
     )

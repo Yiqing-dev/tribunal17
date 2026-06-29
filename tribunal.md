@@ -304,6 +304,7 @@ model=sonnet → `{ticker}_scenario_report.txt`
 prompts.research_manager(ticker, debate_input=combined_debate,
     scenario_block=scenario_output,
     market_context_block=market_context_block,
+    news_report=news_text,            # M2-bis: 必须传入，information_thin 新闻降权才会触发 (N-PRM-01)
     feedback_block=fb_pm,              # P1: 全量跨 pillar 反馈 + HOLD 基准先验
     current_date=trade_date)
 ```

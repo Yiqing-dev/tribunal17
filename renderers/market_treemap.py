@@ -832,4 +832,7 @@ def _render_plotly_stock_treemap(heatmap_data: dict, div_id: str = "stockTreemap
         "values": values, "colors": colors, "texts": texts,
         "customdata": customdata,
     }
-    return _render_inline_treemap(div_id, data, max_depth=1, height=480)
+    # max_depth=2 so the per-stock layer (colored via _pct_to_hex, 红涨绿跌) is
+    # reachable; max_depth=1 left the view stuck on grey sector blocks because the
+    # drill-down click handler is gated on maxD>1.
+    return _render_inline_treemap(div_id, data, max_depth=2, height=480)

@@ -655,6 +655,10 @@ Fallbacks degrade gracefully — some fields (e.g., limit counts from THS, net_p
 
 `replay_store.ReplayStore.save()` uses write-to-temp-then-rename (`tempfile.mkstemp()` → `os.replace()`). If the process crashes mid-write, the previous file remains intact. Temp files use `.trace-` prefix and `.tmp` suffix in the same directory.
 
+### Data Store Root Anchoring
+
+`signal_ledger._data_root()` is the single CWD-independent root for the on-disk `data/` store (ledger + replays). It defaults to the **repo root** (parent of the package dir) and is overridable via the `TA_DATA_ROOT` env var. The `SignalLedger()` and `ReplayStore()` defaults resolve through it, so runs launched from the repo root AND from inside `subagent_pipeline/` hit ONE store — this fixes the N-ORC-02 ledger split-brain (CWD-relative `data/...` previously wrote to two divergent stores). Tests pass explicit `storage_dir=tmp_path` and are unaffected. POSIX `fcntl` manifest locks degrade to a best-effort no-op on native Windows (the atomic temp-then-rename still protects writes). The demo (`demo_601985.py`) writes only to an isolated `examples/demo_601985_output/` sandbox, never the production store.
+
 ### Ticker Validation
 
 `akshare_collector.collect()` validates that the bare ticker matches `^\d{6}$` after stripping exchange suffixes. Raises `ValueError` on invalid input.
@@ -689,6 +693,10 @@ These rules exist because of past bugs that produced silently wrong reports. Vio
 6. **Stale threshold is 0.02**: Confidence is on a 0.0–1.0 scale. The stale-signal threshold in `opinion_tracker.py` is `abs(confidence_delta) < 0.02`, not 2.0.
 7. **Confidence normalization uses >= 10**: `parse_claims()` normalizes confidence values ≥10 by dividing by 100 (0-100 scale → 0-1). Values >1.0 but <10 are divided by 10 (1-10 scale → 0-1). Result is clamped to [0, 1].
 8. **Chinese negation window is 12 characters**: `_has_positive()` looks back 12 characters (not 5) before a keyword to detect negation. This catches multi-char modifiers like "坚决不建议买入".
+
+### Color & Sentinel Display Contract
+9. **A-share color is 红涨绿跌 (red=up/bullish, green=down/bearish)**: all 涨跌幅/direction coloring routes through `_pct_to_hex` or the `--up`(=`--red`) / `--down`(=`--green`) / `--flat` CSS tokens — never a hand-written `var(--green) if pct>0` ternary (that paints a *rising* value green). Confidence STRENGTH is direction-neutral (`--conf-*`, a blue→slate ramp), never red/green. Action semantics use `--signal-buy`(红) / `--signal-sell`(绿). `tests/renderers/test_color_contract.py` is the CI grep guard (it strips comments so doc text that *names* the anti-pattern doesn't trip it).
+10. **-1.0 confidence is the "unset" sentinel**: it must render as "—", never as a percentage. `renderers/shared_utils.format_confidence_pct()` is the single display gate (rejects `<0`, clamps `[0,1]`); aggregate means must filter `c>=0` before averaging. `tests/test_confidence_sentinel.py` guards it. Legacy on-disk over-range confidence (e.g. `75.0`) is re-normalized per rule #7 on load (`trace_models.from_dict`), NOT clamped to 1.0.
 
 ## Known Limitations
 

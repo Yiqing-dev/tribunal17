@@ -752,10 +752,10 @@ def _render_radar_chart(bull_claims: list, bear_claims: list) -> str:
             anchor = "start"
         svg += f'  <text x="{lx:.1f}" y="{ly:.1f}" text-anchor="{anchor}" dominant-baseline="central">{label}</text>\n'
 
-    # Legend
-    svg += '  <line x1="10" y1="190" x2="22" y2="190" stroke="#34d399" stroke-width="2"/>\n'
+    # Legend — must match the polygons (看多 = 红, 看空 = 绿). N-DEB-01.
+    svg += '  <line x1="10" y1="190" x2="22" y2="190" stroke="#f87171" stroke-width="2"/>\n'
     svg += '  <text x="25" y="190" dominant-baseline="central" font-size="9" fill="#8fa3b8">看多</text>\n'
-    svg += '  <line x1="55" y1="190" x2="67" y2="190" stroke="#f87171" stroke-width="2"/>\n'
+    svg += '  <line x1="55" y1="190" x2="67" y2="190" stroke="#34d399" stroke-width="2"/>\n'
     svg += '  <text x="70" y="190" dominant-baseline="central" font-size="9" fill="#8fa3b8">看空</text>\n'
 
     svg += '</svg></div>\n'
@@ -868,7 +868,17 @@ def _render_verdict(v: DebateView) -> str:
     action_css = safe_badge_class(vd.action.lower() if vd.action else "hold")
     emoji = _ACTION_EMOJI.get(vd.action, "")
 
-    risk_css = "risk-ok" if vd.risk_score is not None and vd.risk_score <= 3 else "risk-warn" if vd.risk_score is not None and vd.risk_score <= 6 else "risk-bad"
+    # A missing risk node must NOT render as "0/10 · 通过" (a great risk score):
+    # show "未评估 / 未审核" with neutral styling instead.
+    if not getattr(vd, "risk_assessed", True) or vd.risk_score is None or vd.risk_score < 0:
+        risk_css = ""
+        risk_disp = "未评估"
+    elif vd.risk_score <= 3:
+        risk_css, risk_disp = "risk-ok", f"{vd.risk_score}/10"
+    elif vd.risk_score <= 6:
+        risk_css, risk_disp = "risk-warn", f"{vd.risk_score}/10"
+    else:
+        risk_css, risk_disp = "risk-bad", f"{vd.risk_score}/10"
 
     html = f'<div class="verdict-card {action_css}">\n'
     html += f'  <div class="sec-head"><span class="sec-title">投委会裁决</span></div>\n'
@@ -878,19 +888,29 @@ def _render_verdict(v: DebateView) -> str:
 
     # KPI row
     html += '  <div class="verdict-kpi-row">\n'
-    html += f'    <div class="verdict-kpi {action_css}"><div class="vk-val">{vd.confidence_pct}%</div><div class="vk-label">置信度</div></div>\n'
+    _conf_disp = f"{vd.confidence_pct}%" if vd.confidence_pct is not None and vd.confidence_pct >= 0 else "—"
+    html += f'    <div class="verdict-kpi {action_css}"><div class="vk-val">{_conf_disp}</div><div class="vk-label">置信度</div></div>\n'
     html += f'    <div class="verdict-kpi"><div class="vk-val" style="color:var(--white)">{_esc(vd.position_label)}</div><div class="vk-label">建议仓位</div></div>\n'
-    html += f'    <div class="verdict-kpi {risk_css}"><div class="vk-val">{vd.risk_score}/10</div><div class="vk-label">风险评分</div></div>\n'
-    cleared_text = "通过" if vd.risk_cleared else "否决"
-    cleared_css = "risk-ok" if vd.risk_cleared else "risk-bad"
+    html += f'    <div class="verdict-kpi {risk_css}"><div class="vk-val">{risk_disp}</div><div class="vk-label">风险评分</div></div>\n'
+    if not getattr(vd, "risk_assessed", True):
+        cleared_text, cleared_css = "未审核", ""
+    elif vd.risk_cleared:
+        cleared_text, cleared_css = "通过", "risk-ok"
+    else:
+        cleared_text, cleared_css = "否决", "risk-bad"
     html += f'    <div class="verdict-kpi {cleared_css}"><div class="vk-val">{cleared_text}</div><div class="vk-label">风控审核</div></div>\n'
     html += '  </div>\n'
 
-    # Trigger + invalidation
+    # Trigger + invalidation. Label matches the verdict direction so a SELL/VETO
+    # card never says "确认买入信号" over a bearish/risk rationale (N-DEB-05).
+    _trigger_label = {
+        "BUY": "确认买入信号", "SELL": "确认卖出信号",
+        "VETO": "否决 / 回避依据", "AVOID": "回避依据", "HOLD": "结论确认信号",
+    }.get((vd.action or "").upper(), "结论确认信号")
     if vd.trigger or vd.invalidator:
         html += '  <div class="verdict-conditions">\n'
         if vd.trigger:
-            html += f'    <div class="vc-box trigger"><div class="vc-label">确认买入信号</div>{_esc(vd.trigger)}</div>\n'
+            html += f'    <div class="vc-box trigger"><div class="vc-label">{_trigger_label}</div>{_esc(vd.trigger)}</div>\n'
         if vd.invalidator:
             html += f'    <div class="vc-box invalidator"><div class="vc-label">失效 / 止损条件</div>{_esc(vd.invalidator)}</div>\n'
         html += '  </div>\n'

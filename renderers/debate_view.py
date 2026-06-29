@@ -114,8 +114,9 @@ class VerdictView:
     trigger: str = ""            # what would confirm the trade
     invalidator: str = ""        # what would reverse the decision
     core_reason: str = ""        # one-sentence summary
-    risk_score: int = 0          # 0-10
+    risk_score: int = -1         # 0-10; -1 = not assessed (no risk node)
     risk_cleared: bool = True
+    risk_assessed: bool = False  # True only when a risk node was actually parsed
     risk_flags: List[Dict] = field(default_factory=list)
     was_vetoed: bool = False
 
@@ -258,6 +259,13 @@ def _position_label(pct: float) -> str:
     if pct <= 0.05:
         return "中仓"
     return "重仓"
+
+
+def _confirming_trigger(sd: dict, action: str) -> str:
+    """Confirming-signal content must match the verdict direction: the bear_case
+    for a SELL/VETO conclusion, the bull_case otherwise (N-DEB-05). Single source
+    so the construction site and the VETO override can't drift apart."""
+    return sd.get("bear_case", "") if (action or "").upper() in ("SELL", "VETO") else sd.get("bull_case", "")
 
 
 def build_debate_view(run_trace) -> DebateView:
@@ -443,9 +451,11 @@ def build_debate_view(run_trace) -> DebateView:
             summary = f"基准 {base_p}% / 乐观 {bull_p}% / 悲观 {bear_p}%"
         # Rich visualization: stacked probability bar with legend.
         prob_bar = _stacked_prob_bar([
-            {"label": "乐观", "value": bull_p, "color": "var(--green)", "icon": "▲"},
-            {"label": "基准", "value": base_p, "color": "var(--blue)",  "icon": "●"},
-            {"label": "悲观", "value": bear_p, "color": "var(--red)",   "icon": "▼"},
+            # A-share 红涨绿跌: 乐观/上行 = 红 (--up), 悲观/下行 = 绿 (--down). Was
+            # reversed (乐观涂绿) — the missed sibling of the research-page scenario bar.
+            {"label": "乐观", "value": bull_p, "color": "var(--up)",   "icon": "▲"},
+            {"label": "基准", "value": base_p, "color": "var(--blue)", "icon": "●"},
+            {"label": "悲观", "value": bear_p, "color": "var(--down)", "icon": "▼"},
         ])
         rounds.append(DebateRound(
             round_number=3, phase_label="场景推演", phase_en="Scenario Analysis",
@@ -625,9 +635,13 @@ def build_debate_view(run_trace) -> DebateView:
             action_label=al,
             action_class=ac,
             confidence=conf,
-            confidence_pct=int(conf * 100),
+            confidence_pct=int(conf * 100) if conf >= 0 else -1,
             position_label="观察仓" if action == "HOLD" and pos_pct <= 0.05 else _position_label(pos_pct),
-            trigger=_summarize_display_text(sd.get("bull_case", ""), max_chars=140),
+            # The "confirming signal" must match the conclusion's direction — a
+            # SELL/VETO verdict must not surface the bull_case under a buy label
+            # (N-DEB-05). Content is chosen by direction; the label is chosen by
+            # action in the renderer.
+            trigger=_summarize_display_text(_confirming_trigger(sd, action), max_chars=140),
             invalidator=_truncate_display_text(invalidation, max_chars=160),
             core_reason=_one_line_summary("research_manager", sd, pm_node.get("output_excerpt", "")),
         )
@@ -641,9 +655,14 @@ def build_debate_view(run_trace) -> DebateView:
 
     if risk_node:
         rsd = risk_node.get("structured_data", {})
+        verdict.risk_assessed = True
         verdict.risk_score = rsd.get("risk_score")
         if verdict.risk_score is None:
-            verdict.risk_score = risk_node.get("risk_score", 0) or 0
+            verdict.risk_score = risk_node.get("risk_score", -1)
+        if verdict.risk_score is None:
+            # A parsed risk node with NO numeric score must display "未评估", not
+            # the misleading "0/10 · 通过" that a 0 would render as (N-DEB-04 sibling).
+            verdict.risk_score = -1
         verdict.risk_cleared = rsd.get("risk_cleared")
         if verdict.risk_cleared is None:
             verdict.risk_cleared = risk_node.get("risk_cleared", True)
@@ -659,6 +678,11 @@ def build_debate_view(run_trace) -> DebateView:
             al, ac = ACTION_LABELS["VETO"]
             verdict.action_label = al
             verdict.action_class = ac
+            verdict.risk_cleared = False  # a VETO is never "风控通过" (N-DEB-06)
+            # Don't keep a bull_case as the "confirming signal" on a vetoed card.
+            if sd.get("bear_case") or verdict.invalidator:
+                verdict.trigger = _summarize_display_text(
+                    _confirming_trigger(sd, "VETO") or verdict.invalidator, max_chars=140)
 
     # ── 6. Audit Summary ────────────────────────────────────────────
     total_evidence = 0

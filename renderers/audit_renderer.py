@@ -86,10 +86,12 @@ def render_audit(view: AuditView, *, artifact_dir=None) -> str:
             label = PARSE_STATUS_LABELS.get(status, status)
             cls = "badge-ok" if status == "strict_ok" else ("badge-warn" if status == "fallback_used" else "badge-low")
             warnings = ", ".join(p.get("warnings", [])) or "-"
+            _pc = p.get("parse_confidence", -1)
+            _pc_disp = f"{_pc:.1f}" if isinstance(_pc, (int, float)) and _pc >= 0 else "—"
             rows += f"""<tr>
               <td>{_esc(get_node_label(p['node_name']))}</td>
               <td><span class="badge {cls}">{_esc(label)}</span></td>
-              <td>{p.get('parse_confidence', -1):.1f}</td>
+              <td>{_pc_disp}</td>
               <td style="font-size:.8rem;">{_esc(warnings)}</td>
             </tr>"""
         parse_html = f"""
@@ -207,7 +209,9 @@ def render_audit(view: AuditView, *, artifact_dir=None) -> str:
             if action_raw:
                 action_cn = get_action_label(action_raw)
                 conf_label = _format_decision_confidence(decision.get('confidence'))
-                decision_str = f'{_esc(action_cn)} ({conf_label})' if conf_label else _esc(action_cn)
+                # conf_label is "—" (not "") when confidence is missing, so guard on
+                # that too — else every confidence-less decision renders "买入 (—)".
+                decision_str = f'{_esc(action_cn)} ({conf_label})' if conf_label and conf_label != "—" else _esc(action_cn)
             else:
                 decision_str = '<span style="color:var(--muted)">\u2014</span>'
 

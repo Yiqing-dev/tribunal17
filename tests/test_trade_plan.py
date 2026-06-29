@@ -440,6 +440,37 @@ class TestSubagentResearchTradePlanCard:
         assert "观察期限" in html
         assert "情景应对" in html
 
+    # ── Direction/veto suppression (N-RSTK-02 + review): a VETO/AVOID/SELL
+    #    reconcile must drop the bullish participation plan entirely. ──
+    _SUPP_TP = {
+        "bias": "LONG", "confidence": 0.85,
+        "entry_setups": [{"zone": "9.0-9.2"}],
+        "stop_loss": 8.50,
+        "take_profit": [{"price_zone": [10.4, 10.6]}],
+        "invalidators": ["跌破8.0支撑"],
+        "holding_horizon": "short_swing",
+    }
+
+    def test_veto_suppresses_price_levels_and_raw_bias(self):
+        from subagent_pipeline.renderers.research_renderer import _render_trade_plan_card
+        out = _render_trade_plan_card(self._SUPP_TP, reconciled_side="VETO")
+        assert "8.50" not in out          # no stop-loss price
+        assert "跌破8.0支撑" not in out      # no invalidation level
+        assert "(LONG)" not in out         # no stale authored bias token
+        assert "风控否决" in out            # non-participation badge instead
+
+    def test_avoid_also_suppresses(self):
+        from subagent_pipeline.renderers.research_renderer import _render_trade_plan_card
+        out = _render_trade_plan_card(self._SUPP_TP, reconciled_side="AVOID")
+        assert "8.50" not in out and "(LONG)" not in out
+
+    def test_buy_keeps_the_long_plan(self):
+        from subagent_pipeline.renderers.research_renderer import _render_trade_plan_card
+        out = _render_trade_plan_card(self._SUPP_TP, reconciled_side="BUY")
+        assert "8.50" in out               # stop-loss price shown for a real long
+        assert "(LONG)" in out             # authored bias token preserved
+        assert "风控否决" not in out
+
 
 # ────────────────────────────────────────────────────────────────────
 # 5. View integration

@@ -18,7 +18,7 @@ import math
 from datetime import datetime
 from typing import Optional
 
-from .shared_utils import _esc, _html_wrap
+from .shared_utils import _esc, _html_wrap, format_confidence_pct
 from .shared_css import _BASE_CSS
 
 
@@ -410,12 +410,12 @@ def _render_bull_bear(review) -> str:
         <div class="side-card side-bull">
           <div class="side-title" style="color:var(--red)">多方 (Bull)</div>
           <div class="side-stat"><span class="stat-label">论据数量</span><span class="stat-value">{bull_claims}</span></div>
-          <div class="side-stat"><span class="stat-label">整体置信度</span><span class="stat-value">{bull_conf:.0%}</span></div>
+          <div class="side-stat"><span class="stat-label">整体置信度</span><span class="stat-value">{format_confidence_pct(bull_conf)}</span></div>
         </div>
         <div class="side-card side-bear">
           <div class="side-title" style="color:var(--green)">空方 (Bear)</div>
           <div class="side-stat"><span class="stat-label">论据数量</span><span class="stat-value">{bear_claims}</span></div>
-          <div class="side-stat"><span class="stat-label">整体置信度</span><span class="stat-value">{bear_conf:.0%}</span></div>
+          <div class="side-stat"><span class="stat-label">整体置信度</span><span class="stat-value">{format_confidence_pct(bear_conf)}</span></div>
         </div>
       </div>
       {balance_bar}
@@ -526,14 +526,14 @@ def _render_prediction_review(review) -> str:
     actual_return = _get(pred, "actual_return_pct", None)
     direction_correct = _get(pred, "direction_correct", None)
 
-    # Color for predicted
+    # Color for predicted — A-share: 买入 = 红, 卖出 = 绿 (was reversed).
     action_lower = predicted_action.lower()
     if action_lower in ("buy", "strong_buy", "加仓", "买入"):
-        pred_color = "var(--green)"
+        pred_color = "var(--signal-buy)"
     elif action_lower in ("sell", "strong_sell", "减仓", "卖出"):
-        pred_color = "var(--red)"
+        pred_color = "var(--signal-sell)"
     else:
-        pred_color = "var(--yellow)"
+        pred_color = "var(--signal-hold)"
 
     # Direction correct indicator
     dir_html = ""
@@ -548,7 +548,7 @@ def _render_prediction_review(review) -> str:
     if actual_return is not None:
         try:
             ret = float(actual_return)
-            ret_color = "var(--green)" if ret >= 0 else "var(--red)"  # A-share: red=positive
+            ret_color = "var(--up)" if ret >= 0 else "var(--down)"  # A-share: red=positive
             return_html = f'<div class="pred-detail" style="color:{ret_color}">{ret:+.2f}%</div>'
         except (TypeError, ValueError):
             return_html = f'<div class="pred-detail">{_esc(str(actual_return))}</div>'
@@ -560,7 +560,7 @@ def _render_prediction_review(review) -> str:
         <div class="pred-card">
           <div class="pred-label">预测</div>
           <div class="pred-value" style="color:{pred_color}">{predicted_action}</div>
-          <div class="pred-detail">置信度 {predicted_confidence:.0%}</div>
+          <div class="pred-detail">置信度 {format_confidence_pct(predicted_confidence)}</div>
         </div>
         <div class="pred-card">
           <div class="pred-label">实际</div>
@@ -608,20 +608,106 @@ def render_review_page(review) -> str:
 
 # ── File generation ──────────────────────────────────────────────────
 
-def generate_review_report(review, output_dir: str = "data/reports") -> Optional[str]:
+def discussion_review_to_render_dict(review, ticker_name: str = "") -> dict:
+    """Map a DiscussionReview (nested debate_quality / evidence_utilization /
+    prompt_suggestions) onto the FLAT shape ``render_review_page`` expects.
+
+    Without this the renderer's keys all miss and every section shows placeholders
+    (grade C / 0-of-100 / zero radar / 0 claims) — the review page was contract-
+    broken and never wired in. Accepts a DiscussionReview object or its to_dict().
+    """
+    from ..discussion_tracker import DIMENSIONS  # 5 canonical debate dimensions
+
+    dq = _get(review, "debate_quality", None)
+    pred = _get(review, "prediction_review", None)
+    suggestions_raw = _get(review, "prompt_suggestions", []) or []
+
+    # Coverage radar: 100 if the dimension was addressed else 0 (DIMENSIONS order
+    # matches the renderer's 5 fixed axes).
+    addressed = set(_get(dq, "addressed_dimensions", []) or []) if dq else set()
+    radar_labels = ["基本面覆盖度", "估值覆盖度", "技术面覆盖度", "资金面覆盖度", "催化剂覆盖度"]
+    coverage = [
+        {"label": radar_labels[i],
+         "value": 100 if (i < len(DIMENSIONS) and DIMENSIONS[i] in addressed) else 0}
+        for i in range(5)
+    ]
+
+    # overall_score (/100): derived from the domain debate_grade so the hero's
+    # numeric score can never contradict the grade badge beside it (it was an
+    # independent blend that could show e.g. 'A' next to 40/100).
+    _GRADE_SCORE = {"A": 90.0, "B": 78.0, "C": 60.0, "D": 42.0}
+    overall_score = (_GRADE_SCORE.get(str(_get(dq, "debate_grade", "C")).upper(), 55.0)
+                     if dq else 0.0)
+
+    # PM consumption per side: TRUE counts (PM-referenced claim-ids ∩ each side),
+    # computed in the domain model (DebateQualityScore.pm_bull_used / pm_bear_used).
+    bull_total = int(_get(dq, "bull_claims_count", 0) or 0) if dq else 0
+    bear_total = int(_get(dq, "bear_claims_count", 0) or 0) if dq else 0
+    pm_consumption = (
+        {"bull_used": int(_get(dq, "pm_bull_used", 0) or 0), "bull_total": bull_total,
+         "bear_used": int(_get(dq, "pm_bear_used", 0) or 0), "bear_total": bear_total}
+        if (bull_total or bear_total) else {}
+    )
+
+    # Suggestions: PromptSuggestion severity (info/warning/critical) → renderer's
+    # high/medium/low scale.
+    _sev = {"critical": "high", "warning": "medium", "info": "low"}
+    suggestions = [
+        {"severity": _sev.get(str(_get(s, "severity", "info")).lower(), "low"),
+         "description": _get(s, "description", ""),
+         "example": _get(s, "example", "")}
+        for s in suggestions_raw
+    ]
+
+    # Prediction review (optional): rename direction fields to the renderer's keys.
+    prediction_review = None
+    if pred:
+        prediction_review = {
+            "predicted_action": _get(pred, "predicted_direction", ""),
+            "actual_outcome": _get(pred, "actual_direction", ""),
+            "direction_correct": _get(pred, "direction_correct", None),
+        }
+
+    return {
+        "run_id": _get(review, "run_id", ""),
+        "ticker": _get(review, "ticker", ""),
+        "ticker_name": ticker_name,
+        "trade_date": _get(review, "trade_date", ""),
+        "grade": (_get(dq, "debate_grade", "C") if dq else "C"),
+        "overall_score": overall_score,
+        "coverage": coverage,
+        "bull": {"claims_count": bull_total,
+                 "confidence": (_get(dq, "bull_confidence", 0) if dq else 0)},
+        "bear": {"claims_count": bear_total,
+                 "confidence": (_get(dq, "bear_confidence", 0) if dq else 0)},
+        "pm_consumption": pm_consumption,
+        "suggestions": suggestions,
+        "prediction_review": prediction_review,
+        # evidence_matrix intentionally omitted: DiscussionReview has only aggregate
+        # utilization counts, not the per-evidence cited_by map the heatmap needs.
+    }
+
+
+def generate_review_report(review, output_dir: str = "data/reports",
+                           ticker_name: str = "") -> Optional[str]:
     """Generate and save discussion quality review HTML report.
 
+    Accepts a DiscussionReview (auto-adapted via discussion_review_to_render_dict)
+    or a pre-built flat render dict.
+
     Args:
-        review: DiscussionReview object or dict with review data.
-            Expected keys/attrs: ticker, ticker_name, trade_date, grade,
-            overall_score, coverage, bull, bear, pm_consumption,
-            evidence_matrix, suggestions, prediction_review, run_id.
+        review: DiscussionReview object or flat render dict.
         output_dir: Output directory path.
+        ticker_name: Human-readable name (DiscussionReview lacks it).
 
     Returns:
         Path to generated HTML file, or None if insufficient data.
     """
     from pathlib import Path
+
+    # Adapt a DiscussionReview's nested shape to the flat render contract.
+    if hasattr(review, "debate_quality") or (isinstance(review, dict) and "debate_quality" in review):
+        review = discussion_review_to_render_dict(review, ticker_name=ticker_name)
 
     ticker = str(_get(review, "ticker", ""))
     run_id = str(_get(review, "run_id", ""))

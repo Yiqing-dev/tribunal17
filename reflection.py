@@ -36,6 +36,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .shared import mean_confidence
+
 logger = logging.getLogger(__name__)
 
 
@@ -272,13 +274,15 @@ def build_reflection_report(
     if evaluated:
         report.direction_accuracy_pct = len(correct) / len(evaluated) * 100
 
+    # Exclude the -1.0 'unset' sentinel so an unset confidence can't drag the
+    # average negative (single source: shared.mean_confidence).
     if correct:
-        report.avg_confidence_when_correct = (
-            sum(r.predicted_confidence for r in correct) / len(correct)
+        report.avg_confidence_when_correct = mean_confidence(
+            r.predicted_confidence for r in correct
         )
     if wrong:
-        report.avg_confidence_when_wrong = (
-            sum(r.predicted_confidence for r in wrong) / len(wrong)
+        report.avg_confidence_when_wrong = mean_confidence(
+            r.predicted_confidence for r in wrong
         )
 
     # Error breakdown

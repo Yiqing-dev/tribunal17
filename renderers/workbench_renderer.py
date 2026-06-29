@@ -59,7 +59,7 @@ _WORKBENCH_CSS = """
 .wb-links a:hover{background:rgba(96,165,250,.1)}
 .wb-links .disabled{color:var(--muted);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:.18rem .45rem;font-size:.72rem;opacity:.62}
 .wb-change{font-size:.72rem;color:var(--muted);margin-top:.18rem}
-.wb-delta-up{color:var(--green)}.wb-delta-down{color:var(--red)}.wb-delta-flat{color:var(--muted)}
+.wb-delta-up{color:var(--up)}.wb-delta-down{color:var(--down)}.wb-delta-flat{color:var(--flat)}
 .wb-diff{font-size:.74rem;line-height:1.45;color:var(--fg);margin-top:.35rem}
 .wb-diff.major{color:var(--red)}.wb-diff.moderate{color:var(--yellow)}
 .wb-trigger{display:inline-flex;margin:.18rem .2rem .18rem 0;border:1px solid rgba(251,191,36,.26);border-radius:999px;padding:.08rem .35rem;color:var(--yellow);font-size:.68rem}

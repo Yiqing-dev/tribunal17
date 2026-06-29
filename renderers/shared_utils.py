@@ -17,7 +17,7 @@ from .decision_labels import EVIDENCE_STRENGTH_LABELS
 from .shared_css import _BASE_CSS, _SHARED_SVG_DEFS
 # Confidence normalization is defined once in the foundation module so that
 # parsing (bridge.py) and display (renderers) share ONE implementation.
-from ..shared import _CONFIDENCE_LABELS, normalize_confidence_value  # noqa: F401
+from ..shared import _CONFIDENCE_LABELS, normalize_confidence_value, mean_confidence  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -484,7 +484,9 @@ def _render_report_delta_card(view) -> str:
     if not changed and (not has_delta or abs(delta) < 0.01) and not diff_summary:
         return ""
     d_cls = "buy" if delta > 0.03 else ("sell" if delta < -0.03 else "hold")
-    change_cls = "sell" if changed else "hold"
+    # A flip is direction-neutral "attention", NOT a sell — never paint a
+    # HOLD→BUY upgrade with the green sell badge (N-RSH).
+    change_cls = "hold" if changed else "muted"
     change_text = f"{prev_action} → {cur_action}" if changed else "方向未变"
     delta_text = f"置信度 {delta:+.0%}" if has_delta else "置信度 —"
 
@@ -621,10 +623,48 @@ def _format_finance_num(value, kind: str = "default") -> str:
     return s if s else "0"
 
 
-def format_confidence_pct(val) -> str:
-    """Format a confidence value as 'NN%', or empty string when missing/unparseable."""
+def format_confidence_pct(val, missing: str = "—") -> str:
+    """Format a confidence value as 'NN%', or `missing` ('—') when the value is
+    absent / unparseable / the -1.0 sentinel.
+
+    This is the single render-layer gate for the confidence sentinel: it both
+    rejects negative sentinels (so they can never reach a ``:.0%`` and render as
+    '-100%') and clamps in-range values to [0,1] (so a stray un-normalised value
+    can never render as '7500%'). Every confidence ``:.0%`` in the renderers
+    should route through here rather than formatting the raw value.
+    """
     conf = normalize_confidence_value(val)
-    return "" if conf < 0 else f"{conf:.0%}"
+    if conf < 0:
+        return missing
+    return f"{max(0.0, min(1.0, conf)):.0%}"
+
+
+def reconcile_side(*, card_side: str, research_action: str, was_vetoed: bool) -> str:
+    """Single source of truth for the direction shown on a card.
+
+    Reconciles a (possibly stale) trade-card side with the aggregated,
+    authoritative trace direction. Priority, most risk-protective first:
+
+    1. a risk VETO dominates everything;
+    2. an AVOID ("do not participate") is NEVER silently upgraded to the more
+       bullish HOLD/BUY — only an explicit SELL/VETO from the trace may override
+       it. This is the fix for the bug where ``research_action=="HOLD"`` (AVOID
+       maps to HOLD per BRG-04) overwrote ``side=="AVOID"`` and thereby killed
+       the AVOID confidence/price suppression (VETO-01/VETO-02);
+    3. otherwise the trace action wins over a conflicting card side;
+    4. otherwise keep the card side.
+
+    AVOID ≠ SELL ≠ HOLD (CLAUDE.md rule #5).
+    """
+    ra = (research_action or "").upper()
+    cs = (card_side or "").upper()
+    if was_vetoed or ra == "VETO":
+        return "VETO"
+    if cs == "AVOID":
+        return "SELL" if ra == "SELL" else "AVOID"
+    if ra in ("BUY", "SELL", "HOLD") and ra != cs:
+        return ra
+    return cs
 
 
 def _html_wrap(title: str, body: str, tier_label: str, extra_css: str = "",
@@ -1627,21 +1667,23 @@ def _heat_cell(value, vmin: float = 0.0, vmax: float = 1.0,
     t = (v - vmin) / (vmax - vmin)
     t = max(0.0, min(1.0, t))
 
+    def _ch(x: float) -> int:
+        """Clamp a color channel to a legal [0,255] byte."""
+        return max(0, min(255, int(x)))
+
     if scale == "diverging":
-        # 0 -> red, 0.5 -> neutral-ish, 1 -> green
-        if t < 0.5:
-            # red → neutral
-            r, g, b = 248, int(113 + (143 * (t * 2))), int(113 + (160 * (t * 2)))
-        else:
-            # neutral → green
-            k = (t - 0.5) * 2
-            r, g, b = int(248 - 196 * k), int(211 + 0 * k), int(153 + 0 * k)
-            g, b = 211, 153
-            r = int(248 - (248 - 52) * k)
+        # Quality diverging scale: 0 -> red (low), 1 -> green (high). NB this
+        # colors a QUALITY rate (e.g. 论据绑定率, higher=better), NOT 涨跌 price —
+        # good=green is intended here, distinct from the A-share 红涨绿跌 price rule.
+        # A single red→green interpolation keeps every channel within [0,255]; the
+        # old piecewise math overflowed the blue channel to ~273 (illegal rgb).
+        r = _ch(248 + (52 - 248) * t)
+        g = _ch(113 + (211 - 113) * t)
+        b = _ch(113 + (153 - 113) * t)
     else:  # sequential cool→hot
-        r = int(96 + (245 - 96) * t)
-        g = int(165 + (158 - 165) * t)
-        b = int(250 + (11 - 250) * t)
+        r = _ch(96 + (245 - 96) * t)
+        g = _ch(165 + (158 - 165) * t)
+        b = _ch(250 + (11 - 250) * t)
     color = f"rgb({r},{g},{b})"
     pat_attr = f' data-pattern="{_esc(pattern)}"' if pattern in ("diag", "dot") else ""
     lab = label or (f"{v:.2f}" if abs(v) < 100 else f"{v:.0f}")
@@ -1934,13 +1976,21 @@ def _history_sparkline(
     """
     if not points or len(points) < 2:
         return ""
-    vals: list = []
+    # Drop unset points (-1.0 sentinel / unparseable) instead of clamping them to
+    # 0.0 — otherwise an unset confidence renders as a real 0% dot at the bottom.
+    _clean: list = []
     for p in points:
         try:
-            v = float(p.get("value", 0) or 0)
+            v = float(p.get("value"))
         except (TypeError, ValueError):
-            v = 0.0
-        vals.append(max(0.0, min(1.0, v)))
+            continue
+        if v < 0:
+            continue
+        _clean.append((p, max(0.0, min(1.0, v))))
+    if len(_clean) < 2:
+        return ""
+    points = [c[0] for c in _clean]
+    vals: list = [c[1] for c in _clean]
 
     pad = 6
     plot_w = width - pad * 2

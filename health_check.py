@@ -26,6 +26,8 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
+from .shared import mean_confidence
+
 logger = logging.getLogger(__name__)
 
 
@@ -166,7 +168,7 @@ def check_batch_health(
         "total_runs": len(today_run_ids),
         "loaded": len(traces),
         "actions": {a: actions.count(a) for a in set(actions)} if actions else {},
-        "avg_confidence": round(sum(confs) / len(confs), 3) if confs else 0,
+        "avg_confidence": round(mean_confidence(confs), 3) if confs else 0,
         "error_runs": sum(1 for t in traces if t.error_count > 0),
         "veto_count": sum(1 for t in traces if t.was_vetoed),
         "action_flips": flip_count,

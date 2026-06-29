@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 
+from .shared import normalize_confidence_value
+
 # A-share product — all timestamps in CST (UTC+8)
 _CST = timezone(timedelta(hours=8))
 
@@ -287,12 +289,13 @@ class RunTrace:
         if not had_started_at:
             rt.started_at = None  # don't let default_factory mask missing data
         if pm_conf is not None:
-            rt._pm_confidence = min(1.0, pm_conf) if pm_conf >= 0 else pm_conf
-        # CONF-02: old on-disk traces may predate the finalize() clamp — cap the
-        # displayed confidence at 1.0 while preserving the <0 "not set" sentinel,
-        # so a legacy 75.0 never renders as 7500%.
-        if rt.final_confidence > 1.0:
-            rt.final_confidence = 1.0
+            rt._pm_confidence = normalize_confidence_value(pm_conf)  # same canonical rule as final_confidence
+        # CONF-02 / N-FND: old on-disk traces may predate the finalize() clamp.
+        # Re-apply the canonical normalisation via the single source
+        # (shared.normalize_confidence_value — >=10÷100 / >1÷10, clamp) so a legacy
+        # 75.0 restores to 0.75 (its intended 75%), not a misleading 100%. The <0
+        # "not set" sentinel is preserved.
+        rt.final_confidence = normalize_confidence_value(rt.final_confidence)
         rt.node_traces = [NodeTrace.from_dict(nd) for nd in node_dicts]
         return rt
 

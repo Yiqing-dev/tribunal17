@@ -70,6 +70,18 @@ def normalize_confidence_value(val) -> float:
     return max(0.0, min(1.0, conf))
 
 
+def mean_confidence(values, sentinel: float = -1.0) -> float:
+    """Mean of confidence values, EXCLUDING the -1.0 'unset' sentinel (and any
+    <0 / non-numeric). Returns ``sentinel`` when nothing real remains, so the
+    result routes straight through ``format_confidence_pct`` (→ '—'). Single
+    source for the sentinel-excluding confidence mean used by both the renderers
+    (pool / brief / workbench) and the backend (calibration / reflection / health).
+    """
+    vals = [float(v) for v in values
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0]
+    return sum(vals) / len(vals) if vals else sentinel
+
+
 # ── A-share price-limit board rules (single source of truth) ────────────
 # Used for limit-up/down counting AND exchange-suffix routing, so the two
 # never disagree (previously akshare used ("8","4","9"), recap used ("8","4"),

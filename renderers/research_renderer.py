@@ -31,6 +31,7 @@ from .shared_utils import (
     _quality_grade_badge_html,
     _render_stock_profile_card, _render_calibration_card,
     _render_data_quality_flags, _render_report_delta_card,
+    reconcile_side, format_confidence_pct,
 )
 from .snapshot_renderer import _render_cover_card, _render_kline_card
 
@@ -118,11 +119,17 @@ def _render_research_degraded(view: ResearchView, *, artifact_dir=None) -> str:
     return _html_wrap(f"{_ticker_display(view)} \u6df1\u5ea6\u7814\u7a76 \u2014 {view.trade_date}", body, "\u6df1\u5ea6\u7814\u7a76\u62a5\u544a", extra_head=_COUNTUP_JS, nav_html=nav)
 
 
-def _render_trade_plan_card(tp: dict) -> str:
+def _render_trade_plan_card(tp: dict, reconciled_side: str = "") -> str:
     """Render the public observation-plan card.
 
     Shows 6 key lines: bias, breakout entry, pullback entry, stop loss,
     targets, and invalidation conditions.
+
+    ``reconciled_side`` is the authoritative trace direction (from
+    ``reconcile_side``). When it is non-bullish (VETO / AVOID / SELL), the
+    bullish participation rows (entry setups, target prices, confidence) are
+    suppressed so a vetoed/sold run cannot display a long entry plan
+    (N-RSTK-02; AVOID≠SELL rule #5).
     """
     def _normalize_confidence(val) -> float:
         # Trade-plan cards have historically treated unparseable/missing as 0
@@ -136,6 +143,21 @@ def _render_trade_plan_card(tp: dict) -> str:
     # AVOID = \u4e0d\u53c2\u4e0e/\u56de\u907f \u2192 neutral (hold) styling, NOT a red sell badge (rule #5).
     bias_labels = {"LONG": ("\u504f\u591a", "buy"), "WAIT": ("\u7b49\u5f85", "hold"), "AVOID": ("\u56de\u907f", "hold")}
     bias_label, bias_class = bias_labels.get(bias, ("\u7b49\u5f85", "hold"))
+    bias_token = bias  # shown in the badge's (parenthetical); reconciled on suppress below
+
+    # Direction reconcile: a vetoed / sold / avoided run must not show a bullish
+    # long-participation plan. Override the badge and suppress the bullish rows.
+    _rs = (reconciled_side or "").upper()
+    suppress_participation = _rs in ("VETO", "AVOID", "SELL", "SHORT")
+    if suppress_participation:
+        _supp_labels = {
+            "VETO": ("\u98ce\u63a7\u5426\u51b3\u00b7\u4e0d\u53c2\u4e0e", "hold"),   # \u98ce\u63a7\u5426\u51b3\u00b7\u4e0d\u53c2\u4e0e
+            "AVOID": ("\u56de\u907f\u00b7\u4e0d\u53c2\u4e0e", "hold"),             # \u56de\u907f\u00b7\u4e0d\u53c2\u4e0e
+            "SELL": ("\u504f\u7a7a\u00b7\u4e0d\u63d0\u4f9b\u505a\u591a\u8ba1\u5212", "hold"),  # \u504f\u7a7a\u00b7\u4e0d\u63d0\u4f9b\u505a\u591a\u8ba1\u5212
+            "SHORT": ("\u504f\u7a7a\u00b7\u4e0d\u63d0\u4f9b\u505a\u591a\u8ba1\u5212", "hold"),
+        }
+        bias_label, bias_class = _supp_labels.get(_rs, ("\u4e0d\u53c2\u4e0e", "hold"))
+        bias_token = _rs  # show the reconciled side in (parens), not the stale authored bias
 
     setups = tp.get("entry_setups", [])
     stop_raw_tp = tp.get("stop_loss") or {}
@@ -154,6 +176,19 @@ def _render_trade_plan_card(tp: dict) -> str:
     scenario_actions = tp.get("scenario_actions", {})
     horizon = tp.get("holding_horizon", "")
     confidence = _normalize_confidence(tp.get("confidence", 0))
+
+    if suppress_participation:
+        # Drop the bullish entry setups / target prices and hide the (bullish)
+        # confidence \u2014 the participation framework is moot once the trace is
+        # vetoed / sold / avoided.
+        setups = []
+        targets = []
+        confidence = -1.0
+        # ...and the position-management rows: a non-participation card must not
+        # print a concrete stop-loss / invalidation level (N-RSTK-02 sibling — the
+        # snapshot card already suppresses ALL price levels for VETO/AVOID).
+        stop = {}
+        invalidators = []
 
     horizon_labels = {"short_swing": "\u77ed\u7ebf\u6ce2\u6bb5", "medium_term": "\u4e2d\u671f\u6301\u6709"}
     horizon_label = horizon_labels.get(horizon, horizon)
@@ -278,8 +313,8 @@ def _render_trade_plan_card(tp: dict) -> str:
       <div style="padding-left:.6rem;">
         <h3>观察计划</h3>
         <div style="display:flex;gap:.8rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap">
-          <span class="badge badge-{bias_class}" style="font-size:.9rem;padding:5px 16px">{bias_label} ({bias})</span>
-          <span style="color:var(--muted);font-size:.85rem;font-family:var(--mono)">\u7f6e\u4fe1\u5ea6 {confidence:.0%}</span>
+          <span class="badge badge-{bias_class}" style="font-size:.9rem;padding:5px 16px">{bias_label} ({bias_token})</span>
+          <span style="color:var(--muted);font-size:.85rem;font-family:var(--mono)">\u7f6e\u4fe1\u5ea6 {format_confidence_pct(confidence)}</span>
           <span style="color:var(--muted);font-size:.85rem">{_esc(horizon_label)}</span>
         </div>
         <div class="tp-section-title">关注区间</div>
@@ -524,8 +559,8 @@ def render_research(view: ResearchView, skip_vendors: bool = False, *, artifact_
       <h3>\u60c5\u666f\u5206\u6790{_probs_note}</h3>
       <div class="prob-bar">
         <div class="prob-seg" style="width:{base_pct}%;background:var(--blue);color:var(--white);" data-tip="{base_tip}">{base_lbl}</div>
-        <div class="prob-seg" style="width:{bull_pct}%;background:var(--green);color:var(--white);" data-tip="{bull_tip}">{bull_lbl}</div>
-        <div class="prob-seg" style="width:{bear_pct}%;background:var(--red);color:var(--white);" data-tip="{bear_tip}">{bear_lbl}</div>
+        <div class="prob-seg" style="width:{bull_pct}%;background:var(--up);color:var(--white);" data-tip="{bull_tip}">{bull_lbl}</div>
+        <div class="prob-seg" style="width:{bear_pct}%;background:var(--down);color:var(--white);" data-tip="{bear_tip}">{bear_lbl}</div>
       </div>
         <div style="font-size:.85rem; margin-top:.5rem;">
         <div><strong>\u57fa\u51c6\u89e6\u53d1:</strong> {_esc(_truncate_display_text(sp.get("base_trigger", ""), max_chars=180))}</div>
@@ -576,9 +611,17 @@ def render_research(view: ResearchView, skip_vendors: bool = False, *, artifact_
     </div>"""
 
     # ── Trade Plan: public entry/exit framework ──
+    # Reconcile the plan's bias with the authoritative trace direction so a
+    # vetoed / sold / avoided run cannot show a bullish participation plan
+    # (N-RSTK-02; AVOID≠SELL rule #5).
     trade_plan_html = ""
     if view.trade_plan and view.trade_plan.get("bias"):
-        trade_plan_html = _render_trade_plan_card(view.trade_plan)
+        _plan_side = reconcile_side(
+            card_side=str(view.trade_plan.get("bias", "")),
+            research_action=getattr(view, "research_action", "") or "",
+            was_vetoed=bool(getattr(view, "was_vetoed", False)),
+        )
+        trade_plan_html = _render_trade_plan_card(view.trade_plan, reconciled_side=_plan_side)
 
     # Catalyst
     catalyst_html = ""

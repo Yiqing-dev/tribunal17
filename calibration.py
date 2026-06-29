@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .signal_ledger import normalize_ticker
+from .shared import mean_confidence
 
 
 @dataclass
@@ -116,7 +117,9 @@ def _cell_from_results(key: str, rows: List[Any]) -> CalibrationCell:
     correct_n = sum(1 for r in decided if bool(getattr(r, "direction_correct", False)))
     decided_n = len(decided)
     accuracy = correct_n / decided_n if decided_n else 0.0
-    avg_conf = sum(confs) / len(confs) if confs else 0.0
+    # Single source; -1.0 sentinel when no decided row has a real confidence, so
+    # an empty cell renders '—' (not a misleading '0%'), matching pool/workbench.
+    avg_conf = mean_confidence(confs)
     return CalibrationCell(
         key=key,
         n=len(rows),
@@ -124,7 +127,7 @@ def _cell_from_results(key: str, rows: List[Any]) -> CalibrationCell:
         correct_n=correct_n,
         accuracy=round(accuracy, 4),
         avg_confidence=round(avg_conf, 4),
-        calibration_gap=round(avg_conf - accuracy, 4) if decided_n else 0.0,
+        calibration_gap=round(avg_conf - accuracy, 4) if (decided_n and avg_conf >= 0) else 0.0,
     )
 
 

@@ -24,7 +24,7 @@ from .shared_css import _BRAND_LOGO_SM, _BRAND_LOGO_LG
 from .shared_utils import (
     _esc, _html_wrap, _empty_state,
     _confidence_ring_svg, _priority_chip, _score_pill, _delta_arrow,
-    _section_divider, _conf_dots,
+    _section_divider, _conf_dots, format_confidence_pct,
 )
 from .market_renderer import _MARKET_CSS
 from .market_treemap import (
@@ -913,7 +913,7 @@ def _render_pool_conviction_chart(view: DivergencePoolView) -> str:
           <div class="section-title">置信度景深图</div>
           <div class="section-copy">各标的结论强弱一览</div>
         </div>
-        <div class="score-pill">平均置信度 {view.avg_confidence:.0%}</div>
+        <div class="score-pill">平均置信度 {format_confidence_pct(view.avg_confidence)}</div>
       </div>
       <div class="conviction-wrap">
         <svg class="chart-svg" viewBox="0 0 {width} {height}" role="img" aria-label="置信度景深图">
@@ -1053,13 +1053,13 @@ def _render_sparkline(
         f"{i * step:.1f},{height - (p - mn) / rng * (height - 4) - 2:.1f}"
         for i, p in enumerate(prices)
     )
-    # Color by direction: green rising, red falling, blue flat
+    # A-share 红涨绿跌: rising = 红, falling = 绿 (was reversed).
     if prices[-1] > prices[0] * 1.005:
-        color = "#34d399"
+        color = "var(--up)"
     elif prices[-1] < prices[0] * 0.995:
-        color = "#f87171"
+        color = "var(--down)"
     else:
-        color = "#60a5fa"
+        color = "var(--flat)"
 
     change = (prices[-1] / prices[0] - 1) * 100 if prices[0] else 0
     sign = "+" if change > 0 else ""
@@ -1083,7 +1083,7 @@ def _render_cover_page(view: DivergencePoolView) -> str:
         <div class="cover-title">多空分歧池</div>
         <div class="cover-subtitle">研究报告 · 多空分歧横向对比</div>
         <div class="cover-date">{_esc(view.trade_date)}</div>
-        <div class="cover-meta">{view.total_stocks} 只标的覆盖 · 平均置信度 {view.avg_confidence:.0%} · 风险标签 {view.risk_alert_count}</div>
+        <div class="cover-meta">{view.total_stocks} 只标的覆盖 · 平均置信度 {format_confidence_pct(view.avg_confidence)} · 风险标签 {view.risk_alert_count}</div>
         <div class="cover-disclaimer">{AI_DISCLAIMER_BANNER}</div>
       </div>
     </section>"""
@@ -1143,7 +1143,7 @@ def render_divergence_pool(
           <div class="hero-chips">
             <span class="hero-chip">交易日 {_esc(view.trade_date)}</span>
             <span class="hero-chip">{view.total_stocks} 只标的覆盖</span>
-            <span class="hero-chip">平均置信度 {view.avg_confidence:.0%}</span>
+            <span class="hero-chip">平均置信度 {format_confidence_pct(view.avg_confidence)}</span>
             <span class="hero-chip">风险标签 {view.risk_alert_count}</span>
           </div>
           <div class="anchor-nav">

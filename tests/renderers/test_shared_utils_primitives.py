@@ -383,11 +383,17 @@ class TestHistorySparkline:
         from subagent_pipeline.renderers.shared_utils import _history_sparkline
         assert _history_sparkline([]) == ""
 
-    def test_clamps_values_out_of_range(self):
+    def test_clamps_high_values_and_drops_negative(self):
         from subagent_pipeline.renderers.shared_utils import _history_sparkline
-        pts = [
+        # High out-of-range values are clamped into [0,1] and still render.
+        out = _history_sparkline([
+            {"value": 1.5, "action": "BUY"},
+            {"value": 2.0, "action": "BUY"},
+        ])
+        assert out and '<svg' in out
+        # Negative values are the unset/-1.0 sentinel: they are DROPPED (not
+        # clamped to 0), so a lone surviving real point yields no sparkline.
+        assert _history_sparkline([
             {"value": -0.5, "action": "HOLD"},
             {"value": 1.5, "action": "BUY"},
-        ]
-        out = _history_sparkline(pts)
-        assert out and '<svg' in out
+        ]) == ""

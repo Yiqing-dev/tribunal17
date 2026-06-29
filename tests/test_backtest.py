@@ -305,6 +305,20 @@ class TestComputeSummary:
         assert s.sell_count == 1
         assert s.avg_sell_return_pct == 5.0  # inverted
 
+    def test_strategy_return_inverts_sell(self):
+        """strategy_return: a SELL contributes -raw (profit on a drop); BUY/HOLD raw. N-BT-01."""
+        from subagent_pipeline.backtest import strategy_return
+        assert strategy_return(_completed_result("SELL", -5.0, True, "win")) == 5.0
+        assert strategy_return(_completed_result("BUY", 5.0, True, "win")) == 5.0
+        assert strategy_return(_completed_result("HOLD", 0.5, None, "hold_success")) == 0.0  # no position
+
+    def test_avg_strategy_return_distinct_from_raw(self):
+        """A winning SELL (stock -6%) lifts the STRATEGY avg (+6) while the RAW
+        avg_stock_return_pct stays -6 — the curve/Alpha/headline use the former (N-BT-01)."""
+        s = compute_summary([_completed_result("SELL", -6.0, True, "win")])
+        assert s.avg_stock_return_pct == -6.0       # raw underlying (unchanged)
+        assert s.avg_strategy_return_pct == 6.0     # direction-adjusted strategy return
+
     def test_mixed_actions(self):
         results = [
             _completed_result("BUY", 5.0, True, "win"),

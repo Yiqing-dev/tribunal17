@@ -35,6 +35,11 @@ _BASE_CSS = """
   --signal-sell: var(--green);
   --signal-hold: var(--yellow);
   --signal-veto: var(--purple);
+  /* A-share price direction: 涨 = 红, 跌 = 绿. Use --up/--down (never a raw
+     `var(--green) if pct>0` ternary) for any 涨跌幅 coloring. */
+  --up: var(--red);
+  --down: var(--green);
+  --flat: var(--muted);
   --state-success: var(--green);
   --state-danger: var(--red);
   --state-warning: var(--yellow);
@@ -54,8 +59,10 @@ _BASE_CSS = """
   --cb-up: #f59e0b;   --cb-down: #60a5fa;
   /* V4: Severity tiers */
   --sev-hot: #f87171;  --sev-warm: #fbbf24;  --sev-cool: #60a5fa;  --sev-mute: #64748b;
-  /* V4: Confidence tiers */
-  --conf-hi: #34d399;  --conf-md: #fbbf24;  --conf-lo: #f87171;  --conf-na: #64748b;
+  /* V4: Confidence tiers — direction-NEUTRAL (AQ-F1). Confidence strength must
+     NOT reuse 涨跌/buy-sell colors (green=高 / red=低 collided with 红涨绿跌);
+     encode strength as brightness on a neutral blue→slate ramp instead. */
+  --conf-hi: #7cc4ff;  --conf-md: #6b8fb5;  --conf-lo: #5f6b7a;  --conf-na: #64748b;
   /* V4: Z-scale */
   --z-base: 1;  --z-card: 10;  --z-nav: 40;  --z-modal: 90;
 }
@@ -715,17 +722,18 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); }
 .ridge-bar { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
 .ridge-bar .rb-seg {
   flex: 1; min-width: 3px; border-radius: 2px 2px 0 0;
-  background: linear-gradient(180deg, var(--conf-hi), rgba(52,211,153,0.3));
+  background: linear-gradient(180deg, var(--conf-hi), rgba(124,196,255,0.3));
   transition: transform 180ms var(--ease-out);
 }
-.ridge-bar .rb-seg.neg { background: linear-gradient(180deg, var(--conf-lo), rgba(248,113,113,0.3)); }
+.ridge-bar .rb-seg.neg { background: linear-gradient(180deg, var(--conf-lo), rgba(95,107,122,0.3)); }
 .ridge-bar .rb-seg:hover { transform: scaleY(1.05); }
 .ridge-bar .rb-labels { display: flex; gap: 2px; font-size: var(--t-xs); color: var(--muted); margin-top: 4px; }
 
 .delta-arr { display: inline-flex; align-items: center; gap: 2px; font-size: var(--t-xs); font-family: var(--mono); font-weight: 600; }
-.delta-arr.up { color: var(--green); }
-.delta-arr.down { color: var(--red); }
-.delta-arr.flat { color: var(--muted); }
+/* A-share 红涨绿跌: up = 红, down = 绿 (was reversed). */
+.delta-arr.up { color: var(--up); }
+.delta-arr.down { color: var(--down); }
+.delta-arr.flat { color: var(--flat); }
 
 .v-heat-cell {
   display: inline-block; position: relative;

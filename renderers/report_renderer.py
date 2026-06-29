@@ -48,7 +48,7 @@ from .shared_utils import (
     _esc, _html_wrap, _ticker_display, _status_light, _strip_preamble,
     _empty_state, _format_price_zone, _evidence_strength_label,
     _degraded_banner, _bull_bear_bar, _direction_badge, _radar_svg,
-    _squarify,
+    _squarify, format_confidence_pct, mean_confidence,
 )
 
 
@@ -463,8 +463,9 @@ def generate_brief_report(
         pillars = e.get("pillars", {})
         pillar_str = " ".join(f"{k}{v}" for k, v in pillars.items()) if pillars else ""
 
-        # Main line
-        main = f"- {emoji} **{display}** | {label} ({conf:.0%})"
+        # Main line — route confidence through the sentinel gate so a -1.0
+        # (unset) never renders as '-100%'.
+        main = f"- {emoji} **{display}** | {label} ({format_confidence_pct(conf)})"
         if pillar_str:
             main += f" | {pillar_str}"
         lines.append(main)
@@ -510,7 +511,9 @@ def _render_brief_v2(entries: list, counts: dict, trade_date: str,
         by_action.setdefault(a, []).append(e)
 
     total = len(entries)
-    avg_conf = {a: (sum(x.get("confidence", 0) for x in items) / len(items) if items else 0)
+    # Average only over real (>=0) confidences — the -1.0 sentinel means "unset"
+    # and must not drag the group average down (single source: mean_confidence).
+    avg_conf = {a: mean_confidence(x.get("confidence") for x in items)
                 for a, items in by_action.items()}
 
     # Top sector for each action (by frequency)
@@ -550,7 +553,7 @@ def _render_brief_v2(entries: list, counts: dict, trade_date: str,
         emoji = get_signal_emoji(a)
         label = get_action_label(a)
         n = counts.get(a, 0)
-        conf_pct = f"{avg_conf[a]:.0%}" if avg_conf.get(a) else "—"
+        conf_pct = format_confidence_pct(avg_conf.get(a, -1.0))
         sec = _top_sectors(by_action[a])
         lines.append(f"| {emoji} {label} | {n} | {conf_pct} | {sec} |")
     lines.append("")
@@ -615,7 +618,7 @@ def _render_brief_v2(entries: list, counts: dict, trade_date: str,
                     pillar_parts.append(f"{k}{_pillar_dots_md(v)}")
             pillar_str = "  ".join(pillar_parts) if pillar_parts else ""
 
-            main = f"- {display} · `{conf:.0%}`"
+            main = f"- {display} · `{format_confidence_pct(conf)}`"
             if pillar_str:
                 main += f" · {pillar_str}"
             lines.append(main)
@@ -651,7 +654,7 @@ def _render_brief_v2(entries: list, counts: dict, trade_date: str,
             ticker = e.get("ticker", "")
             action = e.get("action", "")
             emoji = get_signal_emoji(action)
-            conf = f"{e.get('confidence', 0):.0%}" if e.get("confidence") else "—"
+            conf = format_confidence_pct(e.get("confidence", 0))
             sl = f"{e['stop_loss']:.2f}" if e.get("stop_loss") else "—"
             tp = f"{e['take_profit']:.2f}" if e.get("take_profit") else "—"
             cat = (e.get("catalyst", "") or "—")[:30]

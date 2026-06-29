@@ -6,12 +6,16 @@ DivergencePoolView: multi-stock comparison pool.
 """
 
 from dataclasses import dataclass, field
+from functools import cached_property
 from typing import Dict, List, Optional, Tuple
 
 from ..replay_service import ReplayService
 from ..trace_models import RunTrace
+from .shared_utils import mean_confidence
 
-from .views import BannerView, _strip_internal_tokens
+# NB: _strip_internal_tokens is imported lazily inside build() (not here) to
+# avoid a pool_view ⇄ views import cycle — views.py re-exports this module at its
+# tail, so importing from views at load time breaks `import pool_view` first.
 
 
 @dataclass
@@ -130,6 +134,7 @@ class StockDivergenceRow:
     @classmethod
     def build(cls, service: ReplayService, run_id: str) -> Optional["StockDivergenceRow"]:
         from .decision_labels import get_action_label, get_action_class
+        from .views import _strip_internal_tokens  # lazy: avoid pool_view⇄views cycle
 
         trace = service.load_run(run_id)
         if not trace:
@@ -222,12 +227,13 @@ class DivergencePoolView:
     hold_count: int = 0
     veto_count: int = 0
 
-    @property
+    @cached_property
     def avg_confidence(self) -> float:
-        """Average confidence across all covered stocks."""
-        if not self.rows:
-            return 0.0
-        return sum(r.confidence for r in self.rows) / len(self.rows)
+        """Average confidence across covered stocks, excluding the -1.0 "unset"
+        sentinel (returns -1.0 when none is real → renderer shows '—'). Cached:
+        pool_renderer reads it 3× per report and rows are immutable during render.
+        """
+        return mean_confidence(r.confidence for r in self.rows)
 
     @property
     def risk_alert_count(self) -> int:

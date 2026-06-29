@@ -134,7 +134,8 @@ class BacktestSummary:
     win_rate_pct: float = 0.0
 
     # Returns
-    avg_stock_return_pct: float = 0.0
+    avg_stock_return_pct: float = 0.0     # RAW underlying-stock average (NOT direction-adjusted)
+    avg_strategy_return_pct: float = 0.0  # Direction-adjusted (SELL inverted) — headline strategy return
     avg_buy_return_pct: float = 0.0
     avg_sell_return_pct: float = 0.0     # Inverted: positive = correct sell
 
@@ -522,6 +523,20 @@ def evaluate_signal(
 
 # ── Summary Computation ───────────────────────────────────────────────────
 
+def strategy_return(r) -> float:
+    """Direction-adjusted return for the STRATEGY framing: a BUY uses the raw return,
+    a SELL profits on a drop (negated return), and a HOLD/VETO took NO directional
+    position so contributes 0. This keeps the headline 平均收益 / Alpha / equity curve
+    consistent with each action's own win-rate basis — a HOLD is scored by the flat
+    band-test, not as a held long, so its raw stock move must not leak in (N-BT-01)."""
+    a = str(r.action).upper()
+    if a == "SELL":
+        return -r.stock_return_pct
+    if a == "BUY":
+        return r.stock_return_pct
+    return 0.0  # HOLD / VETO: no position taken → no strategy P&L
+
+
 def compute_summary(
     results: List[BacktestResult],
     scope: str = "overall",
@@ -589,6 +604,9 @@ def compute_summary(
     # Average returns — overall across all actions (see avg_buy/sell_return_pct for per-action)
     all_returns = [r.stock_return_pct for r in completed]
     summary.avg_stock_return_pct = round(sum(all_returns) / len(all_returns), 2)
+    # Direction-adjusted (SELL inverted) — the headline strategy return / Alpha / curve.
+    strat_returns = [strategy_return(r) for r in completed]
+    summary.avg_strategy_return_pct = round(sum(strat_returns) / len(strat_returns), 2)
 
     buy_returns = [r.stock_return_pct for r in completed if r.action.upper() == "BUY"]
     if buy_returns:
@@ -611,10 +629,7 @@ def compute_summary(
         # correct sell) to match the win_rate direction and the top-level
         # avg_sell_return_pct. Otherwise a 100%-win-rate SELL row could show a
         # negative avg_return, contradicting itself.
-        if action == "SELL":
-            returns = [-r.stock_return_pct for r in action_results]
-        else:
-            returns = [r.stock_return_pct for r in action_results]
+        returns = [strategy_return(r) for r in action_results]
         # For BUY/SELL use directional win/loss; for HOLD use band-test outcomes.
         if action == "HOLD":
             action_wins = [r for r in action_results if r.outcome == "hold_success"]
@@ -987,6 +1002,13 @@ def load_backtest_report(path: str) -> Optional[BacktestReport]:
         k: BacktestSummary(**{kk: vv for kk, vv in v.items() if kk in _sum_fields})
         for k, v in data.get("per_ticker_summaries", {}).items()
     }
+    # Back-compat: pre-A1 JSON lacks avg_strategy_return_pct → fall back to the raw
+    # avg so an old report doesn't re-render every return as +0.00% (N-BT-01 loader).
+    if "avg_strategy_return_pct" not in data.get("overall_summary", {}):
+        overall.avg_strategy_return_pct = overall.avg_stock_return_pct
+    for _k, _v in data.get("per_ticker_summaries", {}).items():
+        if _k in per_ticker and "avg_strategy_return_pct" not in _v:
+            per_ticker[_k].avg_strategy_return_pct = per_ticker[_k].avg_stock_return_pct
     return BacktestReport(
         config=config,
         results=results,
@@ -1174,7 +1196,7 @@ def generate_multi_window_report(
         ("已评估", lambda s: str(s.completed)),
         ("方向准确率", lambda s: f"{s.direction_accuracy_pct:.1f}%"),
         ("胜率", lambda s: f"{s.win_rate_pct:.1f}%"),
-        ("平均收益", lambda s: f"{s.avg_stock_return_pct:+.2f}%"),
+        ("平均收益", lambda s: f"{s.avg_strategy_return_pct:+.2f}%"),
         ("BUY 平均收益", lambda s: f"{s.avg_buy_return_pct:+.2f}%"),
         ("SELL 反向收益", lambda s: f"{s.avg_sell_return_pct:+.2f}%"),
     ]
@@ -1207,7 +1229,7 @@ def generate_multi_window_report(
             rets = [v.get(w) for v in multi.benchmark_returns.values() if v.get(w) is not None]
             if rpt and rets:
                 bench_avg = sum(rets) / len(rets)
-                alpha = rpt.overall_summary.avg_stock_return_pct - bench_avg
+                alpha = rpt.overall_summary.avg_strategy_return_pct - bench_avg
                 css = "buy" if alpha > 0 else "sell"
                 html.append(f'<td class="{css}"><strong>{alpha:+.2f}%</strong></td>')
             else:
@@ -1233,7 +1255,7 @@ def generate_multi_window_report(
                 f'<td class="num">{s.completed}</td>'
                 f'<td class="num">{s.direction_accuracy_pct:.1f}%</td>'
                 f'<td class="num">{s.win_rate_pct:.1f}%</td>'
-                f'<td class="num">{s.avg_stock_return_pct:+.2f}%</td></tr>'
+                f'<td class="num">{s.avg_strategy_return_pct:+.2f}%</td></tr>'
             )
         html.append('</tbody></table>')
 
@@ -1286,7 +1308,7 @@ def generate_multi_window_report(
                 day_results = [r for r in completed if r.trade_date == d]
                 if not day_results:
                     continue
-                avg_ret = sum(r.stock_return_pct for r in day_results) / len(day_results)
+                avg_ret = sum(strategy_return(r) for r in day_results) / len(day_results)
                 bench = multi.benchmark_returns.get(d, {}).get(w0)
                 if bench is not None:
                     alpha = avg_ret - bench
@@ -1343,7 +1365,7 @@ def generate_multi_window_report(
                     f'<td class="num">{conf}</td>'
                     f'<td class="num">{r.start_price:.2f}</td>'
                     f'<td class="num">{r.end_close:.2f}</td>'
-                    f'<td class="num {outcome_cls}">{r.stock_return_pct:+.2f}%</td>'
+                    f'<td class="num {outcome_cls}">{strategy_return(r):+.2f}%</td>'
                     f'<td class="num sell">{r.max_drawdown_pct:+.2f}%</td>'
                     f'<td class="{outcome_cls}">{outcome_label}</td>'
                     f'</tr>'
@@ -1410,7 +1432,7 @@ def generate_backtest_report(
         + (_card("未成熟 (窗口未满)", str(s.immature), "kpi-secondary")
            if s.immature else "")
         + _card("平均收益",
-                f"{s.avg_stock_return_pct:+.2f}%" if s.completed else "—",
+                f"{s.avg_strategy_return_pct:+.2f}%" if s.completed else "—",
                 "kpi-primary")
         + '</div></div></div></div>'
     )
@@ -1533,7 +1555,7 @@ def generate_backtest_report(
                 f'<td class="num">{ts.completed}</td>'
                 f'<td class="num">{ts.direction_accuracy_pct:.1f}%</td>'
                 f'<td class="num">{ts.win_rate_pct:.1f}%</td>'
-                f'<td class="num">{ts.avg_stock_return_pct:+.2f}%</td></tr>'
+                f'<td class="num">{ts.avg_strategy_return_pct:+.2f}%</td></tr>'
             )
         html_parts.append('</tbody></table>')
 
@@ -1566,7 +1588,7 @@ def generate_backtest_report(
                 f'<td>{emoji} {_esc(r.action)}</td>'
                 f'<td class="num">{r.start_price:.2f}</td>'
                 f'<td class="num">{r.end_close:.2f}</td>'
-                f'<td class="num {outcome_cls}">{r.stock_return_pct:+.2f}%</td>'
+                f'<td class="num {outcome_cls}">{strategy_return(r):+.2f}%</td>'
                 f'<td class="num sell">{r.max_drawdown_pct:+.2f}%</td>'
                 f'<td class="num buy">{r.max_gain_pct:+.2f}%</td>'
                 f'<td class="sparkline-cell">{spark}</td>'
@@ -1649,7 +1671,7 @@ def _cumulative_return_svg(results: list, benchmark_returns: dict = None,
     cum = []
     running = 0.0
     for r in sorted_r:
-        running += r.stock_return_pct
+        running += strategy_return(r)
         cum.append((r.trade_date, running))
 
     # Build benchmark cumulative series (if available)

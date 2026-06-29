@@ -376,11 +376,12 @@ _MARKET_CSS = """
 
 
 def _regime_color(cls):
+    # A-share action convention: 买入/看多 = 红, 卖出/看空 = 绿 (was reversed).
     if cls == "buy":
-        return "var(--green)"
+        return "var(--signal-buy)"
     elif cls == "sell":
-        return "var(--red)"
-    return "var(--yellow)"
+        return "var(--signal-sell)"
+    return "var(--signal-hold)"
 
 
 def _mkt_regime_icon(cls):
@@ -465,7 +466,8 @@ def _render_idx_battle_cards(view: MarketView) -> str:
         name = info.get("name", code)
         sign = "+" if pct > 0 else ""
         pct_cls = "up" if pct > 0 else ("down" if pct < 0 else "flat")
-        bar_color = "var(--green)" if pct > 0 else ("var(--red)" if pct < 0 else "var(--muted)")
+        # A-share 红涨绿跌 (was reversed: 涨 painted green).
+        bar_color = "var(--up)" if pct > 0 else ("var(--down)" if pct < 0 else "var(--flat)")
 
         # V4: Strength tag → priority_chip with severity tier
         if pct > 1.0:

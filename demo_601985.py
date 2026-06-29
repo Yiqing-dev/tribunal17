@@ -4,7 +4,13 @@ Usage:
     python -m subagent_pipeline.demo_601985
 """
 
+from pathlib import Path
+
 from .bridge import generate_report
+
+# Demo output sandbox — isolated from the production data/ store so the mock
+# 601985 trace never pollutes backtest / pool / opinion (N-ORC-01).
+_DEMO_OUT = Path(__file__).resolve().parent / "examples" / "demo_601985_output"
 
 # ── Simulated agent outputs ──────────────────────────────────────────────
 # These mirror the structured output format that real subagents would produce.
@@ -596,8 +602,8 @@ def main():
         ticker="601985",
         ticker_name="中国核电",
         trade_date="2026-03-12",
-        output_dir="data/reports",
-        storage_dir="data/replays",
+        output_dir=str(_DEMO_OUT / "reports"),
+        storage_dir=str(_DEMO_OUT / "replays"),
     )
 
     print("\n" + "=" * 60)

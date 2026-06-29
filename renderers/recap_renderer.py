@@ -492,7 +492,7 @@ def _render_temperature_gauge(weather: str) -> str:
     """SVG semi-circle gauge for market temperature.
 
     Needle angle: 上涨→+60°, 震荡→0°, 下跌→-60°.
-    Colors: green (hot/bullish), yellow (neutral), red (cold/bearish).
+    Colors (A-share 红涨绿跌): red (hot/上涨), yellow (neutral), green (cold/下跌).
     """
     # Map weather to needle angle (degrees from 12-o'clock, -90=left, +90=right)
     angles = {"上涨": 60, "震荡": 0, "下跌": -60}
@@ -500,7 +500,7 @@ def _render_temperature_gauge(weather: str) -> str:
     angle_rad = _math.radians(angle_deg - 90)  # SVG: 0°=right, rotate to gauge space
 
     cx, cy, r = 80, 80, 60
-    # Arc segments: cold(red) -90°→-30°, neutral(yellow) -30°→30°, hot(green) 30°→90°
+    # Arc segments (A-share 红涨绿跌): cold/下跌(green) left, neutral(yellow) center, hot/上涨(red) right
     def _arc_d(start_deg: float, end_deg: float) -> str:
         s = _math.radians(start_deg)
         e = _math.radians(end_deg)

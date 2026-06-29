@@ -19,7 +19,10 @@ Usage:
 
 from __future__ import annotations
 
-import fcntl
+try:
+    import fcntl  # POSIX advisory file locks; absent on native Windows
+except ImportError:  # pragma: no cover - exercised only on Windows
+    fcntl = None
 import json
 import logging
 import os
@@ -33,7 +36,22 @@ from .shared import is_bse_code  # single source for 北交所 code detection
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_PATH = "data/signals/signals.jsonl"
+
+def _data_root() -> Path:
+    """Single CWD-independent root for the on-disk data/ store.
+
+    Override with the TA_DATA_ROOT env var; otherwise default to the repo root
+    (the parent of this package directory). This is the fix for N-ORC-02: runs
+    launched from the repo root AND from inside subagent_pipeline/ previously
+    resolved 'data/signals' / 'data/replays' against the CWD and so wrote to two
+    different stores (the ledger split-brain). Anchoring to one absolute root
+    makes every entry point hit the same store regardless of CWD.
+    """
+    env = os.environ.get("TA_DATA_ROOT")
+    return Path(env) if env else Path(__file__).resolve().parent.parent
+
+
+_DEFAULT_PATH = str(_data_root() / "data" / "signals" / "signals.jsonl")
 
 
 def normalize_ticker(ticker: str) -> str:
@@ -61,16 +79,21 @@ def normalize_ticker(ticker: str) -> str:
 
 
 def _flock_exclusive(f) -> None:
-    """Acquire POSIX exclusive advisory lock.
+    """Acquire a POSIX exclusive advisory lock (best-effort no-op on Windows).
 
-    Fail-fast: if flock fails on Linux (NFS, read-only mount, etc.),
+    Fail-fast on POSIX: if flock fails on Linux (NFS, read-only mount, etc.),
     raise immediately to prevent silent data corruption from concurrent writes.
+    On native Windows (no fcntl) this is a no-op — the atomic temp-then-rename
+    writes are still safe; only the cross-process manifest-append lock is skipped.
     """
-    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+    if fcntl is not None:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
 
 
 def _flock_release(f) -> None:
-    """Release POSIX advisory lock."""
+    """Release a POSIX advisory lock (no-op on Windows)."""
+    if fcntl is None:
+        return
     try:
         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     except OSError:
@@ -128,8 +151,10 @@ class SignalRecord:
 class SignalLedger:
     """Append-only signal log backed by a JSONL file."""
 
-    def __init__(self, path: str = _DEFAULT_PATH):
-        self.path = Path(path)
+    def __init__(self, path: Optional[str] = None):
+        # Resolve lazily so TA_DATA_ROOT / the canonical root is read at construction
+        # time (not frozen at import) — preserves runtime responsiveness.
+        self.path = Path(path) if path else _data_root() / "data" / "signals" / "signals.jsonl"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._run_id_index: Optional[set] = None  # lazy-loaded
 

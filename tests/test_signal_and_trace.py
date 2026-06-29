@@ -802,10 +802,12 @@ class TestLimitThresholdAndExchangeRouting:
         assert normalize_ticker("300750") == "300750.SZ"
 
 
-def test_from_dict_clamps_legacy_overflow_confidence():
-    """CONF-02: a legacy on-disk trace with final_confidence > 1 is capped at 1.0
-    on load (so it never renders as 7500%), while the -1.0 sentinel is preserved."""
+def test_from_dict_normalizes_legacy_overflow_confidence():
+    """N-FND/CONF-02: a legacy on-disk trace with final_confidence > 1 is RE-NORMALIZED
+    on load per the canonical rule (>=10 ÷100, else ÷10), not bluntly clamped — so a
+    legacy 75.0 restores to its intended 0.75 (75%) rather than a misleading 1.0/7500%.
+    The -1.0 'not set' sentinel is preserved. (Matches CLAUDE.md data-integrity rule #7.)"""
     from subagent_pipeline.trace_models import RunTrace
-    assert RunTrace.from_dict({"run_id": "a", "final_confidence": 75.0, "node_traces": []}).final_confidence == 1.0
+    assert RunTrace.from_dict({"run_id": "a", "final_confidence": 75.0, "node_traces": []}).final_confidence == 0.75
     assert RunTrace.from_dict({"run_id": "b", "final_confidence": -1.0, "node_traces": []}).final_confidence == -1.0
     assert RunTrace.from_dict({"run_id": "c", "final_confidence": 0.72, "node_traces": []}).final_confidence == 0.72

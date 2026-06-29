@@ -8,7 +8,6 @@ Directory structure:
         run-abc123def456.json  ← full RunTrace for that run
 """
 
-import fcntl
 import json
 import logging
 import os
@@ -17,18 +16,22 @@ from pathlib import Path
 from typing import List, Optional
 
 from .trace_models import RunTrace
-from .signal_ledger import normalize_ticker
+from .signal_ledger import (
+    normalize_ticker, _data_root, _flock_exclusive, _flock_release,
+)
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_DIR = "data/replays"
+_DEFAULT_DIR = str(_data_root() / "data" / "replays")
 
 
 class ReplayStore:
     """Persists and retrieves RunTrace objects."""
 
-    def __init__(self, storage_dir: str = _DEFAULT_DIR):
-        self.storage_dir = Path(storage_dir)
+    def __init__(self, storage_dir: Optional[str] = None):
+        # Resolve lazily (TA_DATA_ROOT / canonical root read at construction, not
+        # frozen at import) — preserves runtime responsiveness.
+        self.storage_dir = Path(storage_dir) if storage_dir else _data_root() / "data" / "replays"
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self._manifest_path = self.storage_dir / "manifest.jsonl"
 
@@ -75,14 +78,11 @@ class ReplayStore:
         }
         line = json.dumps(manifest_entry, ensure_ascii=False, allow_nan=False) + "\n"
         with open(self._manifest_path, "a", encoding="utf-8") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            _flock_exclusive(f)
             try:
                 f.write(line)
             finally:
-                try:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-                except OSError:
-                    pass  # unlock failure non-critical — released on close
+                _flock_release(f)
 
         logger.info(f"Saved replay trace: {trace_path}")
         return trace_path
@@ -196,14 +196,11 @@ class ReplayStore:
                 }
                 line = json.dumps(entry, ensure_ascii=False, allow_nan=False) + "\n"
                 with open(self._manifest_path, "a", encoding="utf-8") as f:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    _flock_exclusive(f)
                     try:
                         f.write(line)
                     finally:
-                        try:
-                            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-                        except OSError:
-                            pass  # unlock non-critical
+                        _flock_release(f)
                 repaired += 1
                 logger.info("Reconciled orphan trace: %s", run_id)
             except Exception as e:

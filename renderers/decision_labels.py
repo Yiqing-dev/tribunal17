@@ -175,7 +175,7 @@ SEVERITY_LABELS = {
 
 SEVERITY_CSS = {
     "critical": "veto",
-    "high":     "sell",
+    "high":     "high",   # badge-high = 红 (was "sell" → 绿, a green high-risk badge)
     "medium":   "hold",
     "low":      "muted",
 }

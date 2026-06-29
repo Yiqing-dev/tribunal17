@@ -642,12 +642,31 @@ class WarRoomView:
 # All external callers import from views.py — these re-exports maintain
 # backward compatibility so no callers need changes.
 
-from .snapshot_view import SnapshotView
-from .research_view import ResearchView
-from .audit_view import AuditView
-from .pool_view import StockDivergenceRow, DivergencePoolView
-from .workbench_view import WorkbenchRow, WorkbenchView
-from .market_view import MarketView, _normalize_consecutive_boards, _extract_breadth_counts
+# Lazy re-exports (PEP 562): the view models are imported on FIRST ACCESS, not
+# eagerly, so the sub-modules can `from .views import` the shared helpers above
+# WITHOUT a views ⇄ *_view import cycle. This is the fix-then-scan sibling of the
+# pool_view cycle fix — `import snapshot_view`/`research_view` standalone used to
+# fail. Safe because no `from .views import *` exists anywhere (only explicit names).
+_LAZY_REEXPORTS = {
+    "SnapshotView": ".snapshot_view",
+    "ResearchView": ".research_view",
+    "AuditView": ".audit_view",
+    "StockDivergenceRow": ".pool_view",
+    "DivergencePoolView": ".pool_view",
+    "WorkbenchRow": ".workbench_view",
+    "WorkbenchView": ".workbench_view",
+    "MarketView": ".market_view",
+    "_normalize_consecutive_boards": ".market_view",
+    "_extract_breadth_counts": ".market_view",
+}
+
+
+def __getattr__(name):
+    _target = _LAZY_REEXPORTS.get(name)
+    if _target is not None:
+        import importlib
+        return getattr(importlib.import_module(_target, __package__), name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     # Shared utilities

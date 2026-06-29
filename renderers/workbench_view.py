@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
 from ..report_diff import compare_reports
+from .shared_utils import mean_confidence
 from ..report_index import (
     group_entries_by_ticker,
     latest_entries_per_ticker,
@@ -124,8 +125,8 @@ class WorkbenchView:
 
     @property
     def avg_confidence(self) -> float:
-        vals = [r.confidence for r in self.rows if r.confidence >= 0]
-        return sum(vals) / len(vals) if vals else 0.0
+        # Single source (mean_confidence); -1.0 sentinel when none is real.
+        return mean_confidence(r.confidence for r in self.rows)
 
     @property
     def grade_mix(self) -> Dict[str, int]:

@@ -97,6 +97,8 @@ class DebateQualityScore:
     pm_accepted_count: int = 0
     pm_rejected_count: int = 0
     pm_deferred_count: int = 0
+    pm_bull_used: int = 0               # bull claim-ids the PM referenced (true per-side)
+    pm_bear_used: int = 0              # bear claim-ids the PM referenced (true per-side)
     pm_consumption_basis: str = "none"  # "adjudication" | "mention" | "semantic" | "none"
 
     # Risk debate quality
@@ -565,6 +567,12 @@ def _assess_debate_quality(trace: RunTrace) -> DebateQualityScore:
     if pm_node:
         pm_claim_ids.update(pm_node.claim_ids_referenced)
 
+    # True per-side PM consumption: claim-ids the PM referenced ∩ each side's ids.
+    if bull_node:
+        dq.pm_bull_used = len(pm_claim_ids & set(bull_node.claim_ids_produced))
+    if bear_node:
+        dq.pm_bear_used = len(pm_claim_ids & set(bear_node.claim_ids_produced))
+
     # AQ-03: prefer REAL adjudications (ACCEPT/REJECT/DEFER) over bare ID mentions.
     # "Digestion" should mean the PM actually ruled on the claim — and a wall of
     # REJECTs is engagement, not avoidance, so all three verdicts count, but the
@@ -893,6 +901,8 @@ def _generate_prompt_suggestions(
 def generate_discussion_review(
     run_id: str,
     storage_dir: str = "data/replays",
+    store=None,
+    trace=None,
 ) -> DiscussionReview:
     """Generate a complete discussion quality review for a run.
 
@@ -907,10 +917,11 @@ def generate_discussion_review(
     Raises:
         ValueError: If the run_id is not found.
     """
-    store = ReplayStore(storage_dir=storage_dir)
+    store = store or ReplayStore(storage_dir=storage_dir)
     service = ReplayService(store=store)
 
-    trace = store.load(run_id)
+    if trace is None:
+        trace = store.load(run_id)
     if trace is None:
         raise ValueError(f"Run not found: {run_id}")
 
